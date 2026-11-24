@@ -1960,6 +1960,7 @@ async function assetsImported(box) {
     <div class="panel" style="margin-top:12px">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <label class="search" style="flex:1;min-width:180px">🔎<input type="text" id="imp-q" placeholder="Search ${models.length} models" value="${esc(IMP.q)}"></label>
+        <button id="imp-cat" title="Let the AI sort models whose names the studio doesn't recognise (also happens on every import)">🏷 Categorize</button>
         <button id="imp-sel">${IMP.select ? "Done" : "☑ Select"}</button>
         ${IMP.select ? `<button id="imp-all">Pick all shown (${shown.length})</button><button id="imp-none">Clear</button>
           <button class="danger" id="imp-del" ${IMP.picked.size ? "" : "disabled"}>🗑 Delete ${IMP.picked.size || ""} picked</button>` : ""}
@@ -1998,6 +1999,15 @@ async function assetsImported(box) {
   qBox.oninput = () => { IMP.q = qBox.value; clearTimeout(IMP.t); IMP.t = setTimeout(async () => {
     await redraw(); const nq = $("#imp-q"); nq.focus(); nq.setSelectionRange(nq.value.length, nq.value.length); }, 250); };
   $$("[data-imp-cat]").forEach((b) => b.onclick = () => { IMP.cat = b.dataset.impCat; redraw(); });
+  $("#imp-cat").onclick = guard(async () => {
+    const job = await api("POST", "/api/imported/categorize", {});
+    toast("Sorting models into categories…");
+    watchJob(job, $("#ip-job"), async (j) => {
+      if (j.status !== "done") return toast("Sorting failed - see the log (is Ollama running?)", true);
+      toast("Categories updated ✓");
+      await pageAssets("imported");
+    });
+  });
   $("#imp-sel").onclick = () => { IMP.select = !IMP.select; if (!IMP.select) IMP.picked.clear(); redraw(); };
   if (IMP.select) {
     $("#imp-all").onclick = () => { shown.forEach((m) => IMP.picked.add(m.id)); redraw(); };

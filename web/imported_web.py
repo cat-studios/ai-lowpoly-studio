@@ -50,6 +50,12 @@ def handle(h, method, parts, *, submit, Job, root):
     if method == "DELETE" and arg == "model" and len(parts) > 1:   # one model (its files go to the trash)
         return h.send_json({"ok": True, "deleted": IM.delete_models([parts[1]])})
 
+    if method == "POST" and arg == "categorize":   # the 🏷 Categorize button: a background job (Ollama)
+        cmd = [sys.executable, "-u", str(root / "pipeline" / "imported.py"), "categorize"]
+        if h.body_json().get("redo"):
+            cmd.append("--redo")
+        return h.send_json(submit(Job("import", "Sort models into categories", cmd)).to_dict())
+
     if method == "POST" and arg == "delete":      # several models at once: {"ids": [...]}
         ids = [str(i) for i in (h.body_json().get("ids") or []) if re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", str(i))]
         if not ids:

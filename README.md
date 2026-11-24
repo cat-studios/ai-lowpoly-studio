@@ -54,6 +54,16 @@ From idea to video:
 6. Start the app (below). The first start makes the 24 built-in sound effects. Then go to **Characters → + New
    character** and import your VRoid `.vrm` - until then videos use a simple placeholder body.
 
+## Updating to a new version
+
+Your characters, voices, sets, videos, imported packs, animations and settings are not part of the code (git
+ignores them), so updating never touches them. In the studio folder, with the studio closed:
+```powershell
+git pull
+```
+then start it again. Don't change code files in this folder yourself (a pull would clash with your edits), and never
+run `git clean` here - that WOULD delete the ignored personal files.
+
 ## Starting it
 
 Double-click `start-studio.bat`, or:
@@ -131,7 +141,8 @@ never.
 - **📦 Imported** - asset packs you upload as a zip of OBJ, FBX, BLEND or MDL models (folders inside are fine).
   Each model gets a picture. MDL files from Quake 1, Half-Life and Source are converted (not yet tried on real
   game files). Models are sorted into categories made from their own names (Vehicles, Animals, Furniture, Food...)
-  with search; 🗑 deletes one, **☑ Select** deletes several at once (files go to the trash folder). Removing a whole
+  with search; the AI sorts names it doesn't recognise on every import (or press **🏷 Categorize**); 🗑 deletes one,
+  **☑ Select** deletes several at once (files go to the trash folder). Removing a whole
   pack is under **Packs** at the bottom. A prop or cast member whose name matches an imported model uses that
   model; with no exact match the closest one is used (a mail van → the ambulance, a dog → the pug, a police car →
   the cop car). Models are scaled to the real thing's size (a pug is 0.35 m, not the size in its file), and parts a

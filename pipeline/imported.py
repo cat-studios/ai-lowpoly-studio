@@ -284,6 +284,12 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
             "source": source_name or zip_path.name, "added": time.time(), "skipped": skipped, "models": models}
     idx["packs"].append(pack)
     save_index(idx)
+    progress.report(0.97, "Sorting the models into categories")
+    try:
+        import settings as S
+        ai_categorize(S.load_settings().get("ollama"), log)      # names the word list doesn't know
+    except Exception as exc:
+        log(f"[import] categories: AI skipped ({exc.__class__.__name__}) - sorted by name only")
     progress.report(1.0, "Done")
     return pack
 
@@ -356,12 +362,63 @@ CATEGORIES = [
 _CAT_WORDS = [(name, set(ws.split())) for name, ws in CATEGORIES]
 
 
+_CANON = {n.lower(): n for n, _ in CATEGORIES}
+
+
 def _name_category(m):
+    if m.get("category"):                    # the AI's answer (ai_categorize), kept in the index
+        return _CANON.setdefault(str(m["category"]).lower(), m["category"])
     ws = words(m.get("name", "")) | set(m.get("tags") or [])
     for name, cw in _CAT_WORDS:
         if ws & cw:
             return name
     return None
+
+
+def _word_category(m):
+    ws = words(m.get("name", "")) | set(m.get("tags") or [])
+    return next((name for name, cw in _CAT_WORDS if ws & cw), None)
+
+
+def ai_categorize(ollama, log=print, redo=False):
+    """Ollama sorts the models whose names the word list (CATEGORIES) doesn't place - into an existing category or a
+    new one it names ("Instruments", "Weapons"). Answers are kept in the index as "category". redo=True asks again
+    for every model the word list can't place. Returns how many got a category."""
+    if not ollama:
+        return 0
+    idx = load_index()
+    todo = [m for p in idx["packs"] for m in p.get("models", [])
+            if m.get("status") == "ok" and not _word_category(m) and (redo or not m.get("category"))]
+    if not todo:
+        return 0
+    import llm
+    known = sorted({n for n, _ in CATEGORIES} | {m["category"] for p in idx["packs"] for m in p.get("models", [])
+                                                if m.get("category")})
+    done = 0
+    for i in range(0, len(todo), 40):
+        chunk = todo[i:i + 40]
+        names = {str(k): " ".join(sorted(words(m["name"]))) or m["name"] for k, m in enumerate(chunk)}
+        try:
+            r = llm.chat_json(ollama["url"], ollama["model"],
+                              "You sort 3D models into categories for an asset library. Use one of these when it "
+                              f"fits: {', '.join(known)}. Otherwise make up a short plural category (1-2 words, "
+                              "Title Case, e.g. Instruments, Weapons, Sports). Reply with JSON only: "
+                              '{"0": "Category", "1": "Category", ...} - one entry per model number.',
+                              json.dumps(names), temperature=0.2)
+        except Exception as exc:
+            log(f"[import] categories: Ollama failed ({exc.__class__.__name__})")
+            break
+        for k, m in enumerate(chunk):
+            cat = str((r or {}).get(str(k)) or "").strip()[:28]
+            if cat and re.fullmatch(r"[A-Za-z][A-Za-z &'-]*", cat):
+                # "Street & Traffic" is the same category as "Street & traffic": the first spelling wins
+                same = next((c for c in known if c.lower() == cat.lower()), None)
+                m["category"] = same or (cat.title() if cat.islower() else cat)
+                known = sorted(set(known) | {m["category"]})
+                done += 1
+    save_index(idx)
+    log(f"[import] categories: {done} model(s) sorted by the AI")
+    return done
 
 
 def categorised():
@@ -575,6 +632,8 @@ if __name__ == "__main__":
     p_imp.add_argument("--source", help="the zip's original file name (shown on the Assets page)")
     sub.add_parser("list")
     sub.add_parser("previews", help="draw a picture for every model that has none")
+    p_cat = sub.add_parser("categorize", help="the AI sorts models the name list doesn't place")
+    p_cat.add_argument("--redo", action="store_true", help="ask again for ones it already sorted")
     p_del = sub.add_parser("delete")
     p_del.add_argument("pack_id")
     a = ap.parse_args()
@@ -584,6 +643,11 @@ if __name__ == "__main__":
         print(f"IMPORTED={pack['id']} ok={ok} total={len(pack['models'])}", flush=True)
     elif a.cmd == "list":
         print(json.dumps(packs(), indent=1))
+    elif a.cmd == "categorize":
+        import settings as S
+        progress.report(0.1, "Sorting the models into categories")
+        n = ai_categorize(S.load_settings().get("ollama"), print, redo=a.redo)
+        print(f"CATEGORIZED={n}", flush=True)
     elif a.cmd == "previews":
         previews_all()
         print("PREVIEWS=done", flush=True)

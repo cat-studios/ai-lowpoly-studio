@@ -26,7 +26,10 @@ python pipeline/sfx.py              # (re)synthesise the 24 built-in sounds
   repo pushed to GitHub, branch `main`) is the development copy - all code changes happen here. The user's
   production install is a separate folder, `C:\Users\kat5\ai-lowpoly-studio` (started with its own
   `start-studio.bat`, port **8765** with `--lan`, holding their characters, voices, sets, videos and settings).
-  Never edit, restart or test against production unless the user asks; they move changes over once they're happy.
+  Never edit, restart or test against production unless the user asks; they move changes over once they're happy:
+  production is a clean clone of the same GitHub repo (`main`), so the route is dev branch → merged into `main` on
+  GitHub → `git pull` in production → restart the studio. All personal data is gitignored, so a pull never touches
+  it - keep it that way when adding new data folders (add them to `.gitignore`). Never run `git clean` there.
 - Preview servers for Claude's browser pane (`.claude/launch.json`): `studio-dev` (:8766) and `studio-check`
   (:8767). Never use :8765 here - that's production.
 - **The server imports pipeline modules once - restart it after editing any `.py`** (web files are re-read per
@@ -247,6 +250,10 @@ Round 2b (v2 → `_v3`/`_v4`, same script directed again):
   "Delete N picked" (`delete_models`: same-stem files + preview → `packs/.trash/models-<stamp>/`), packs listed
   under a collapsed "Packs" with Remove pack. API: `GET /api/imported/all`, `DELETE /api/imported/model/<id>`,
   `POST /api/imported/delete {ids}`.
+- Categories for names the word list doesn't know: `imported.ai_categorize` (Ollama, 40 names per call, may invent a
+  category: Utensils, Containers...; spellings merged ignoring case) runs at the end of every import and from the
+  🏷 Categorize button (`POST /api/imported/categorize` → job `imported.py categorize [--redo]`); answers are kept
+  in the index as `category` and win over the word list.
 
 ## Animations as data (phase 1 done 2026-11-25; plan: generator → vision check → director hookup)
 - `pipeline/animlib.py`: pose vocabulary - `ARM` (one arm: arm/raise/rot/elbow; rest, slump, hand_to_chin,
