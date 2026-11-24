@@ -336,6 +336,8 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
     up = (lambda s: s.upper()) if cap.get("uppercase", True) else (lambda s: s)
     outline = max(0, int(cap.get("outline", 0)))
     border = f"{outline},{0 if outline else 1}"              # Outline, Shadow
+    # the title sits over the sky/back wall, often pale: it always gets a thin dark outline (a shadow alone vanished)
+    tborder = f"{max(outline, int(cap.get('title_outline', 1)))},1"
     fx = EFFECTS.get(cap.get("effect", "pop"), "")
     col, shadow = ass_color(cap.get("color"), "#dcf5fa"), ass_color(cap.get("shadow_color"), "#302040")
     tcol, tcol2 = ass_color(cap.get("title_color"), "#f0f0f0"), ass_color(cap.get("title_color2"), "#f0e060")
@@ -352,7 +354,7 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
         f"Style: Caption,{font},{max(4, round(res[1] * cap['size']))},{col},{col},{shadow},{shadow},"
         f"-1,0,0,0,100,100,1,0,1,{border},2,6,6,{round(res[1] * cap['position'])},1",
         f"Style: Title,{font},{max(4, round(res[1] * cap['title_size']))},{tcol},{tcol},{shadow},{shadow},"
-        f"-1,0,0,0,100,100,1,0,1,{border},8,8,8,{round(res[1] * 0.06)},1",
+        f"-1,0,0,0,100,100,1,0,1,{tborder},8,8,8,{round(res[1] * 0.06)},1",
         f"Style: Mark,{font},{small},&H40FFFFFF,&H40FFFFFF,&H80000000,&H80000000,-1,0,0,0,100,100,0,0,1,0,1,"
         f"{3 if brand.get('watermark_corner', 'bottom-right').endswith('right') else 1},5,5,{round(res[1] * 0.03)},1",
         f"Style: End,{font},{max(4, round(res[1] * cap['size']))},{tcol2},{tcol2},{shadow},{shadow},"
@@ -374,9 +376,11 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
             continue
         start = (tm["f0"] - 1) / fps + float(shot.get("lead", AUDIO_LEAD))
         shot_end = (tm["f0"] - 1 + tm["n"]) / fps
+        # close shots: her face fills the middle of the frame, so the words sit lower, over her shoulders
+        low = round(res[1] * 0.15) if shot.get("camera") in ("closeup", "dramatic", "macro") else 0
         if cap["mode"] == "line":
             end = min(shot_end, start + shot["talk"] + 0.4)
-            lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,"
+            lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,{low},,"
                          f"{fx}{ass_text(up(shot['line']))}")
             continue
         # a few words at a time (cap "group"), each word in the next colour of cap "cycle", timed by word length
@@ -396,7 +400,7 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
                 color_i += 1
                 tag = "{\\c" + col + "&}" if col else ""
                 parts.append(f"{tag}{words[k]}")
-            lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(end)},Caption,,0,0,0,,{fx}{' '.join(parts)}")
+            lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(end)},Caption,,0,0,{low},,{fx}{' '.join(parts)}")
             t += dur
     if brand.get("watermark"):
         top = brand.get("watermark_corner", "bottom-right").startswith("top")
@@ -620,6 +624,18 @@ def resolve_cast(ep, cfg, log=print):
     setting = (ep.get("set_recipe") or {}).get("description", "") or ep.get("set", "")
     comfy_cfg = cfg["comfy"] if cfg["comfy"].get("mode", "auto") != "off" else None
     import actors as AC
+    # the main characters are never cast members (the AI cast step once cast "catgirl": a blocky double of her)
+    flat = lambda s: re.sub(r"[^a-z0-9]+", "", str(s).lower())    # noqa: E731
+    mains = set()
+    for prof in [ep.get("character") or {}] + list(ep.get("co_stars") or []):
+        if isinstance(prof, dict):
+            mains |= {flat(n) for n in [prof.get("id"), prof.get("name"), *S.speaker_names(prof)] if n}
+    for who in [w for w in cast if flat(w) in mains]:
+        log(f"  cast: dropped '{who}' - that's a main character, not an extra")
+        cast.pop(who)
+        for s in ep["shots"]:
+            if s.get("events"):
+                s["events"] = [e for e in s["events"] if e.get("who") != who]
     for who, info in list(cast.items()):
         info = dict(info) if isinstance(info, dict) else {}
         explicit = "type" in info                    # the video editor / script can force person or thing
@@ -666,6 +682,12 @@ def resolve_cast(ep, cfg, log=print):
             info["def"] = propgen.add_sprite(dict(info["def"]), comfy_cfg, log=lambda m: log("  " + m))
         cast[who] = info
     ep["cast"] = cast
+    # people don't "crash in", "fall" or "fly by" (things' verbs the AI sometimes gives them): they run in - a
+    # crashing-in mailman stood at the frame's edge
+    for s in ep["shots"]:
+        for e in s.get("events") or []:
+            if (cast.get(e.get("who")) or {}).get("type") == "person" and e.get("do") in ("crash_in", "fall", "fly_by"):
+                e["do"], e["run"] = "enter", True
 
 
 def encode_with_progress(cmd, cwd, seconds, lo, hi):

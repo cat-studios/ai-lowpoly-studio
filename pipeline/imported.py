@@ -302,6 +302,86 @@ def delete_pack(pid):
     return pack
 
 
+def delete_models(ids):
+    """Remove single models: their files (same name, any extension: .obj + .mtl...) and preview move to
+    packs/.trash/models-<stamp>/ (never hard-deleted); they leave the index. Shared textures stay. Returns the count."""
+    ids = set(ids)
+    idx = load_index()
+    dest = PACKS / ".trash" / f"models-{time.strftime('%Y%m%d-%H%M%S')}"
+    n = 0
+    for pack in idx["packs"]:
+        keep = []
+        for m in pack.get("models", []):
+            if m["id"] not in ids:
+                keep.append(m)
+                continue
+            f = ROOT / m["file"]
+            for sib in (f.parent.glob(f.stem + ".*") if f.parent.exists() else []):
+                rel = sib.relative_to(PACKS) if PACKS in sib.parents else Path(pack["id"]) / sib.name
+                (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+                sib.replace(dest / rel)
+            pv = PREVIEWS / f"{m['id']}.png"
+            if pv.exists():
+                (dest / "previews").mkdir(parents=True, exist_ok=True)
+                pv.replace(dest / "previews" / pv.name)
+            n += 1
+        pack["models"] = keep
+    save_index(idx)
+    return n
+
+
+# ----------------------------------------------------------------------------- categories (Assets page)
+# Made from each model's own name, not the zip it came in. A name that says nothing ("Material.003") takes the
+# category most of its pack's models have (a food pack's odd names stay in Food).
+CATEGORIES = [
+    ("Vehicles", "car cars taxi bus train ambulance bicycle bike suv cop police truck van boat ship plane airplane "
+                 "helicopter tractor motorcycle scooter tram rocket jeep schoolbus sportscar normalcar"),
+    ("Street & traffic", "traffic sign cone streetlight lamppost hydrant mailbox bench fence road barrier"),
+    ("Animals", "pug dog cat cow horse pig sheep llama zebra rat mouse frog snake spider wasp bee bat bird fish "
+                "shark whale dolphin manta ray chicken duck rabbit bear fox deer lion tiger elephant monkey "
+                "penguin turtle crab octopus"),
+    ("Dinosaurs", "trex triceratops stegosaurus apatosaurus parasaurolophus velociraptor dinosaur dino raptor"),
+    ("Fantasy & creatures", "dragon slime skeleton ghost zombie monster goblin mushroom_man creature alien"),
+    ("People", "human man woman person people boy girl guy lady police_officer worker posed character"),
+    ("Furniture", "chair table bed sofa couch desk shelf bookshelf cabinet drawer wardrobe lamp stool armchair "
+                  "nightstand dresser rug carpet curtain mirror tv television fridge oven stove sink toilet bath "
+                  "bathtub shower plant_pot pot vase clock painting frame pillow cushion door window kitchen"),
+    ("Food", "food apple banana bread burger cake candy carrot cheese cherry chicken_leg cookie corn croissant "
+             "cupcake donut doughnut egg fries grape hotdog icecream ice cream lemon meat melon orange pancake pear "
+             "pepper pie pineapple pizza potato sandwich sausage steak strawberry sushi taco tomato watermelon "
+             "bottle cup mug plate bowl can soda juice milk coffee tea wine beer fruit vegetable"),
+    ("Nature", "tree pine oak palm birch bush shrub grass rock stone boulder flower plant leaf log stump cactus "
+               "mushroom fern reed lily cloud mountain hill"),
+]
+_CAT_WORDS = [(name, set(ws.split())) for name, ws in CATEGORIES]
+
+
+def _name_category(m):
+    ws = words(m.get("name", "")) | set(m.get("tags") or [])
+    for name, cw in _CAT_WORDS:
+        if ws & cw:
+            return name
+    return None
+
+
+def categorised():
+    """Every model with a "category" (and its pack's name/license), for the Assets page."""
+    out = []
+    for pack in packs():
+        named = [(m, _name_category(m)) for m in pack.get("models", [])]
+        counts = {}
+        for _, c in named:
+            if c:
+                counts[c] = counts.get(c, 0) + 1
+        fallback = max(counts, key=counts.get) if counts else "Other"
+        for m, c in named:
+            pv = PREVIEWS / f"{m['id']}.png"
+            out.append({**m, "category": c or fallback, "pack_id": pack["id"], "pack": pack["name"],
+                        "license": pack.get("license", ""), "real_height": real_height(m),
+                        "preview_v": int(pv.stat().st_mtime) if pv.exists() else 0})   # a redrawn picture shows
+    return out
+
+
 # ----------------------------------------------------------------------------- lookup (used by scenes and cast)
 def _best(kind, looks=""):
     kt = words(kind)
@@ -324,13 +404,78 @@ def _best(kind, looks=""):
     return best, (best_key[0] if best_key else 0.0)
 
 
+# No model with the thing's own name: the nearest stand-in the user has, by kind, best first. A near fit (an
+# ambulance for a mail van) looks far better than shapes the AI makes up - but only within a kind that reads
+# right: a vehicle for a vehicle, the same animal for an animal (never a cow for a cat).
+NEAREST = {
+    "van": ["van", "ambulance", "suv", "bus", "car", "taxi"], "minivan": ["van", "suv", "car"],
+    "truck": ["truck", "lorry", "van", "ambulance", "bus", "suv", "car"], "lorry": ["truck", "van", "bus"],
+    "pickup": ["truck", "suv", "car"], "firetruck": ["truck", "ambulance", "bus"],
+    "delivery": ["van", "truck", "ambulance", "suv"], "postal": ["van", "truck", "ambulance"],
+    "car": ["car", "taxi", "suv", "cop"], "vehicle": ["car", "van", "suv", "taxi"], "auto": ["car", "taxi"],
+    "automobile": ["car", "taxi"], "sedan": ["car", "taxi"], "jeep": ["suv", "car"], "limo": ["car"],
+    "limousine": ["car"], "racecar": ["sport", "car"], "police": ["cop"], "cruiser": ["cop"],
+    "cab": ["taxi", "car"], "coach": ["bus"], "schoolbus": ["bus"], "tram": ["train", "bus"],
+    "trolley": ["train", "bus"], "subway": ["train"], "locomotive": ["train"], "bike": ["bicycle"],
+    "cycle": ["bicycle"], "ambulance": ["ambulance", "van", "suv"],
+    "dog": ["dog", "pug"], "puppy": ["dog", "pug"], "doggo": ["dog", "pug"], "mouse": ["mouse", "rat"],
+    "mice": ["mouse", "rat"], "goldfish": ["fish"], "koi": ["fish"], "salmon": ["fish"], "trout": ["fish"],
+    "tuna": ["fish"], "orca": ["whale", "dolphin"], "dinosaur": ["trex", "triceratops", "apatosaurus"],
+    "dino": ["trex", "triceratops"], "pony": ["horse"], "piglet": ["pig"], "lamb": ["sheep"],
+    "toad": ["frog"], "serpent": ["snake"], "bee": ["wasp"], "hornet": ["wasp"], "monster": ["slime", "dragon"],
+}
+
+
+def _word_score(w, tags):
+    """1 for the word itself in the model's name, less for a stand-in from NEAREST (earlier = closer), else 0."""
+    if w in tags:
+        return 1.0
+    for i, t in enumerate(NEAREST.get(w, [])):
+        if t in tags:
+            return max(0.5, 0.85 - 0.07 * i)
+    return 0.0
+
+
+def _ordered_words(text):
+    out = []
+    for tok in re.split(r"[^a-zA-Z0-9]+", re.sub(r"([a-z])([A-Z])", r"\1 \2", str(text or ""))):
+        for w in sorted(words(tok)):
+            if w not in out:
+                out.append(w)
+    return out
+
+
 def match(kind, looks="", setting=""):
-    """The imported model for `kind`, as a prop definition (same shape as propgen's), or None."""
+    """The imported model for `kind`, as a prop definition (same shape as propgen's), or None.
+    The LAST word of the name is the thing itself ("mail van", "police car", "ice cream truck"): when any model is
+    that thing or a stand-in for it (NEAREST: a van -> the ambulance), the best of those is used, scored over all
+    the words (police car -> Cop, not SportsCar). Otherwise the old rule: at least half the words in its name."""
+    kw = _ordered_words(kind)
+    if not kw:
+        return None
+    head, lt = kw[-1], words(looks)
+    best, best_key = None, None
+    for pack in packs():
+        for m in pack.get("models", []):
+            if m.get("status") != "ok":
+                continue
+            tags = set(m.get("tags") or [])
+            hs = _word_score(head, tags)
+            if hs <= 0:
+                continue
+            score = sum(_word_score(w, tags) for w in kw) / len(kw)
+            key = (score, hs, len(lt & tags), -len(tags), m["id"])
+            if best_key is None or key > best_key:
+                best, best_key = (pack, m), key
+    if best:
+        d = match_model(*best, kind, looks)
+        if best_key[1] < 1.0:
+            d["stand_in"] = True           # not the thing itself: the closest model there is
+        return d
     hit, _ = _best(kind, looks)
     if not hit:
         return None
-    pack, m = hit
-    return match_model(pack, m, kind, looks)
+    return match_model(*hit, kind, looks)
 
 
 def model_def(model_id, kind="", looks=""):
@@ -342,14 +487,82 @@ def model_def(model_id, kind="", looks=""):
     return None
 
 
+# Real-world heights (m). Model files use any units - a Pug measured 2.65, a Cow 5.1, a Bicycle 3.1 - so a
+# model is scaled to how tall the real thing is: this table by name, else Ollama's answer (cached in the index
+# as "real_height"), else its own height if that's believable.
+TYPICAL_HEIGHT = [
+    ({"traffic", "light"}, 3.0), ({"traffic", "sign"}, 2.2), ({"traffic", "cone"}, 0.7),
+    ({"ambulance"}, 2.6), ({"school", "bus"}, 3.0), ({"bus"}, 3.1), ({"train"}, 3.8), ({"tram"}, 3.4),
+    ({"truck"}, 3.0), ({"van"}, 2.1), ({"suv"}, 1.8), ({"sport"}, 1.2), ({"taxi"}, 1.5), ({"cop"}, 1.5),
+    ({"car"}, 1.45), ({"bicycle"}, 1.05), ({"bike"}, 1.05), ({"motorcycle"}, 1.2), ({"boat"}, 1.5),
+    ({"pug"}, 0.35), ({"dog"}, 0.55), ({"cat"}, 0.3), ({"cow"}, 1.5), ({"horse"}, 1.65), ({"pig"}, 0.85),
+    ({"sheep"}, 0.9), ({"llama"}, 1.8), ({"zebra"}, 1.4), ({"rat"}, 0.12), ({"frog"}, 0.1), ({"spider"}, 0.08),
+    ({"wasp"}, 0.05), ({"snake"}, 0.25), ({"bat"}, 0.2), ({"slime"}, 0.5), ({"dragon"}, 3.0),
+    ({"skeleton"}, 1.75), ({"trex"}, 4.5), ({"triceratops"}, 3.0), ({"stegosaurus"}, 4.0),
+    ({"apatosaurus"}, 7.0), ({"parasaurolophus"}, 3.5), ({"velociraptor"}, 0.8), ({"whale"}, 4.0),
+    ({"shark"}, 1.2), ({"dolphin"}, 0.9), ({"manta"}, 0.6), ({"fish"}, 0.25),
+    ({"chair"}, 0.9), ({"stool"}, 0.7), ({"table"}, 0.75), ({"desk"}, 0.75), ({"bed"}, 0.6), ({"sofa"}, 0.85),
+    ({"couch"}, 0.85), ({"bookshelf"}, 1.8), ({"shelf"}, 1.6), ({"wardrobe"}, 2.0), ({"lamp"}, 1.5),
+    ({"door"}, 2.1), ({"fridge"}, 1.8), ({"tree"}, 5.0), ({"bush"}, 1.0), ({"rock"}, 0.8), ({"flower"}, 0.4),
+    ({"crate"}, 0.6), ({"barrel"}, 0.9), ({"plant"}, 0.9),
+]
+
+
+def real_height(m):
+    """How tall the real thing is (m), or None when only Ollama can say (see ask_height)."""
+    if m.get("real_height"):
+        return float(m["real_height"])
+    ws = words(m.get("name", "")) | set(m.get("tags") or [])
+    for need, h in TYPICAL_HEIGHT:
+        if need <= ws:
+            return h
+    return None
+
+
+def ask_height(m, ollama, log=print):
+    """Ask Ollama once how tall the real thing is; the answer is kept in the index ("real_height")."""
+    if real_height(m) or not ollama:
+        return real_height(m)
+    try:
+        import llm
+        r = llm.chat_json(ollama["url"], ollama["model"],
+                          'You know real-world sizes. Reply with JSON only: {"height_m": number} - how tall a '
+                          "typical real one is, in metres.", f"Object: {' '.join(sorted(words(m['name'])))}",
+                          temperature=0.2)
+        h = float(r.get("height_m"))
+        if not 0.02 <= h <= 60:
+            return None
+    except Exception as exc:
+        log(f"[imported] couldn't ask how big '{m['name']}' is ({exc.__class__.__name__})")
+        return None
+    idx = load_index()
+    for pack in idx["packs"]:
+        for x in pack.get("models", []):
+            if x["id"] == m["id"]:
+                x["real_height"] = round(h, 3)
+    save_index(idx)
+    m["real_height"] = round(h, 3)
+    log(f"[imported] '{m['name']}' is about {h:.2f} m tall in real life")
+    return h
+
+
 def match_model(pack, m, kind, looks=""):
-    height = m.get("height") if m.get("height") and 0.005 <= m["height"] <= 12 else 1.2
-    width = max(m.get("width") or 0.0, m.get("depth") or 0.0, 0.3)
+    raw_h = m.get("height") if m.get("height") and 0.005 <= m["height"] <= 60 else None
+    raw_w = max(m.get("width") or 0.0, m.get("depth") or 0.0)
+    real = real_height(m)
+    if real and raw_h:
+        height, width = real, max(raw_w * real / raw_h, 0.3)    # the whole model scales with its height
+    else:
+        height = raw_h if raw_h and raw_h <= 4 else 1.2           # unknown: believe it only if it's plausible
+        width = max(raw_w * (height / raw_h if raw_h else 1.0), 0.3)
+        if not real:
+            m = dict(m, _needs_height=True)
     return {"kind": kind, "looks": looks, "by": "imported", "source": "imported", "name": m["name"],
             "pack": pack["name"], "license": pack.get("license", ""),
             "model": {"id": m["id"], "file": m["file"], "format": m["format"]},
             "height": round(height, 3), "width": round(width, 3), "radius": round(width / 2, 2),
-            "place": "near", "parts": []}
+            "place": "near", "parts": [],
+            **({"needs_height": True} if m.get("_needs_height") else {})}
 
 
 if __name__ == "__main__":

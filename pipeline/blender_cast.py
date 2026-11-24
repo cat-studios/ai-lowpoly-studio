@@ -133,7 +133,11 @@ def spot(e, fr, side, radius, claim=True):
     a = 0.7 + radius
     # beside her first, then further back (a 9:16 medium shot only sees about |dx| < 0.34 * (dy + 4))
     cands = [(a, 0.5), (a, 1.5), (-a, 0.5), (-a, 1.5), (a * 0.7, 2.6), (-a * 0.7, 2.6), (a * 1.3, 2.8),
-             (-a * 1.3, 2.8), (0.0, 2.2 + radius), (a, 3.6), (-a, 3.6)]
+             (-a * 1.3, 2.8), (a, 3.6), (-a, 3.6), (a * 1.3, 4.6), (-a * 1.3, 4.6)]
+    if radius < 1.2:
+        cands.insert(8, (0.0, 2.2 + radius))
+    else:                 # something big straight behind her fills the background of every later shot: last resort
+        cands.append((0.0, 2.2 + radius))
     best, why = None, {}
     for dx, dy in cands:
         if abs(dx) - radius * 0.8 > 0.34 * (dy + 4):      # most of it must be in shot

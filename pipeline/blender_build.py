@@ -1196,10 +1196,12 @@ def a_blow_kiss(p, t, T, seg):
     e = env(t, T, seg, 0.2)
     k = (t * 1.25) % 1.0
     out = smooth(min(1.0, max(0.0, (k - 0.35) * 3.0)))     # the flick: hand leaves the lips
-    p["raiseR"] = lerp(0.16, 1.05, e)
-    p["elbowR"] = lerp(0.12, 1.7 - 1.1 * out, e)
-    p["rotR"] = lerp(0.0, 0.8 * (1 - out), e)
-    p["armR"] = lerp(0.0, -0.4 * out, e)
+    # lips: arm forward and twisted in so the hand is at her mouth (raising it out to the side read as a wave);
+    # the flick throws it forward and a little out, towards the camera (it used to read as pointing sideways)
+    p["armR"] = lerp(0.0, lerp(-2.4, -1.15, out), e)
+    p["elbowR"] = lerp(0.12, lerp(2.3, 0.35, out), e)
+    p["raiseR"] = lerp(0.16, lerp(0.0, 0.5, out), e)
+    p["rotR"] = lerp(0.0, lerp(-1.7, 0.2, out), e)
     p["tilt"] += 0.15 * e
     p["sway"] += 0.04 * math.sin(t * 2.5) * e
 
@@ -1232,12 +1234,16 @@ def a_sneeze(p, t, T, seg):
     ph = (t % 1.6) / 1.6
     wind = smooth(min(1.0, ph / 0.6))
     burst = max(0.0, 1.0 - abs(ph - 0.66) / 0.07)
-    p["nod"] += (-0.5 * wind + 0.9 * burst) * e
+    p["nod"] += (-0.35 * wind + 0.8 * burst) * e
     p["sway"] += 0.12 * burst * e
     p["shift"] += 0.05 * burst * e
-    p["raiseR"] = lerp(0.16, 1.0 * wind, e)                  # hand comes up to the nose
-    p["elbowR"] = lerp(0.12, 1.8 * wind, e)
-    p["rotR"] = lerp(0.0, 0.9 * wind, e)
+    # into the elbow: the forearm comes up across her mouth (arm forward, twisted in - see facepalm) and the head
+    # snaps down into it. Raising the arm out to the side (the old pose) read as a wave.
+    arm = smooth(min(1.0, ph / 0.35)) * e
+    p["armR"] = -2.3 * arm
+    p["elbowR"] = lerp(0.12, 2.4, arm)
+    p["raiseR"] = lerp(0.16, 0.0, arm)
+    p["rotR"] = -1.6 * arm
 
 
 def a_facepalm(p, t, T, seg):
@@ -1282,6 +1288,26 @@ ANIMS = {
     "look_around": a_look_around, "scared": a_scared, "fall": a_fall, "float": a_float,
     "float_up": a_float_up, "land": a_land,
 }
+
+# animations as data (pipeline/animlib.py: the pose vocabulary + assets/anims/*.json): played like the ones above
+import animlib  # noqa: E402
+
+
+def _anim_player(a):
+    keys = animlib.resolved_keys(a)
+
+    def play(p, t, T, seg):
+        e = env(t, T, seg, 0.2)
+        for k, v in animlib.sample(a, t, keys).items():
+            if k[-1] in "RL" and k[:-1] in animlib.ARM_KEYS:
+                p[k] = lerp(p[k], v, e)            # arms: go to the pose
+            else:
+                p[k] = p.get(k, 0.0) + v * e       # head/body: added to what's there (breathing, talking...)
+    return play
+
+
+for _an, _aa in animlib.library().items():
+    ANIMS.setdefault(_an, _anim_player(_aa))
 MOVE_ANIMS = {"walk_to", "run_to", "sneak_to"}
 ANIM_EXPR = {"surprised": "surprised", "sad": "sad", "angry": "angry", "laugh": "happy",
              "celebrate": "happy", "dance": "happy", "stretch": "happy", "scared": "surprised",
@@ -1730,6 +1756,47 @@ CAMS = {
     "tiny":     ((0.0, -11.0, 1.6),          "body", 35),     # a small figure in a big scene
     "silhouette": ((0.6, 3.0, 1.1),          "head", 35),     # low, from behind: she reads as a dark shape
 }
+def _blockers(fr):
+    """(x, y, radius) of what can stand in a camera's way at frame fr: floor props and the cast."""
+    out = list(OBST)
+    if EP.get("cast"):
+        for tr in CAST_TRACKS.values():                  # people, where they are at that frame
+            p = tr["loc"].get(fr)
+            if p is not None and p.z > -10:              # AWAY (off stage) is far below the floor
+                out.append((p.x, p.y, 0.4))
+        out += [(p.x, p.y, max(0.35, r)) for p, r in getattr(blender_cast, "TAKEN", [])]
+    return out
+
+
+def _view_blocked(cam, tgt, fr=None):
+    """A floor prop or cast member (bigger than a crate) stands between the camera and her, or the camera is in one."""
+    c, t = Vector((cam.x, cam.y, 0.0)), Vector((tgt.x, tgt.y, 0.0))
+    seg = t - c
+    for ox, oy, r in (_blockers(fr) if fr else OBST):
+        p = Vector((ox, oy, 0.0))
+        if r < 0.35 or (p - t).length < r + 0.35:       # small things, or the thing she stands at
+            continue
+        u = max(0.0, min(0.85, (p - c).dot(seg) / max(seg.length_squared, 1e-6)))
+        if (c + seg * u - p).length < r * 0.85:
+            return True
+    return False
+
+
+def _clear_view(views, off):
+    """views: [(camera centre, her position, frame)] over the shot (a tracking camera moves with her): the first
+    camera offset - as given, then swung round her - from which nothing blocks any of them."""
+    def clear(o):
+        return not any(_view_blocked(c + o, t, fr) for c, t, fr in views)
+    if clear(off):
+        return off
+    turned = []
+    for da in (0.45, -0.45, 0.9, -0.9, 1.3, -1.3):
+        o = Vector((off.x * math.cos(da) - off.y * math.sin(da), off.x * math.sin(da) + off.y * math.cos(da), off.z))
+        if clear(o):
+            turned.append((o.y > 0.3, abs(da), o))     # stay on the camera's side of her: behind shows her back
+    return min(turned, key=lambda x: x[:2])[2] if turned else off
+
+
 rng = random.Random(3)
 first_cam = None
 SHOT_CAMS = []
@@ -1767,6 +1834,13 @@ for si, shot in enumerate(SHOTS):
         off = best_off or Vector((off.x * math.cos(a0) - off.y * math.sin(a0),
                                   off.x * math.sin(a0) + off.y * math.cos(a0), off.z))
     center = (loc_of[f0] + loc_of[f1]) / 2
+    if shot.get("move", "static") == "static" and (loc_of[f1] - loc_of[f0]).length > 0.8:
+        # she walks during a still shot: set the camera up from the end of the walk nearest to it, so walking
+        # toward the camera ends at the shot's normal distance (from the middle she walked almost into the lens)
+        o = Vector((off.x, off.y, 0.0))
+        near = min((loc_of[f0], loc_of[f1]), key=lambda q: ((center + o) - q).length)
+        if ((center + o) - near).length < o.length - 0.3:
+            center = near.copy()
     center.z = max(0.0, min(loc_of[f0].z, loc_of[f1].z) * 0.85)    # up in the air: the camera comes along
     aim_obj = srig.aim_head if aim == "head" else srig.aim_body
     both = bool(shot.get("both")) and len(TRACKS) > 1
@@ -1823,6 +1897,15 @@ for si, shot in enumerate(SHOTS):
         off = Vector((0.3 * dist, -dist, max(0.22, 0.55 * h)))      # small things: a low, macro-ish angle
         aim_obj = cut["target"]
         lens = 32 if name in ("wide", "medium", "side", "high", "low", "back") else lens
+    if not cut and not both and OBST:
+        # furniture between the camera and the speaker (the post office counter filled half a side shot): swing the
+        # camera round her to the nearest clear angle
+        fm = (f0 + f1) // 2
+        if shot.get("move") == "follow":                 # the camera travels with her: check along the way
+            views = [(loc_of[fr], loc_of[fr], fr) for fr in (f0, fm, f1)]
+        else:
+            views = [(center, loc_of[fr], fr) for fr in (f0, fm, f1)]
+        off = _clear_view(views, off)
     cd = bpy.data.cameras.new(f"cam{si}")
     cd.lens = lens
     cd.clip_start, cd.clip_end = 0.05, 300

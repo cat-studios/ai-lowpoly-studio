@@ -302,6 +302,112 @@ def make_animal(d, kind, looks, fam):
     return d
 
 
+# --------------------------------------------------------------------------- vehicles
+# Only when no imported model fits (imported.match comes first, with stand-ins: a mail van -> the ambulance).
+# The AI's own vehicles came out as tilted overlapping slabs; these are chunky toy-like bodies, long side to the
+# camera (x), standing on their wheels.
+VEHICLE_FAMILIES = {
+    "car": set("car cars auto automobile sedan taxi cab jeep suv limo limousine racecar coupe hatchback cop "
+               "cruiser buggy".split()),
+    "van": set("van minivan camper campervan ambulance".split()),
+    "truck": set("truck lorry pickup firetruck tanker dumptruck semi".split()),
+    "bus": set("bus coach schoolbus tram trolley".split()),
+}
+VEHICLE_COLORS = {"mail": "#2b5fb3", "postal": "#2b5fb3", "taxi": "#f2c230", "cab": "#f2c230",
+                  "police": "#2b3a73", "cop": "#2b3a73", "ambulance": "#f4f2ee", "fire": "#d94a4a",
+                  "firetruck": "#d94a4a", "school": "#f2b030", "schoolbus": "#f2b030", "ice": "#ff8fb8",
+                  "delivery": "#c9a36a", "garbage": "#3f7a4a"}
+VEHICLE_SIZE = {"car": (4.2, 1.45), "van": (4.8, 2.1), "truck": (6.0, 2.7), "bus": (9.0, 3.0)}   # length, height
+
+
+def vehicle_family(kind, looks=""):
+    """"car" / "van" / "truck" / "bus" when the thing is a road vehicle (its name's last word decides), else None."""
+    ws = [w for w in re.split(r"[^a-z]+", str(kind).lower().replace("_", " ")) if w]
+    if not ws:
+        return None
+    for fam, names in VEHICLE_FAMILIES.items():
+        if ws[-1] in names or ws[-1].rstrip("s") in names:
+            return fam
+    if ws[-1] in ("vehicle", "wagon"):
+        return "car"
+    return None
+
+
+def vehicle_parts(fam, body, glass="#9fd0e8", tyre="#26232a"):
+    """A toy-like vehicle, long side along x, standing on z=0, about 1 unit long."""
+    light, dark = "#fff2b0", _shade(body, 0.7)
+    wheel = lambda x, y, r: _part("cylinder", (x, y, r), (2 * r, 0.06, 2 * r), tyre, (90, 0, 0))   # noqa: E731
+    if fam == "bus":
+        parts = [_part("box", (0, 0, 0.2), (1.0, 0.28, 0.27), body),
+                 _part("box", (0.03, 0, 0.27), (0.86, 0.285, 0.07), glass),                   # window strip
+                 _part("box", (0.49, 0, 0.24), (0.025, 0.24, 0.12), glass)]                   # windscreen
+        wheels = [wheel(0.33, s * 0.12, 0.055) for s in (-1, 1)] + [wheel(-0.3, s * 0.12, 0.055) for s in (-1, 1)]
+    elif fam == "truck":
+        parts = [_part("box", (-0.14, 0, 0.27), (0.7, 0.3, 0.36), body),                       # cargo box
+                 _part("box", (0.36, 0, 0.21), (0.27, 0.28, 0.25), dark),                     # cab
+                 _part("box", (0.43, 0, 0.27), (0.13, 0.285, 0.1), glass),
+                 _part("box", (0.08, 0, 0.07), (0.92, 0.2, 0.05), "#3a3a40")]                 # chassis
+        wheels = [wheel(0.35, s * 0.13, 0.07) for s in (-1, 1)] + [wheel(-0.32, s * 0.13, 0.07) for s in (-1, 1)]
+    elif fam == "van":
+        parts = [_part("box", (0, 0, 0.21), (1.0, 0.36, 0.3), body),
+                 _part("box", (0.38, 0, 0.32), (0.2, 0.365, 0.11), glass),                    # front windows
+                 _part("box", (0.495, 0, 0.13), (0.02, 0.3, 0.08), dark)]                     # grille
+        wheels = [wheel(0.3, s * 0.17, 0.08) for s in (-1, 1)] + [wheel(-0.3, s * 0.17, 0.08) for s in (-1, 1)]
+    else:
+        parts = [_part("box", (0, 0, 0.14), (1.0, 0.42, 0.15), body),                          # lower body
+                 _part("box", (-0.05, 0, 0.26), (0.5, 0.38, 0.12), body),                      # cabin
+                 _part("box", (-0.05, 0, 0.265), (0.52, 0.385, 0.08), glass)]                  # windows
+        wheels = [wheel(0.3, s * 0.2, 0.08) for s in (-1, 1)] + [wheel(-0.3, s * 0.2, 0.08) for s in (-1, 1)]
+    lamps = [_part("sphere", (0.5, s * 0.1, 0.16), (0.03, 0.06, 0.05), light) for s in (-1, 1)]
+    for p in lamps:
+        p["glow"] = True
+    return parts + wheels + lamps
+
+
+def make_vehicle(d, kind, looks, fam):
+    """Replace a vehicle definition's parts with the body template (colour from the name/looks/AI design)."""
+    import catalog
+    ws = re.split(r"[^a-z]+", f"{kind} {looks}".lower().replace("_", " "))
+    named = [catalog.CAST_COLORS[w] for w in ws if w in catalog.CAST_COLORS]
+    body = named[0] if named else next((VEHICLE_COLORS[w] for w in ws if w in VEHICLE_COLORS), None)
+    if not body and d.get("parts"):
+        cols = {}
+        for p in d["parts"]:
+            cols[p["color"]] = cols.get(p["color"], 0) + p["size"][0] * p["size"][1] * p["size"][2]
+        body = max(cols, key=cols.get)
+    parts = vehicle_parts(fam, body or "#d94a4a")
+    length, height = VEHICLE_SIZE[fam]
+    if set(ws) & {"toy", "tiny", "mini", "miniature", "model", "little"}:
+        length *= 0.08                         # a toy car fits in her hand
+    h0 = max(p["pos"][2] + p["size"][2] / 2 for p in parts)
+    f = length / 1.0
+    for p in parts:
+        # built nose along +x; props face -y (moving things turn their -y to where they're going), so turn it
+        x, y, z = p["pos"]
+        sx, sy, sz = p["size"]
+        p["pos"] = [round(y * f, 3), round(-x * f, 3), round(z * f, 3)]
+        p["size"] = [round(max(0.01, sy * f), 3), round(max(0.01, sx * f), 3), round(max(0.01, sz * f), 3)]
+        if p["shape"] == "cylinder":
+            p["rot"] = [0.0, 90.0, 0.0]          # wheels: axle across the vehicle
+    radius = max(math.hypot(abs(p["pos"][0]) + p["size"][0] / 2, abs(p["pos"][1]) + p["size"][1] / 2) for p in parts)
+    d.update(parts=parts, height=round(h0 * f, 2), radius=round(radius, 2), vehicle=fam, complex=False,
+             size_checked=True, on="floor", width=round(length, 2))
+    return d
+
+
+def template_for(kind, looks=""):
+    """("animal", family) / ("vehicle", family) when the thing gets a body template, else None."""
+    v = vehicle_family(kind, looks)
+    if v:
+        return "vehicle", v
+    a = animal_family(kind, looks)
+    return ("animal", a) if a else None
+
+
+def apply_template(d, kind, looks, tpl):
+    return (make_vehicle if tpl[0] == "vehicle" else make_animal)(d, kind, looks, tpl[1])
+
+
 def needs_picture(d):
     """Only objects too detailed for simple 3D shapes (or with no shape at all) get a 2D picture.
     Priority: imported model > generated 3D model > 2D picture."""
@@ -401,8 +507,17 @@ def imported_def(kind, looks="", setting="", log=print):
     except Exception as exc:
         log(f"[props] imported models unavailable ({exc.__class__.__name__}: {str(exc)[:80]})")
         return None
+    if d and d.get("needs_height"):            # not in the size table: ask once how big the real thing is
+        try:
+            import settings as S
+            m = next(x for p in imported.packs() for x in p.get("models", []) if x["id"] == d["model"]["id"])
+            if imported.ask_height(m, S.load_settings().get("ollama"), log):
+                d = dict(imported.model_def(m["id"], kind, looks), stand_in=d.get("stand_in", False))
+        except Exception as exc:
+            log(f"[props] size of '{d['name']}' unknown ({exc.__class__.__name__}) - using its file's size")
     if d:
-        log(f"[props] using imported model '{d['name']}' for '{kind}' (from {d['pack']})")
+        log(f"[props] using imported model '{d['name']}' for '{kind}' (from {d['pack']}"
+            + (", the closest model there is)" if d.get("stand_in") else ")"))
     return d
 
 
@@ -417,14 +532,14 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
     if have:
         log(f"[props] reusing '{kind}' from the prop library")
         changed = False
-        fam = animal_family(kind, have.get("looks", ""))
-        if fam and not have.get("animal") and have.get("source") != "imported":
-            # an animal designed before the body templates (a few blocks): rebuilt once, the old file kept
+        tpl = template_for(kind, have.get("looks", ""))
+        if tpl and not have.get(tpl[0]) and have.get("source") != "imported":
+            # an animal/vehicle designed before the body templates (a few blocks): rebuilt once, the old file kept
             (LIB / ".trash").mkdir(parents=True, exist_ok=True)
             (LIB / ".trash" / f"{kind}-blocks-{time.strftime('%Y%m%d-%H%M%S')}.json").write_text(
                 json.dumps(have, indent=1), encoding="utf-8")
-            make_animal(have, kind, have.get("looks", ""), fam)
-            log(f"[props] '{kind}' rebuilt as a {fam} (the old shape is in assets/props/.trash)")
+            apply_template(have, kind, have.get("looks", ""), tpl)
+            log(f"[props] '{kind}' rebuilt as a {tpl[1]} (the old shape is in assets/props/.trash)")
             changed = True
         if ollama and not have.get("size_checked"):        # older library props get a real size...
             real_size(have, ollama, log)
@@ -453,14 +568,14 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         log(f"[props] '{kind}': simple stand-in shape (no usable AI design)")
     else:
         log(f"[props] designed new prop '{kind}' ({len(d['parts'])} parts, {d['radius']} m wide, {d['height']} m tall)")
-    fam = animal_family(kind, looks)
-    if fam:                                    # animals: a body template, coloured like the design
-        make_animal(d, kind, looks, fam)
-        log(f"[props] '{kind}' built as a {fam}")
+    tpl = template_for(kind, looks)
+    if tpl:                                    # animals and vehicles: a body template, coloured like the design
+        apply_template(d, kind, looks, tpl)
+        log(f"[props] '{kind}' built as a {tpl[1]}")
     real_size(d, ollama, log)
     if needs_picture(d):                       # 3D first: a picture only for complicated or shapeless objects
         add_sprite(d, comfy_cfg, log)
-    if save and (d.get("by") == "ollama" or d.get("sprite") or d.get("animal")):
+    if save and (d.get("by") == "ollama" or d.get("sprite") or d.get("animal") or d.get("vehicle")):
         _save(d)
     return d
 

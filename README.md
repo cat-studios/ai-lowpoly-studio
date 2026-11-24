@@ -130,7 +130,12 @@ never.
   simple shapes).
 - **📦 Imported** - asset packs you upload as a zip of OBJ, FBX, BLEND or MDL models (folders inside are fine).
   Each model gets a picture. MDL files from Quake 1, Half-Life and Source are converted (not yet tried on real
-  game files). A prop or cast member whose name matches an imported model uses that model.
+  game files). Models are sorted into categories made from their own names (Vehicles, Animals, Furniture, Food...)
+  with search; 🗑 deletes one, **☑ Select** deletes several at once (files go to the trash folder). Removing a whole
+  pack is under **Packs** at the bottom. A prop or cast member whose name matches an imported model uses that
+  model; with no exact match the closest one is used (a mail van → the ambulance, a dog → the pug, a police car →
+  the cop car). Models are scaled to the real thing's size (a pug is 0.35 m, not the size in its file), and parts a
+  pack left plain grey get colours from their names ("Red", "Windows", "Lights").
 - **🧍 Actors** - the extra people in your scenes (a mom, a store clerk…): a generic body dressed from a
   description, a rigged `.blend`, or an imported model, each with a voice.
 - **✨ Effects** - the particle effects with looping previews. Change colours, amount, speed and size; **Save &
@@ -190,6 +195,17 @@ brackets at the start of a line.
 [wide, walk_to_counter] Fine. I'll make it myself.
 ```
 Cameras, actions, expressions and sounds from the tables below can all go in the brackets.
+
+### Your own animations
+An animation can be a small file in `assets/anims/<name>.json` that strings together ready-made poses
+(`pipeline/animlib.py` lists them: hand_to_chin, hand_at_mouth, palm_up_out, wave_up, hand_on_hip...). Its name
+then works like any action: `[shrug] Who knows?`. Example:
+```
+{"name": "shrug", "description": "Shrugs - who knows?", "length": 1.4,
+ "keys": [{"t": 0, "both": "rest"}, {"t": 0.35, "both": "palm_up_out", "head": "head_tilt", "body": "shoulders_up"},
+          {"t": 1.1, "both": "palm_up_out", "head": "head_tilt"}, {"t": 1.4, "both": "rest"}]}
+```
+(Next: the AI will write these for you when a script asks for something she can't do yet.)
 
 ### Light and time of day
 `[sunset]`, `[night]`, `[dawn]` or `[day]` changes the light from that line on (until the next change) - for a

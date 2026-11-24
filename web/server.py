@@ -1141,10 +1141,18 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     o = cfg["ollama"]
                     place = (catalog.all_sets().get(b.get("set", "cafe")) or {}).get("description", "")
-                    char = S.load_character(b.get("character") or cfg["active_character"]).get("name", "")
+                    cid = b.get("character") or cfg["active_character"]
+                    prof = S.load_character(cid)
+                    char = prof.get("name", "")
                     plan = llm.find_cast(o["url"], o["model"], [s.get("line", "") for s in res["shots"]],
                                          char or "the main character", place)
-                    autodirect.add_cast_plan(res, plan)
+                    skip = [cid, *S.speaker_names(prof)]          # never cast the main characters themselves
+                    for c in co:
+                        try:
+                            skip += [c, *S.speaker_names(S.load_character(c))]
+                        except Exception:
+                            skip.append(c)
+                    autodirect.add_cast_plan(res, plan, skip)
                 except Exception as exc:
                     res["cast_note"] = f"AI cast check skipped ({exc.__class__.__name__})"
             return self.send_json(res)

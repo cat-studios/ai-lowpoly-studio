@@ -42,7 +42,8 @@ ANGRY = re.compile(r"\b(hate|ugh|stupid|seriously|enough|grr+|hiss\w*|angry|mad|
 SAD = re.compile(r"\b(sorry|sad|cry|crying|alone|miss|nobody|sigh|lonely|why me)\b", re.I)
 LAUGH = re.compile(r"\b(ha(ha)+|he(he)+|lol|lmao)\b", re.I)
 WIN = re.compile(r"\b(yay|yes!|did it|worked|win|genius|perfect|victory|finally)\b", re.I)
-SCARED = re.compile(r"\b(help|scary|scared|ghost|run!?|no no|monster)\b", re.I)
+SCARED = re.compile(r"\b(help|scary|scared|ghosts?|no no|monsters?)\b|\brun(!|\s+away\b|\s+for (it|your life)\b)", re.I)
+# ("run" alone isn't fear: "I run the place", "run by a cat" got the scared pose)
 CAPS = re.compile(r"\b[A-Z]{3,}\b")
 
 CAM_CYCLE = ["closeup", "medium", "side", "dramatic", "low", "macro", "closeup", "medium", "tiny", "dramatic"]
@@ -138,6 +139,7 @@ def parse_directions(line, marks):
         inner = inner[:sc.start()] + inner[sc.end():]
     tokens = [t.replace("-", "_") for t in re.split(r"[,\s]+", inner.strip().lower()) if t]
     tokens = _take_cast(tokens, marks, d)
+    late = []                              # actions named only by the AI's own words ("floating")
     for i, t in enumerate(tokens):
         joined = re.fullmatch(r"(walk_to|run_to|sneak_to)_(\w+)", t)   # AI often writes walk_to_center
         if joined and joined.group(2) in marks:
@@ -176,6 +178,12 @@ def parse_directions(line, marks):
             d["face"] = t.split(":", 1)[-1].replace("face_", "")
         elif re.fullmatch(r"\d+(\.\d+)?s?", t):
             d["duration"] = float(t.rstrip("s"))
+        elif t in MOOD_WORDS:                       # "[jump, excited]": the AI's own mood words
+            d.setdefault("expression", MOOD_WORDS[t])
+        elif t in ANIM_WORDS:                       # "[floating]" - only when no real action was named
+            late.append(ANIM_WORDS[t])
+    if late and "action" not in d:
+        d["action"] = late[0]
     if "to" in d and d.get("action") == "point":
         d["at"] = d.pop("to")              # "[point counter]": point AT it, don't walk there
     elif "to" in d and d.get("action") not in catalog.MOVE_ANIMS:
@@ -187,6 +195,33 @@ def cast_kind(name):
     """'mom' -> person, 'car' -> thing (a guess; the episode's cast entry can say otherwise)."""
     words = set(re.split(r"[_\s]+", name.lower()))
     return "person" if words & catalog.PERSON_WORDS or name.rstrip("s") in catalog.PERSON_WORDS else "thing"
+
+
+def _known_word(t, marks):
+    """A bracket word that means something on its own (a camera, verb, mark, mood...) - not part of a name."""
+    return (t.startswith(("+", "from_", "to:", "fx:", "sfx:", "light:", "face:")) or t in marks
+            or t in catalog.CAMERAS or t in catalog.MOVES or t in catalog.ANIMS or t in catalog.EXPRESSIONS
+            or t in catalog.CAST_VERBS or t in catalog.LIGHTS or t in catalog.LIGHT_ALIASES
+            or t in catalog.PARTICLES or t in catalog.PARTICLE_ALIASES or t in MOOD_WORDS or t in ANIM_WORDS)
+
+
+# words the AI writes in brackets that aren't in the vocabulary, mapped onto it
+MOOD_WORDS = {   # -> expression
+    **dict.fromkeys("excited joyful cheerful delighted glad thrilled giddy ecstatic playful".split(), "happy"),
+    **dict.fromkeys("shocked amazed startled stunned shook astonished gasp".split(), "surprised"),
+    **dict.fromkeys("mad furious annoyed grumpy frustrated irritated".split(), "angry"),
+    **dict.fromkeys("worried nervous afraid terrified panicked frightened anxious".split(), "scared"),
+    **dict.fromkeys("upset gloomy disappointed sorry heartbroken".split(), "sad"),
+    **dict.fromkeys("proud confident cocky sassy sly smirking".split(), "smug"),
+}
+ANIM_WORDS = {   # -> animation, used only when the brackets name no action of their own
+    "floating": "float_up", "flying": "float_up", "hovering": "float_up", "dancing": "dance", "jumping": "jump",
+    "waving": "wave", "laughing": "laugh", "giggling": "laugh", "crying": "sad", "sobbing": "sad",
+    "pointing": "point", "thinking": "think", "confused": "think", "puzzled": "think", "curious": "think",
+    "clapping": "clap", "bowing": "bow", "spinning": "spin", "shivering": "shiver", "sneezing": "sneeze",
+    "celebrating": "celebrate", "cheering": "celebrate", "stretching": "stretch", "nodding": "nod",
+    "shrug": "shake_head", "shrugging": "shake_head", "facepalming": "facepalm",
+}
 
 
 def _take_cast(tokens, marks, d):
@@ -202,6 +237,15 @@ def _take_cast(tokens, marks, d):
         who = re.sub(r"[^a-z0-9_]+", "", who)[:24]
         ev = {"who": who}
         i += 1
+        if not verb:
+            # "+mail van crash_in": the AI wrote a two- or three-word name - the words up to the verb are the name
+            j, extra = i, []
+            while j < len(tokens) and len(extra) < 2 and not _known_word(tokens[j], marks):
+                extra.append(re.sub(r"[^a-z0-9_]+", "", tokens[j]))
+                j += 1
+            if extra and j < len(tokens) and (tokens[j] in catalog.CAST_VERBS or tokens[j] in catalog.ANIMS):
+                who = "_".join([who, *extra])[:24]
+                ev["who"], i = who, j
         if not verb and i < len(tokens) and (tokens[i] in catalog.CAST_VERBS or tokens[i] in catalog.ANIMS):
             verb = tokens[i]
             i += 1
@@ -234,14 +278,21 @@ def _stage_for_events(shot, d):
         shot["camera"] = "medium"     # only these cameras pull back to show the arrival beside her (a side shot lost the dog)
 
 
-def add_cast_plan(result, plan):
-    """Merge an AI cast plan (llm.find_cast) into a directed result. Hand-written '+name' directions win."""
+ARRIVALS = ("enter", "crash_in", "appear", "fall", "fly_by", "run_to", "walk_to")
+SELF_WORDS = {"me", "i", "myself", "narrator", "main_character", "the_main_character", "she", "her", "speaker"}
+
+
+def add_cast_plan(result, plan, skip=()):
+    """Merge an AI cast plan (llm.find_cast) into a directed result. Hand-written '+name' directions win.
+    skip: the main characters' names/ids - the AI sometimes casts her (a second, blocky "catgirl" in every shot)."""
     if not isinstance(plan, dict):
         return result
     shots, cast = result["shots"], result.setdefault("cast", {})
+    flat = lambda s: re.sub(r"[^a-z0-9]+", "", str(s).lower())    # noqa: E731 - "Cat girl" == "catgirl"
+    skip = {flat(s) for s in skip if s} | {flat(s) for s in SELF_WORDS}
     for name, info in (plan.get("cast") or {}).items():
         who = re.sub(r"[^a-z0-9_]+", "", str(name).lower().replace(" ", "_"))[:24]
-        if not who or not isinstance(info, dict):
+        if not who or not isinstance(info, dict) or flat(who) in skip:
             continue
         cur = cast.get(who) or {}
         if not cur.get("looks") or cur.get("looks") == who.replace("_", " "):
@@ -259,6 +310,9 @@ def add_cast_plan(result, plan):
         shot = shots[i]
         if any(x["who"] == who for x in shot.get("events", [])):
             continue                         # the script already says what they do here
+        if e.get("do") in ARRIVALS and any(x["who"] == who and x.get("do") in ARRIVALS
+                                            for s in shots for x in s.get("events", [])):
+            continue                         # the script brings them in itself: one entrance, not two
         verb = e.get("do") if (e.get("do") in catalog.CAST_VERBS or e.get("do") in catalog.ANIMS) else "enter"
         if cast[who]["type"] == "thing" and verb in catalog.ANIMS and verb not in catalog.CAST_VERBS:
             verb = "shake"
@@ -472,6 +526,7 @@ EXITS = ("door", "far")
 ARRIVAL_CAMS = ("wide", "medium", "high", "low")   # blender_build frames her + an arrival together only for these
 PLAIN_MARKS = ("center", "front", "left", "right", "back", "far")   # places, not things she could point at                 # walking there mid-line looks like she's leaving
 CLOSE_CAMS = ("closeup", "macro", "dramatic")   # too tight to follow a walk (the camera ends up in her hair)
+HAPPY_ANIMS = ["nod", "laugh", "clap", "idle", "celebrate", "nod", "laugh", "idle"]   # happy lines that aren't greetings
 SHOW_ANIMS = ("wave", "blow_kiss", "clap", "celebrate", "point")   # gestures that need the front and her hands
 
 
@@ -523,7 +578,8 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
     start_marks = list(marks)              # "start" belongs to the first set, even if the script moves on
     lines = [l for l in (script or "").splitlines() if l.strip()]
     speakers = dict(speakers or {})
-    for who in re.findall(r"\+([a-z0-9_]+)", "\n".join(re.findall(r"\[[^\]]*\]", (script or "").lower()))):
+    brought = [ev["who"] for l in lines for ev in parse_directions(l, marks)[0].get("events", [])]
+    for who in brought:
         if cast_kind(who) == "person":     # "[+mom enter] ..." then "Mom: ..." - mom says that line
             speakers.setdefault(who.replace("_", " "), who)
             speakers.setdefault(who, who)
@@ -581,6 +637,11 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             action, expr = shots[-1]["action"], shots[-1]["expression"]
             if action in catalog.MOVE_ANIMS:
                 action = "idle"
+        if mood == "happy" and action == "wave":
+            # a wave is a greeting (hi/bye words are caught by action_of above); other happy lines get an upbeat
+            # move that changes from shot to shot - every "nya!" used to be a wave
+            recent = [s.get("action") for s in shots[-2:]]
+            action = next((a for a in HAPPY_ANIMS[i % len(HAPPY_ANIMS):] + HAPPY_ANIMS if a not in recent), "nod")
         shot = {}
         if i == 0 and "action" not in d:
             # open by walking in, toward the camera so her face is seen (she may start further back)
@@ -645,6 +706,10 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                 cast[ev["who"]] = {"type": cast_kind(ev["who"]), "looks": ev["who"].replace("_", " ")}
         if shot.get("action") in catalog.MOVE_ANIMS:
             shot.setdefault("to", _pick_dest(marks, pos, visits))
+            a_, b_ = _xy(sets, cur_set, pos), _xy(sets, cur_set, shot["to"]) if isinstance(shot["to"], str) else None
+            if a_ and b_ and b_[1] - a_[1] > 1.0 and abs(b_[1] - a_[1]) > abs(b_[0] - a_[0]) and "camera" not in d:
+                # walking away from the camera: from the front that's her back for the whole line
+                shot.update(camera="side", move="follow")
             pos = shot["to"]
             visits[pos] = visits.get(pos, 0) + 1
         elif shot.get("action") == "point":

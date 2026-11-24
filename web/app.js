@@ -1586,7 +1586,7 @@ async function pageAssets(tab) {
   $$("[data-astab]").forEach((b) => b.onclick = () => { AS_TAB = b.dataset.astab; location.hash = "#assets"; pageAssets(); });
   const body = $("#as-body");
   if (AS_TAB === "props") return assetsProps(body, props);
-  if (AS_TAB === "imported") return assetsImported(body, imp.packs);
+  if (AS_TAB === "imported") return assetsImported(body);
   if (AS_TAB === "actors") return assetsActors(body, actors);
   if (AS_TAB === "fx") return assetsFx(body, fx);
   A_TAB = AS_TAB === "sfx" ? "sfx" : "music";
@@ -1907,32 +1907,43 @@ const IMP_FORMAT = { obj: "OBJ", fbx: "FBX", blend: "BLEND", mdl: "MDL" };
 const IMP_STATUS = { ok: ["ok", "ready"], needs_conversion: ["err", "needs conversion"], failed: ["err", "failed"] };
 
 
+// Imported tab: models grouped by a category made from their own names (not by the zip they came in), with
+// search, category chips, a delete button on each card and "Select" mode to delete several at once.
+// Deleted models' files move to assets/imported/packs/.trash (nothing is deleted for good).
+const IMP = { cat: "all", q: "", select: false, picked: new Set() };
+
 function impModelCard(m) {
   const [cls, label] = IMP_STATUS[m.status] || ["err", m.status];
-  const h = m.height ? `↕ ${(+m.height).toFixed(m.height < 1 ? 2 : 1)} m` : "";
-  return `<div class="asset-card" title="${esc(m.folder || "")}">
-    <div class="asset-thumb checker">${m.preview ? `<img src="${esc(m.preview)}" alt="${esc(m.name)}" loading="lazy">`
-      : `<div class="asset-noimg"><span>📦</span><small>no picture</small></div>`}</div>
+  const hh = m.real_height || m.height;
+  const h = hh ? `↕ ${(+hh).toFixed(hh < 1 ? 2 : 1)} m` : "";
+  const on = IMP.picked.has(m.id);
+  return `<div class="asset-card ${on ? "pick-on" : ""}" data-imp-card="${esc(m.id)}" title="${esc(m.pack)} · ${esc(m.folder || "")}">
+    <div class="asset-thumb checker">${m.preview ? `<img src="${esc(m.preview)}?v=${m.preview_v || 1}" alt="${esc(m.name)}" loading="lazy">`
+      : `<div class="asset-noimg"><span>📦</span><small>no picture</small></div>`}
+      ${IMP.select ? `<span class="badge-corner" style="background:${on ? "var(--accent)" : "rgba(23,20,31,.85)"};color:${on ? "#1b1524" : "var(--muted)"}">${on ? "✓ picked" : "pick"}</span>` : ""}</div>
+    ${IMP.select ? "" : `<div class="asset-actions"><button data-imp-rm="${esc(m.id)}" title="Delete this model">🗑</button></div>`}
     <div class="asset-info"><div class="asset-name">${esc(m.name)}</div>
       <div class="asset-meta"><span class="chip">${esc(IMP_FORMAT[m.format] || m.format)}</span>${h ? `<span class="chip">${h}</span>` : ""}
-        <span class="pill ${cls}" title="${esc(m.note || "")}">${label}</span></div></div></div>`;
+        <span class="pill ${cls}" title="${esc(m.note || "")}">${label}</span></div>
+      <div class="muted small">${esc(m.pack)}</div></div></div>`;
 }
 
-function impPackCard(p) {
-  const ready = p.models.filter((m) => m.status === "ok").length;
-  return `<div class="panel" style="margin-top:12px">
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <b style="flex:1">${esc(p.name)}</b> <span class="pill ok">${esc(p.license)}</span>
-      <button class="danger" data-imp-del="${esc(p.id)}">Remove pack</button></div>
-    <p class="muted small" style="margin:6px 0 0">${p.models.length} models · ${ready} ready${p.skipped ? ` · ${p.skipped} other files ignored` : ""} · from ${esc(p.source)} · ${ago(p.added)}</p>
-    <div class="asset-grid" style="margin-top:10px">${p.models.map(impModelCard).join("")}</div></div>`;
-}
-
-function assetsImported(box, packs) {
+async function assetsImported(box) {
+  const data = await api("GET", "/api/imported/all");
+  const models = data.models;
+  const cats = {};
+  models.forEach((m) => { cats[m.category] = (cats[m.category] || 0) + 1; });
+  const catNames = Object.keys(cats).sort((a, b) => cats[b] - cats[a]);
+  if (IMP.cat !== "all" && !cats[IMP.cat]) IMP.cat = "all";
+  const q = IMP.q.trim().toLowerCase();
+  const shown = models.filter((m) => (IMP.cat === "all" || m.category === IMP.cat)
+    && (!q || `${m.name} ${m.pack} ${m.category}`.toLowerCase().includes(q)));
+  for (const id of [...IMP.picked]) if (!models.some((m) => m.id === id)) IMP.picked.delete(id);
+  const groups = catNames.filter((c) => shown.some((m) => m.category === c));
   box.innerHTML = `
     <div class="asset-toolbar">
-      <p class="muted small" style="margin:0;flex:1">Real models from packs you downloaded. When a scene or script needs a prop, the studio checks these <b>first</b>:
-        if a model's file or folder name matches (a "pine_tree.fbx" for a "tree") it is used as it is. Only when nothing matches does the studio generate its own. Imported and generated props are kept apart.</p>
+      <p class="muted small" style="margin:0;flex:1">Real models from packs you downloaded, sorted by what they are. When a scene or script needs a prop, the studio checks these <b>first</b> -
+        a model named after the thing, or the closest one there is (an ambulance for a mail van). Only when nothing fits does the studio make its own.</p>
     </div>
     <div class="panel">
       <h3 style="margin-top:0">Import a pack</h3>
@@ -1945,8 +1956,29 @@ function assetsImported(box, packs) {
         <input type="file" id="ip-file" accept=".zip,application/zip" hidden></div>
       <div class="inline-job" id="ip-job"></div>
     </div>
-    ${packs.length ? packs.map(impPackCard).join("") : '<p class="muted" style="margin-top:12px">No imported packs yet.</p>'}`;
+    ${models.length ? `
+    <div class="panel" style="margin-top:12px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label class="search" style="flex:1;min-width:180px">🔎<input type="text" id="imp-q" placeholder="Search ${models.length} models" value="${esc(IMP.q)}"></label>
+        <button id="imp-sel">${IMP.select ? "Done" : "☑ Select"}</button>
+        ${IMP.select ? `<button id="imp-all">Pick all shown (${shown.length})</button><button id="imp-none">Clear</button>
+          <button class="danger" id="imp-del" ${IMP.picked.size ? "" : "disabled"}>🗑 Delete ${IMP.picked.size || ""} picked</button>` : ""}
+      </div>
+      <div class="chips-row" style="margin-top:10px">
+        <button class="chip-btn ${IMP.cat === "all" ? "on" : ""}" data-imp-cat="all">All · ${models.length}</button>
+        ${catNames.map((c) => `<button class="chip-btn ${IMP.cat === c ? "on" : ""}" data-imp-cat="${esc(c)}">${esc(c)} · ${cats[c]}</button>`).join("")}
+      </div>
+    </div>
+    ${groups.map((c) => `<h3 style="margin:18px 0 8px">${esc(c)} <span class="muted small">${shown.filter((m) => m.category === c).length}</span></h3>
+      <div class="asset-grid">${shown.filter((m) => m.category === c).map(impModelCard).join("")}</div>`).join("")
+      || '<p class="muted" style="margin-top:12px">No models match.</p>'}
+    <details class="panel" style="margin-top:18px"><summary><b>Packs</b> <span class="muted small">(${data.packs.length} - where the models came from)</span></summary>
+      ${data.packs.map((p) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <span style="flex:1">${esc(p.name)} <span class="muted small">· ${p.count} models · from ${esc(p.source || "")} · ${ago(p.added)}</span></span>
+        <span class="pill ok">${esc(p.license || "")}</span><button class="danger" data-imp-pack="${esc(p.id)}">Remove pack</button></div>`).join("")}
+    </details>` : '<p class="muted" style="margin-top:12px">No imported packs yet.</p>'}`;
 
+  const redraw = () => assetsImported(box);
   $("#ip-go").onclick = () => $("#ip-file").click();
   $("#ip-file").onchange = guard(async () => {
     const f = $("#ip-file").files[0];
@@ -1961,9 +1993,42 @@ function assetsImported(box, packs) {
       await pageAssets("imported");
     });
   });
-  $$("[data-imp-del]").forEach((b) => b.onclick = guard(async () => {
-    const p = packs.find((x) => x.id === b.dataset.impDel);
-    if (!(await uiConfirm(`Remove "${p.name}" (${p.models.length} models)? Its files move to the pack trash folder - nothing is deleted for good.`,
+  if (!models.length) return;
+  const qBox = $("#imp-q");
+  qBox.oninput = () => { IMP.q = qBox.value; clearTimeout(IMP.t); IMP.t = setTimeout(async () => {
+    await redraw(); const nq = $("#imp-q"); nq.focus(); nq.setSelectionRange(nq.value.length, nq.value.length); }, 250); };
+  $$("[data-imp-cat]").forEach((b) => b.onclick = () => { IMP.cat = b.dataset.impCat; redraw(); });
+  $("#imp-sel").onclick = () => { IMP.select = !IMP.select; if (!IMP.select) IMP.picked.clear(); redraw(); };
+  if (IMP.select) {
+    $("#imp-all").onclick = () => { shown.forEach((m) => IMP.picked.add(m.id)); redraw(); };
+    $("#imp-none").onclick = () => { IMP.picked.clear(); redraw(); };
+    $("#imp-del").onclick = guard(async () => {
+      const n = IMP.picked.size;
+      if (!n || !(await uiConfirm(`Delete ${n} model${n > 1 ? "s" : ""}? Their files move to the imported trash folder - nothing is deleted for good.`,
+        { title: "Delete models", ok: `Delete ${n}`, danger: true }))) return;
+      const r = await api("POST", "/api/imported/delete", { ids: [...IMP.picked] });
+      IMP.picked.clear(); IMP.select = false;
+      toast(`${r.deleted} model${r.deleted === 1 ? "" : "s"} deleted`);
+      await pageAssets("imported");
+    });
+    $$("[data-imp-card]").forEach((c) => c.onclick = () => {
+      const id = c.dataset.impCard;
+      if (IMP.picked.has(id)) IMP.picked.delete(id); else IMP.picked.add(id);
+      redraw();
+    });
+  }
+  $$("[data-imp-rm]").forEach((b) => b.onclick = guard(async (e) => {
+    e.stopPropagation();
+    const m = models.find((x) => x.id === b.dataset.impRm);
+    if (!(await uiConfirm(`Delete "${m.name}"? Its files move to the imported trash folder - nothing is deleted for good.`,
+      { title: "Delete model", ok: "Delete", danger: true }))) return;
+    await api("DELETE", `/api/imported/model/${encodeURIComponent(m.id)}`);
+    toast(`"${m.name}" deleted`);
+    await pageAssets("imported");
+  }));
+  $$("[data-imp-pack]").forEach((b) => b.onclick = guard(async () => {
+    const p = data.packs.find((x) => x.id === b.dataset.impPack);
+    if (!(await uiConfirm(`Remove the whole "${p.name}" pack (${p.count} models)? Its files move to the pack trash folder - nothing is deleted for good.`,
       { title: "Remove pack", ok: "Remove", danger: true }))) return;
     await api("DELETE", `/api/imported/pack/${p.id}`);
     toast("Pack removed");

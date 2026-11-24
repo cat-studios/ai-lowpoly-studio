@@ -99,6 +99,12 @@ def make_coherent(plan):
         colours = dict(plan.get("colors") or {})
         colours["floor"] = colours["floor2"] = GROUND[floor][0]
         plan["colors"] = colours
+    if not outside:                                  # weather doesn't happen indoors (snow fell in a post office)
+        weather = {"snow", "rain", "droplets", "leaves", "petals"}
+        gone = [p for p in plan.get("particles") or [] if isinstance(p, str) and p in weather]
+        if gone:
+            plan["particles"] = [p for p in plan.get("particles") or [] if p not in gone]
+            fixes.append(f"removed {', '.join(gone)} (indoors)")
     if climate:
         keep = []
         for p in plan.get("particles") or []:
@@ -287,6 +293,8 @@ def place_for_title(url, model, title, temperature=0.4):
               "where the video should start - the most natural, visual setting for the topic, described plainly "
               "in 2-6 words (e.g. 'What if every ant vanished?' -> 'garden with an ant hill'; 'How heavy is a "
               "cloud?' -> 'grassy hill under big clouds'; 'Why do we dream?' -> 'cozy bedroom at night'). "
+              "When the title names a place, the video starts IN that place ('What if cats ran the post office?' "
+              "-> 'inside a post office', not the street outside it). "
               'Reply with JSON only: {"place": "...", "where": "inside" or "outside" or "air"}. where = air only '
               "when the place has no ground (sky, space, under the sea).")
     r = chat_json(url, model, system, f"Title: {title}", temperature)
@@ -358,6 +366,7 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         "You write scripts for short vertical videos (Instagram Reels) starring ONE animated character who "
         "talks to the camera. Each line is one shot. Keep every line short and punchy (max 14 words), spoken "
         "in first person by the character, with a clear setup, escalation and a punchline at the end.\n"
+        "Keep it family-friendly: no swearing (no damn, hell, crap...) and correct, natural English.\n"
         "Output ONLY the script lines, one per line. No numbering, no names, no stage directions in "
         "parentheses, no title, no commentary.\n"
         "You MAY start a line with directions in square brackets, using ONLY these words:\n"
@@ -365,7 +374,8 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         f"places to walk to (with walk_to/run_to/sneak_to): {marks}\n"
         f"sound effects (optional, at most one per line, only when it fits): {sfx_names}\n"
         "When another person or a thing actually shows up in the scene, bring it on screen with '+name verb' in "
-        "the brackets (one short lowercase name, reuse the same name later). A person you brought in may say a "
+        "the brackets (ONE lowercase word or words_joined_by_underscores, e.g. +mail_van, never two separate "
+        "words; reuse the same name later). A person you brought in may say a "
         "line: start that line with their name and a colon (Mom: You forgot your lunch!). Things never speak; "
         "keep most lines for the main character.\n"
         "Lighting can change at a line with one of: day, sunset, night, dawn in the brackets (it lasts until the "

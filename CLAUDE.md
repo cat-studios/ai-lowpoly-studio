@@ -196,6 +196,73 @@ A 22-shot cafe → park test render was checked frame by frame. Fixed and checke
   moves a speaker's entrance - a side shot lost the dog.
 Checking poses: renders at `"render_res": [540, 960]` - at the default 216×384 the facing was misread twice.
 
+## Second test round (2026-11-25, "What if cats ran the post office?", made through the dev API like the Create page)
+`output/zz_test_post_office.mp4` (before) / `_v2.mp4` (after). Fixed:
+- **Imported models first, with stand-ins** (`imported.match`): the name's LAST word is the thing itself; a model
+  named after it, or a stand-in from `NEAREST` (van → ambulance/SUV/bus, truck → ambulance/bus, police → Cop,
+  dog → Pug, goldfish → fish, dinosaur → Trex...), wins over a model that only shares the other words ("ice cream
+  truck" was the IceCream Cone). Synonym hits score less than real ones; `stand_in: true` is logged. Never one
+  animal species for another. The dev copy has the user's packs copied from production for testing.
+- **Vehicle templates** (`propgen.vehicle_family/vehicle_parts/make_vehicle`, when no imported model fits): car /
+  van / truck / bus, coloured from colour words, `VEHICLE_COLORS` (mail = blue, taxi = yellow...) or the AI design;
+  real lengths (`VEHICLE_SIZE`), "toy/mini" ones tiny. Built nose-first along -y (moving things turn -y to their
+  travel direction). `template_for()`/`apply_template()` cover animals + vehicles; old library ones are rebuilt once.
+  The AI's van was four overlapping tilted 4 m slabs.
+- Big arrivals (radius ≥ 1.2 m) never land straight behind her unless nothing else fits (`blender_cast.spot`): the
+  van filled the background of every later shot.
+- Director: happy lines without greeting words rotate `HAPPY_ANIMS` (nod, laugh, clap, idle, celebrate) instead of
+  waving (4 waves in 25 s); a walk away from the camera gets `side` + `follow` (her back for a whole line);
+  `+mail van crash_in` = one cast member `mail_van` (`_known_word`, also in the speaker pre-scan: "Old lady: ...");
+  the AI's own words map onto the vocabulary (`MOOD_WORDS` excited → happy..., `ANIM_WORDS` floating → float_up,
+  only when no real action is named).
+- Blender: a still camera on a walk frames from the end nearest the camera (walking toward it she ended up almost
+  in the lens). `a_sneeze` = forearm across the mouth then the head drops into it; `a_blow_kiss` = hand at the lips
+  then thrown forward (both read as waves/points before; same forward + twisted-in arm as the facepalm).
+- Sounds: everyday trigger words removed (boing had "what"/"wait", ding "got", tada "did/finally/win", coin
+  "point", stomp "fall", fail "wrong/sad/nobody", sparkle "wow", whoosh "fast/fly").
+- Title: its own dark outline (`captions.title_outline`, default 1) - over a pale sky it was hard to read.
+- Prompts: `place_for_title` starts IN a place the title names (post office → not "busy city street corner");
+  `generate_script` asks for family-friendly lines (no swearing) and one-word cast names (`+mail_van`).
+- Music is a per-video choice (about half the user's videos have none) - `audio.default_music` left alone.
+
+Round 2b (v2 → `_v3`/`_v4`, same script directed again):
+- Weather never comes from an indoor set's defaults: `llm.make_coherent` drops snow/rain/droplets/leaves/petals
+  for inside plans, `blender_fx.WEATHER` filters an indoor recipe's default at render (a shot may still ask).
+- The AI cast step never casts the main characters (`add_cast_plan(..., skip=names)`, server passes the character's
+  and co-stars' `speaker_names`; `run_episode.resolve_cast` also drops them from older episodes) - "catgirl" was a
+  generic-human double in every shot. AI arrivals are skipped when the script brings that person in itself.
+- `SCARED` no longer matches a bare "run" ("I run the place"): only run!/run away/run for it.
+- People given things' verbs (crash_in/fall/fly_by) run in instead (`resolve_cast`).
+- Close shots (closeup/dramatic/macro) put captions lower (MarginV 15% of height) - they covered her face.
+- Cameras check for blockers (`_view_blocked`/`_clear_view`: floor props from OBST, cast tracks, `blender_cast.TAKEN`)
+  at the shot's start/middle/end (along the path for `follow`) and swing round her to the nearest clear angle,
+  preferring the camera's side of her.
+- Imported models: real heights (`imported.TYPICAL_HEIGHT` by name, else `ask_height` → Ollama, cached in the index
+  as `real_height`; `match_model` scales width with it) - files use any units (Pug 2.65, Cow 5.1, Bicycle 3.1).
+  `blender_models.recolour_grey`: materials left at Blender's default grey (0.64) get colours from their names
+  (`NAME_COLOURS`: Red, Windows, Lights, Wheel...) or the vehicle's body colour (`BODY_COLOURS`) - the Public
+  Transport pack had 48/48 grey materials (no texture files exist; previews redrawn in dev only).
+- Assets → Imported: models grouped by `imported.categorised()` (categories from model names, `CATEGORIES`; a
+  name that says nothing takes its pack's majority category), search + category chips, 🗑 per card, ☑ Select +
+  "Delete N picked" (`delete_models`: same-stem files + preview → `packs/.trash/models-<stamp>/`), packs listed
+  under a collapsed "Packs" with Remove pack. API: `GET /api/imported/all`, `DELETE /api/imported/model/<id>`,
+  `POST /api/imported/delete {ids}`.
+
+## Animations as data (phase 1 done 2026-11-25; plan: generator → vision check → director hookup)
+- `pipeline/animlib.py`: pose vocabulary - `ARM` (one arm: arm/raise/rot/elbow; rest, slump, hand_to_chin,
+  hand_at_mouth, hand_over_eyes (+0.2 nod), arm_forward, reach_forward, point_side, wave_up, arm_up_high,
+  hand_by_face, fist_up, across_body, palm_up_out, hand_on_hip, behind_back), `HEAD`, `BODY` (added). Each arm
+  pose was rendered and checked (`hand_by_face` needed rot 1.1 - the surprised values only read with both arms
+  plus the hop). Format: `{name, description, length, loop, keys: [{t, R/L/both, head, body}], shake}`;
+  `validate()`, `library()` (BUILTIN `x_` examples + `assets/anims/*.json`, gitignored), `sample()`.
+- `blender_build` registers every library animation in `ANIMS` (`_anim_player`: arms go to the pose, head/body
+  are added, `env` ramp); `catalog.ANIMS` lists them (not `x_`), so `[shrug]` works in scripts and the UI.
+  `x_facepalm/x_sneeze/x_blow_kiss` render the same as the hand-coded ones.
+- Next (phase 2-4): `animgen.py` (Ollama writes this format from `describe_for_ai()` + the x_ examples), a vision
+  check (render a strip, ask qwen3.5 "does this look like X?", retry with the critique), Assets → Animations tab,
+  director: unknown action words → make the animation (user still to decide: automatic or a button; ~30 s each);
+  pick a camera that fits arms-out poses (a closeup crops a shrug).
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

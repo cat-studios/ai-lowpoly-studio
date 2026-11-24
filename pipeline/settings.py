@@ -43,6 +43,7 @@ DEFAULTS = {
         "uppercase": True,
         "title_size": 0.04,
         "title_seconds": 3.0,
+        "title_outline": 1,              # the title's dark outline (low-res pixels) - it sits over pale skies/walls
         "color": "#dcf5fa",
         "shadow_color": "#302040",
         "outline": 0,                    # 0 = drop shadow only; 1-3 = outline thickness (low-res pixels)

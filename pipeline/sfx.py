@@ -26,31 +26,33 @@ CUSTOM_SLOTS = SFX_DIR / "custom_slots.json"
 AUDIO_EXT = (".wav", ".mp3", ".ogg", ".m4a", ".flac")
 
 # name: (label, kind, trigger words, seconds, aevalsrc expression, extra filter)
+# Trigger words are sound words and clear cues only - everyday words ("what", "wait", "got", "did", "point") put
+# a boing or ta-da on half the lines of a script.
 SLOTS = {
     "boom": ("Boom / explosion", "oneshot", "boom kaboom explode explosion exploded firework fireworks bang blast",
              2.0, "(random(0)*2-1)*exp(-3*t)*0.9+sin(2*PI*(60-25*t)*t)*exp(-2.5*t)", "lowpass=f=700,volume=1.6"),
     "pop": ("Pop", "oneshot", "pop popped bubble poof", 0.2,
             "sin(2*PI*(1100-900*t/0.2)*t)*exp(-30*t)", ""),
-    "boing": ("Boing (surprise)", "oneshot", "boing bounce bouncy huh wait what", 0.7,
+    "boing": ("Boing (surprise)", "oneshot", "boing bounce bouncy boinng", 0.7,
               "sin(2*PI*(200+110*sin(2*PI*14*t))*t)*exp(-4*t)", ""),
     "jump": ("Jump (8-bit)", "oneshot", "jump hop leap", 0.3,
              "0.35*sgn(sin(2*PI*(220+1400*t)*t))*exp(-5*t)", "lowpass=f=5000"),
-    "coin": ("Coin / point", "oneshot", "coin money cash score point points prize", 0.45,
+    "coin": ("Coin / point", "oneshot", "coin coins money cash score prize jackpot", 0.45,
              "0.3*sgn(sin(2*PI*if(lt(t,0.08),988,1319)*t))*if(lt(t,0.08),1,exp(-8*(t-0.08)))", "lowpass=f=6000"),
-    "ding": ("Ding (idea!)", "oneshot", "ding idea genius brilliant realized aha got", 1.4,
+    "ding": ("Ding (idea!)", "oneshot", "ding idea genius brilliant realized aha eureka", 1.4,
              "0.6*sin(2*PI*1760*t)*exp(-3*t)+0.25*sin(2*PI*2640*t)*exp(-5*t)", ""),
-    "tada": ("Ta-da / power-up", "oneshot", "tada ta-da yay hooray victory win won finally perfect did",
+    "tada": ("Ta-da / power-up", "oneshot", "tada ta-da yay hooray victory",
              1.0, "0.28*sgn(sin(2*PI*if(lt(t,0.12),523,if(lt(t,0.24),659,if(lt(t,0.36),784,1047)))*t))"
                   "*if(lt(t,0.36),1,exp(-4*(t-0.36)))", "lowpass=f=6000"),
-    "whoosh": ("Whoosh", "oneshot", "whoosh zoom fast swoosh fly flying dash", 0.6,
+    "whoosh": ("Whoosh", "oneshot", "whoosh zoom swoosh dash zooming", 0.6,
                "(random(0)*2-1)*sin(PI*t/0.6)", "bandpass=f=900:width_type=h:w=1400"),
     "hiss": ("Cat hiss", "oneshot", "hiss hisss hsss hss", 1.0,
              "(random(0)*2-1)*if(lt(t,0.08),t/0.08,exp(-1.6*(t-0.08)))", "highpass=f=2500,volume=1.4"),
-    "stomp": ("Stomp / thud", "oneshot", "stomp thud slam crash fall fell", 0.45,
+    "stomp": ("Stomp / thud", "oneshot", "stomp thud slam crash", 0.45,
               "sin(2*PI*(85-50*t)*t)*exp(-9*t)+0.5*(random(0)*2-1)*exp(-25*t)", "lowpass=f=900,volume=1.4"),
     "laser": ("Laser / zap", "oneshot", "laser pew zap blaster", 0.35,
               "0.6*sin(2*PI*(1800-4000*t)*t)*exp(-6*t)", ""),
-    "fail": ("Sad trombone (fail)", "oneshot", "fail failed oops nooo wrong nobody sad", 2.0,
+    "fail": ("Sad trombone (fail)", "oneshot", "fail failed oops nooo", 2.0,
              "0.3*sin(2*PI*if(lt(t,0.4),392,if(lt(t,0.8),370,if(lt(t,1.2),349,330+6*sin(2*PI*6*t))))*t)"
              "*if(lt(t,1.2),1,exp(-2*(t-1.2)))", "aeval='val(0)+0.4*sin(2*val(0))'"),
     "buzz": ("Error buzzer", "oneshot", "error buzzer denied", 0.5,
@@ -59,7 +61,7 @@ SLOTS = {
              "0.45*sin(2*PI*(520+380*sin(PI*t/0.6))*t+3*sin(2*PI*5*t))*sin(PI*t/0.6)", "lowpass=f=4000"),
     "click": ("Click / blip", "oneshot", "click tap button press", 0.08,
               "0.5*sgn(sin(2*PI*1600*t))*exp(-60*t)", ""),
-    "sparkle": ("Sparkle / magic", "oneshot", "sparkle magic shiny glitter wow", 1.2,
+    "sparkle": ("Sparkle / magic", "oneshot", "sparkle magic shiny glitter sparkly", 1.2,
                 "0.25*sin(2*PI*(2000+800*sin(2*PI*9*t))*t)*exp(-2.5*t)+0.2*sin(2*PI*3100*t)*exp(-4*t)", ""),
     # quiet background loops (20 s), picked by set theme
     "amb_arcade": ("Ambience: arcade bleeps", "ambience", "", 20.0,

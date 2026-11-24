@@ -41,6 +41,16 @@ ANIMS = {
 }
 MOVE_ANIMS = {k for k, (_, moves) in ANIMS.items() if moves}
 
+# animations made as data (pipeline/animlib.py, assets/anims/*.json) are actions too - in script brackets, the
+# Create page and the AI writer's list. The built-in "x_" examples only prove the format (they copy built-ins).
+try:
+    import animlib as _animlib
+    for _n, _a in _animlib.library().items():
+        if not _n.startswith("x_") and _n not in ANIMS:
+            ANIMS[_n] = (_a["description"] or _n.replace("_", " "), False)
+except Exception as _exc:          # a broken library never stops the studio
+    print(f"[catalog] animations library skipped: {_exc}")
+
 EXPRESSIONS = ["neutral", "happy", "surprised", "angry", "sad", "smug", "scared"]
 
 CAMERAS = {
