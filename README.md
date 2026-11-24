@@ -1,0 +1,411 @@
+# Low Poly Studio (ai-low-poly)
+
+Turn a short "What if…?" idea into a finished vertical Instagram Reel (1080×1920) in an N64 / VHS low-poly style,
+starring your VRoid catgirl. You write the script (or let the AI write it); everything after that is automated:
+directing, voice, 3D animation, cameras, render, filter, captions, music and sound.
+
+From idea to video:
+
+1. **Idea** - write a title yourself or get ✨ title ideas from Ollama. Or press 🎲 **Make a whole video** for a
+   random idea, a new scene, a script and shots in one go.
+2. **Script** - write it by hand, or have Ollama write it from the title, your character's "about" text and the set.
+3. **Directing** - each line becomes one or more shots with a camera, action, expression and sound effect. Override
+   any line with `[closeup, angry, boom]`-style directions.
+4. **Voice** - your own recording cloned with Chatterbox on your GPU (free). Every line is checked with Whisper and
+   regenerated if words are missing.
+5. **3D render** - Blender animates your model (walking, jumping, waving, cat ears reacting), with lip-sync and
+   facial expressions, plus any other characters, people and things in the scene.
+6. **Look** - a post filter matched to the reference video: chunky pixels, colour fringing, washed-out colours,
+   scanlines and grain. Seven presets.
+7. **Final mix** - pixel captions, title, watermark and end card, music at 5 %, timed sound effects, the set's
+   ambience, and a calm intro and outro with fades.
+
+## Installing on a new PC (Windows 10/11)
+
+1. **Python 3.12 or newer** (python.org; tick "Add to PATH"), then the one package the app itself needs:
+   ```powershell
+   python -m pip install edge-tts
+   ```
+2. **ffmpeg** (a full build with libass):
+   ```powershell
+   winget install Gyan.FFmpeg
+   ```
+3. **Blender 5.3** at `C:\Program Files\Blender Foundation\Blender 5.3\` (or set the `BLENDER` environment
+   variable to your `blender.exe`), plus its VRM add-on for importing VRoid models:
+   ```powershell
+   & "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" --online-mode -c extension install -s -e vrm
+   ```
+4. **Optional - your own cloned voice** (Chatterbox on an NVIDIA GPU; it also checks every line with Whisper).
+   Needs Python 3.11 in `tools\voice-venv`:
+   ```powershell
+   py -3.11 -m venv tools\voice-venv
+   ```
+   ```powershell
+   tools\voice-venv\Scripts\python -m pip install chatterbox-tts==0.1.7 faster-whisper==1.2.1 pillow
+   ```
+   ```powershell
+   tools\voice-venv\Scripts\python -m pip install --force-reinstall torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+   ```
+   (the last one replaces the CPU-only PyTorch that pip installs by default). Pillow in this environment is also used
+   for drawn props, "scene from a picture" and the app icons. Without it the app uses the free Microsoft voices.
+5. **Optional - AI helpers**: [Ollama](https://ollama.com) (titles, scripts, sets, props, sounds, translations) and
+   ComfyUI (textures, prop pictures, music - Z-Image Turbo and ACE-Step 1.5). Pick the models in Settings → AI
+   tools. Everything works without them except translating videos into other languages and ComfyUI "Required" mode.
+6. Start the app (below). The first start makes the 24 built-in sound effects. Then go to **Characters → + New
+   character** and import your VRoid `.vrm` - until then videos use a simple placeholder body.
+
+## Starting it
+
+Double-click `start-studio.bat`, or:
+
+```powershell
+python web/server.py --lan
+```
+
+Open http://127.0.0.1:8765 on this PC. `--lan` also opens it to phones and tablets on the same Wi-Fi - the console
+prints the address (e.g. `http://192.168.1.20:8765`; it can change after a router restart). Without `--lan` only this
+PC can open it.
+
+**On your phone:** open that address in Safari → Share → *Add to Home Screen*. It gets the catgirl icon and opens
+full screen like an app (Android: ⋮ → *Install app*). Set a PIN in Settings → Phone & network so other people on
+the network can't use it (this PC never needs the PIN). If the phone can't connect, Windows Firewall must allow
+Python on this network: Windows Security → Firewall → *Allow an app through firewall* → Python.
+
+**After updating the code**, use Settings → *Restart the app* (anything still running stops).
+
+The progress bar at the top right shows every running job; click it for the live log. A failed job has a
+↻ **Retry** button there. Videos render one at a time, scenes build one at a time (even while a video renders),
+and everything else runs in its own lane.
+
+## The pages
+
+### Create
+1. **Idea** - title, ✨ title ideas, and which character stars.
+2. **Scene & style** - the set (or **✨ Auto from the title**, which picks a fitting place, reuses one of your sets
+   or makes a new one), where she starts, look preset, music and ambience.
+   - **Other main characters** - tick more of your characters to put them in the video too. A line starting with
+     their name (`Ethan: hi there`) is theirs; they talk with their own voice and the others react. They wait beside
+     her where she'll be when they first speak. 🤖 AI write gives them lines of their own too.
+   - **Change place every line** - pick two or more sets (and/or type new places) to rotate through.
+   - **Cut to a new shot every few words** (on by default) - long lines are split into short shots so the camera
+     cuts every 2-3 seconds, with the odd walk and a blurred wipe, like the reference videos.
+3. **Script** - ✍ write or 🤖 AI write, then **Direct shots**. Tweak each shot (camera, move, action, expression,
+   sound, scene, effects, **light**, cutaway, others in the shot, **who says it**), then **Save & render**. With other
+   main characters a shot also has **The others while this is said** (they listen, or wave, laugh, nod...) and
+   **Everyone in the frame** (a wider shot of all of them). *Re-apply look only*
+   re-runs the filter and captions without re-rendering 3D (only while the shots are the same as in the last
+   render - after adding or removing shots, render in full).
+
+Each video is its own new episode (named from the title); *Start over* clears the page. Your script stays exactly as
+you typed it (with its `[directions]`) when you switch pages or direct again, and the episode remembers it. If you
+change the set after directing, the app offers to direct the shots again for the new set.
+
+### Sets
+A gallery of every scene, newest first, with a preview and its walkable places.
+- **Generate** a new set: from an idea ("haunted bakery"), from a **picture** (the vision model builds a matching
+  scene and takes its colours and ground from the photo), or fully random. Options: inside/outside, time of day,
+  theme, room size (small / medium / large), ground, AI on/off, textures, seed.
+- **Themes**: *Auto* (from the words in your idea), *Random* (the free AI layout - sometimes odd), *Generated
+  theme* (the AI writes a new theme and saves it), or a named one: cafe, park, bedroom, classroom, arcade, kitchen,
+  living room, forest, beach, snow, city, desert, space station, graveyard, candyland.
+- Scenes check their climate, so snow doesn't end up in a desert.
+- **Regenerate** a set with changed settings - the old one is backed up first and the new one keeps its name.
+- **Map editor**: a top-down view to drag, turn, resize, add and remove props.
+- **3D view**: orbit and zoom around a scene (needs internet - it loads three.js from unpkg).
+- **Generate 3 Starter Sets** builds three scenes from a list of starter ideas.
+- Legacy Cafe and Legacy Park are the original hand-built sets; they keep their look and can't be regenerated.
+- Removing a set moves it (with its textures and 3D view) to `sets/.trash`; nothing is hard-deleted.
+- Sets made before 24 Nov 2026 can have two props stacked on one spot (a theme's tables in the middle of the room) -
+  fix them in the map editor or regenerate them. New sets don't do this.
+
+**ComfyUI modes** (Settings → AI tools): **Required** always textures sets (floor, walls or a painted sky, plus
+pictures) and fails if ComfyUI is off · **Only when needed** only draws pictures for props that need one · **Off**
+never.
+
+### Assets
+- **🧱 Props** - every object made for your sets and scripts. Click one to see it big, fix its description, size or
+  where it sits (floor / table / wall), 🎨 **Redraw** it with ComfyUI, or 🗑 delete it (moved to
+  `assets/props/.trash`). Edits apply to every set that uses it on its next render. Props are used in this order:
+  an imported model, then a generated 3D model (simple shapes), then a 2D picture (only for things too detailed for
+  simple shapes).
+- **📦 Imported** - asset packs you upload as a zip of OBJ, FBX, BLEND or MDL models (folders inside are fine).
+  Each model gets a picture. MDL files from Quake 1, Half-Life and Source are converted (not yet tried on real
+  game files). A prop or cast member whose name matches an imported model uses that model.
+- **🧍 Actors** - the extra people in your scenes (a mom, a store clerk…): a generic body dressed from a
+  description, a rigged `.blend`, or an imported model, each with a voice.
+- **✨ Effects** - the particle effects with looping previews. Change colours, amount, speed and size; **Save &
+  preview** renders a new clip, **Reset to default** undoes your changes.
+- **🎵 Music** - upload royalty-free tracks once, pick one per episode or set a default (plays at 5 % with fades).
+  ✨ **Generate**: ACE-Step 1.5 in ComfyUI composes an instrumental from a style description, or the built-in
+  chiptune synth makes an instant loop.
+- **🔊 Sounds** - 16 retro effects (boom, coin, boing, jump, ding, ta-da, whoosh, hiss, laser, sad trombone…) and
+  8 ambience loops (arcade, waves, birds, wind, city, space, room, spooky), all synthesised. Upload your own file to
+  any slot, ✨ generate a sound from a description, or add new slots with trigger words. Effects play on trigger
+  words ("BOOM" → boom, timed to the word) and actions (jump, surprised, celebrate), or per shot / with `[boom]`.
+
+### Videos
+Every render, with download and:
+- 🎞 **Shots** - one frame from every shot, in a strip.
+- ✏️ **Edit** - a popup editor for scenes, shots (including light, who says it, what the others do), look and
+  filters, text, watermark, music and sound, and the models used. It saves and re-renders the same video.
+- 📤 **Postiz** - send it as a draft (see below). Earlier versions are kept (tagged "Earlier version") and can be
+  sent too.
+- **Rename** (display name only) and **Delete** (moved to `output/.trash`).
+
+A video remembers the look it was made with, so changing your global look doesn't change old videos.
+
+### Characters
+Profiles with a name, *about* text (the script AI reads it), model, voice, tail and camera distance. Import or
+replace a VRoid `.vrm` (old versions are kept as timestamped backups; ear bones are found automatically), make a
+preview picture, upload a reference voice, test the voice, and choose the active character. A new character uses
+the placeholder body until you import a model.
+
+### GIF
+Turn a video (one of yours or an upload) into a GIF that stays under 10 MB.
+
+### Settings
+Render size, fps and **video file quality** (CRF, default 20: lower = sharper but bigger files; roughly 70 MB per
+minute of busy footage at 20), every look/filter value, caption style, title, watermark and end card, audio timing and the
+default voice, AI tools (Ollama model, ComfyUI address and mode), Postiz, phone & network (PIN), and *Restart the
+app*. A fast *Preview* tries look changes on an already-rendered video. *Reset to defaults* resets everything
+except your active character, the Postiz connection and the phone PIN.
+
+**Free up disk space** (Settings, right-hand side) shows what takes room and cleans it: render work files (frames
+of old renders - deleted for good; a new render makes them again, but *Re-apply look only* won't work for those
+videos until then), earlier versions of videos (moved to the trash), and every trash folder (emptied for good -
+this also deletes the code backup in `.trash`). Finished videos and the voice cache are never touched. It waits
+until no job is running.
+
+Picking a **look preset** for one video (Create page, or ✏️ Edit on the Videos page) replaces that video's saved look
+with the preset; tick individual settings in the editor to change them on top of it.
+
+## Writing scripts
+
+One line per shot (long lines are split into several shots when "every few words" is on). Put directions in square
+brackets at the start of a line.
+
+### Directions
+```
+[closeup, angry, boom] I said NO pineapple!
+[wide, walk_to_counter] Fine. I'll make it myself.
+```
+Cameras, actions, expressions and sounds from the tables below can all go in the brackets.
+
+### Light and time of day
+`[sunset]`, `[night]`, `[dawn]` or `[day]` changes the light from that line on (until the next change) - for a
+story that goes from day to night. `dusk`, `evening`, `sunrise` and `morning` work too.
+```
+Hello! What a sunny day in the cafe.
+[sunset] Oh, the sun is going down already.
+[night] And now it's night time!
+```
+
+### Changing scenes, and effects
+```
+Today I'm finally going skydiving!
+[@ falling through the clouds, wide] So I jumped out of the plane.
+[@ on the moon, surprised] Then I somehow landed on the moon?!
+[@ park, celebrate, confetti] But I made it home!
+It started raining though.
+```
+- `@ place` changes the scene until the next `@`. If one of your sets fits (by name/description) it's reused;
+  otherwise a new set is made when the video renders, saved to **Sets**, and remembered by the episode.
+- Places with no ground (sky, space, under the sea, falling to the earth's core) are "in the air": no floor, clouds
+  or rocks stream past while she falls (skydiving pose) or floats.
+- Effects: `rain`, `snow`, `droplets`, `bubbles`, `dust`, `specks`, `sparkles`, `embers`, `petals`, `leaves`,
+  `confetti`, `beams`, `stars`, `speed_lines`, `fireflies`, `hearts`, `music_notes`, `coins`, `candy`, `puffs`,
+  `sprinkles`, `pixels`, `bolts`, `bats`, `paws`, or `no_fx`. Words in the line ("it's raining", "confetti!") switch
+  them on too, and every set has a default (falling = speed lines, lava = embers…).
+- **🗺 Let the AI change scenes & add weather/effects** (with *Reuse my sets when they fit* or *Always make new
+  sets*). Each shot also has a **Scene** and **Effects** picker.
+
+### Other people and things
+```
+[+mom enter] Mom?! What are you doing here?
+Mom: You forgot your lunch again.
+[+car crash_in from_left, surprised] WHY IS THERE A CAR IN MY CAFE?!
+[+meteor fall, scared] Is that... a meteor?
+```
+- **People** (mom, boss, robot, kid…) get a low-poly body coloured from the description in the 🎭 Cast panel
+  ("tall man, grey hair, blue suit"), or an actor from Assets → Actors. They can `enter`, `exit`, `appear`,
+  `vanish`, or do any action. They speak lines written as `Name: …` (like `Mom:` above), in their actor's voice.
+- **Things** are designed by the AI prop maker when the video renders (and kept in the prop library): `enter`,
+  `exit`, `crash_in` (debris + shake + boom), `fall`, `fly_by`, `appear`, `vanish`, `bounce`, `spin`, `shake`,
+  `hold` (she holds it). Add `from_left` / `from_right` / `from_back` / `from_top`. Things can't talk.
+- No `+` in a hand-written script? Tick **🎭 Let the AI add other people & things** before *Direct shots*. Each
+  shot also has a **🎭 Others in this shot** field (`mom enter, car crash_in`).
+
+### Cutaways
+Show something instead of her while she keeps talking (voice-over):
+```
+[cutaway: a plane flying past] The plane was already 4000 metres up.
+[cut: ants marching] There are about twenty quadrillion of them.
+```
+The subject moves to match the words (flying = flies across, falling = drops in, marching/walking = comes in,
+otherwise it appears). Each shot has a **📷 Cutaway** field, and the AI scene option can suggest a couple.
+
+### Floating (balloons!)
+`[+balloons hold]` gives her balloons (they stay in her hand), `[float_up]` lifts her off the ground - legs dangling
+- until `[land]`. The director also does it from the words: a line about balloons hands them to her, "look at me go
+up" / "I'm floating" lifts her, "it popped" / "back down" brings her down.
+
+## Sending videos to Postiz (as drafts)
+1. **Settings → 📤 Postiz**: your Postiz address and API key (Postiz → Settings → Developers). Save, then
+   **🔄 Load channels** and tick where drafts should go. For Discord paste the channel ID (Discord: Developer Mode
+   on → right-click the channel → Copy Channel ID).
+2. **Videos → 📤 Postiz**: the AI writes a caption per platform (topic hashtags + trending ones like #fyp, #reels,
+   #shorts; YouTube/TikTok get a title; Discord a short announcement). Edit anything, **Create drafts**.
+3. In Postiz the drafts show on the calendar as "Draft:" - set the times there. **Nothing is ever posted from the
+   studio.**
+
+## Command line
+
+```powershell
+python pipeline/run_episode.py episodes/<id>.json
+```
+Output: `output/<episode>.mp4` plus `output/<episode>_shots.png` (one frame per shot). Work files (frames, audio,
+`scene.blend` you can open in Blender) go to `build/<episode>/`. Options: `--fresh-voice` (regenerate voice lines
+instead of using the cache), `--no-tts` (no voice), `--no-render` (re-encode existing frames).
+
+```powershell
+python pipeline/make_set.py --idea "haunted bakery" --where inside --light night
+```
+```powershell
+python pipeline/music_gen.py --style "lofi chill" --seconds 60
+```
+```powershell
+python pipeline/sfx.py
+```
+(`sfx.py` re-synthesises the built-in sounds.) Settings live in `config/settings.json` and characters in
+`assets/characters/<id>.json`; the command line uses the same files as the web app.
+
+## Episode format
+
+(Comments are for explanation only; real episode files can't contain them.)
+
+```jsonc
+{
+  "title": "WHAT IF ...?",            // shown at the top during the first shot
+  "set": "cafe",                       // any set id from the Sets page
+  "start": "door",                     // mark where the character starts
+  "character": "catgirl",              // optional, default = the active character
+  "co_stars": ["ethan"],               // optional, other main characters
+  "voice": { "exaggeration": 0.6 },    // optional, on top of the character's voice
+  "music": "assets/music/song.mp3",    // optional, "" = none
+  "shots": [
+    { "camera": "wide", "move": "orbit",
+      "action": "walk_to", "to": "counter",
+      "expression": "happy",
+      "line": "Spoken + captioned text",
+      "speaker": "ethan",              // optional, who says it
+      "duration": 3 }                  // optional; shots stretch to fit the line
+  ]
+}
+```
+
+A shot can run several actions in a row: `"actions": [{ "anim": "jump", "duration": 1 }, { "anim": "dance" }]`.
+Also: `"light": "night"` (day / sunset / night / dawn - the lighting changes from that shot on), `"both": true`
+(everyone in the frame), `"listen": "wave"` (what the other main characters do), `"particles"`,
+`"cutaway"`, `"set"`.
+
+| Field | Options |
+|---|---|
+| `action` / `anim` | idle, turn, walk_to, run_to, sneak_to, jump, wave, surprised, sad, angry, think, laugh, dance, spin, celebrate, nod, shake_head, point, stretch, sit, look_around, scared, blow_kiss, clap, bow, sneeze, facepalm, shiver, float_up, land |
+| action params | `to` (mark or `[x, y]`, for *_to), `face` (camera, left, right, away, or a mark), `times`/`height` (jump), `turns` (spin) |
+| `expression` | neutral, happy, surprised, angry, sad, smug, scared |
+| `camera` | wide, medium, closeup, side, low, high, dramatic, back, macro (eyes), tiny (small figure in a big scene), silhouette (+ `zoom`, e.g. 1.3 = further away) |
+| `move` | static, push_in, pull_out, orbit, follow, shake |
+| marks: Legacy Cafe | door, center, counter, table, front, machine |
+| marks: Legacy Park | left, right, center, front, tree, bench, pond, far |
+
+Generated sets list their own marks on the Sets page ("Starts at" / "To").
+
+## Voice
+
+The character's voice is in `assets/characters/<id>.json` (catgirl: the local engine cloning
+`assets/voices/catgirl.wav`). An episode's `"voice"` overrides it, and a shot can override that with its own
+`"voice"`. Other main characters and actors use their own voices.
+
+| Engine | Example | Notes |
+|---|---|---|
+| `local` | `{ "engine": "local", "ref": "assets/voices/catgirl.wav", "shift": 1.12 }` | Free, offline (Chatterbox on the GPU). `ref` = 10–30 s clean wav of a voice you have rights to. Optional `exaggeration` (0.25–1, emotion), `cfg_weight`, `temperature`, `seed`. Emotional shots get more exaggeration automatically. Each line is checked with Whisper |
+| `edge` | `{ "engine": "edge", "name": "en-US-AnaNeural", "rate": "+8%", "pitch": "+15Hz" }` | Free Microsoft neural voices, needs internet and `pip install edge-tts`. List voices: `python -m edge_tts --list-voices` |
+| `elevenlabs` | `{ "engine": "elevenlabs", "voice_id": "...", "model": "eleven_multilingual_v2" }` | Paid. Set the `ELEVENLABS_API_KEY` environment variable. Never tested (no key) |
+| `windows` | `{ "engine": "windows", "shift": 1.25 }` | Offline fallback, robotic |
+
+Any engine also takes `"shift": 1.2` (pitch up without changing speed). Lines are cached in `build/tts_cache`, so
+re-rendering after an animation tweak doesn't regenerate voices. Voices are levelled to -14 LUFS. The local engine
+runs in its own Python 3.11 environment (`tools/voice-venv`: chatterbox-tts, CUDA PyTorch 2.6, faster-whisper).
+
+## Look
+
+Rendered at 216×384, 30 fps, then post-processed: limited colour depth, chunky nearest-neighbour upscale, soft blur,
+red/blue fringing, lifted blacks and muted colour, faint scanlines, grain and a vignette. Captions are drawn at the
+low resolution (so they're pixelated with the picture), two words at a time in cycling colours; the title is two
+lines at the top, white then yellow.
+
+Presets: N64 Haze (default), Clean Retro, VHS Tape, PS1 Crunch, Game Boy, Dreamy Pastel, Spooky Night - globally
+(Settings) or per episode. Every value can be changed in Settings, and an episode can override any of them:
+
+```jsonc
+"look": { "blur": 1.0, "fringe": 2, "saturation": 0.9, "grain": 0, "scanlines": false, "vignette": false }
+```
+
+## Character (VRoid)
+
+Easiest: Characters page → import a `.vrm`. By hand:
+
+1. Export from VRoid Studio as VRM, e.g. `assets/characters/catgirl-v3.vrm`.
+2. Convert it (needs Blender's VRM add-on):
+
+   ```powershell
+   & "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" -b --factory-startup --python pipeline/prepare_character.py -- assets/characters/catgirl-v3.vrm --out assets/characters/catgirl.blend
+   ```
+
+   This makes `catgirl.blend` (fewer polygons, 128 px textures, fog-ready materials) and `catgirl.report.json`.
+   `catgirl.blend` is always the active model; `catgirl-v1.blend` is the first version, kept as a backup.
+3. Episodes use the character's `.blend` automatically, or the placeholder body if it's missing
+   (`"character": { "model": "placeholder" }` forces it).
+
+`assets/characters/catgirl.json` also holds `tail` (procedural tail on/off - off for the catgirl), `tail_color`,
+`tail_tip` and `camera_scale` (camera distance for the character's size).
+
+## Optional AI tools
+- **Ollama** (http://127.0.0.1:11434) writes titles, scripts, set designs, props, sounds, cast and scene plans,
+  translations and Postiz captions. Pick the model in Settings → AI tools. A vision model reads pictures for "scene
+  from a picture".
+- **ComfyUI** (ComfyUI Desktop uses http://127.0.0.1:8666; 8188 and other common ports are tried too) draws set
+  textures and prop pictures with Z-Image Turbo, and composes music with ACE-Step 1.5.
+Everything still works without them (except videos in other languages and ComfyUI "Required" mode), just with
+simpler results.
+
+## Video language
+Write everything in English - title, script, directions. Pick the **video language** (Create → Look, the video
+editor's Text tab, or Settings → Render & audio for every video): English or Lietuvių (Lithuanian). The finished
+video is then fully in that language: the spoken lines, captions, title and end card are translated by Ollama when
+it renders, and spoken by a voice of that language.
+- **🌐 Check translation** (next to the language picker) shows every translated line next to its English. Fix
+  anything - the local AI model's Lithuanian is good but not perfect - and save; the video uses exactly your words.
+  Translations are also remembered, so rendering again says the same thing.
+- Your cloned voice only speaks English, so other languages use a Microsoft voice of that language (Lithuanian: Ona,
+  female, or Leonas, male, picked to match each character's English voice; a character's profile can say
+  `"gender": "male"`). Your voice's pitch shift is kept.
+- Sound effects still follow the English words. The watermark is not translated.
+- More languages can be added later (one line each in `pipeline/catalog.py`: the language and its two voices).
+
+## Logs
+Every request (with IP and browser) goes to the terminal and to `logs/server-YYYY-MM-DD.log`; each job's output is
+in `logs/jobs/`.
+
+## Not tested yet
+- The ElevenLabs voice, MDL converters with real game files, and the app on a real phone (only checked at phone
+  size in a browser).
+- Starter sets and the regenerate popup from the browser; Postiz drafts of earlier versions; the 3D viewer beyond
+  one scene.
+- Walking round furniture in a generated set and the job lanes under heavy load haven't been seen in a render yet.
+- Tested in renders: the language option (Lithuanian), people saying `Name: …` lines, co-stars, per-shot lighting,
+  and long encodes (an old bug cut videos to a few seconds of picture - fixed).
+
+## Uploads
+Files with any name can be uploaded (accents and non-Latin letters included) - music, sounds, voices, VRM models,
+pictures, model packs and clips.

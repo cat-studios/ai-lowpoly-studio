@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2a5e"/><stop offset="1" stop-color="#17141f"/></linearGradient></defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <polygon points="12,30 24,20 18,6" fill="#a98cc0"/><polygon points="52,30 40,20 46,6" fill="#c9aed8"/>
+  <polygon points="15,25 22,21 17,13" fill="#ffb3cf"/><polygon points="49,25 42,21 47,13" fill="#ffb3cf"/>
+  <polygon points="12,30 17,20 32,17 47,20 52,30 50,43 42,51 32,54 22,51 14,43" fill="#c9aed8"/>
+  <polygon points="17,33 24,27 40,27 47,33 45,44 38,50 26,50 19,44" fill="#ffe2d3"/>
+  <polygon points="17,27 23,27 20,34" fill="#ddc8ea"/><polygon points="23,27 30,27 26,33" fill="#c9aed8"/>
+  <polygon points="30,27 37,27 33,33" fill="#ddc8ea"/><polygon points="37,27 44,27 41,33" fill="#c9aed8"/>
+  <ellipse cx="25" cy="38.5" rx="3.2" ry="4" fill="#5a1f7a"/><ellipse cx="39" cy="38.5" rx="3.2" ry="4" fill="#5a1f7a"/>
+  <circle cx="24.2" cy="37" r="1" fill="#fff"/><circle cx="38.2" cy="37" r="1" fill="#fff"/>
+  <path d="M29.5 45 l1.2 1.2 1.3-1.2 1.3 1.2 1.2-1.2" stroke="#8a2a3a" stroke-width="0.9" fill="none"/>
+</svg>

@@ -1,0 +1,30 @@
+# your own data and settings (never commit API keys or the PIN)
+config/settings.json
+assets/characters/*
+assets/voices/*
+assets/music/*
+assets/props/*
+assets/actors/*
+assets/imported/*
+assets/sfx/builtin/*
+assets/sfx/custom/*
+assets/sfx/custom_slots.json
+assets/fx_previews/*
+assets/fx_overrides.json
+sets/*
+!sets/_cafe.png
+!sets/_park.png
+!sets/themes/
+sets/themes/*
+episodes/*
+output/*
+build/*
+logs/*
+tools/*
+!**/.gitkeep
+# Python / OS clutter
+__pycache__/
+*.pyc
+*.blend1
+.trash/
+Thumbs.db

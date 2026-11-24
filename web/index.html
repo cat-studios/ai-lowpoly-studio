@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Low Poly Studio</title>
+  <meta name="theme-color" content="#17141f">
+  <meta name="description" content="Make N64-style catgirl Reels">
+  <!-- home-screen app (iOS + Android) -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Low Poly">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img class="logo-img" src="/favicon.svg" alt=""> <span class="brand-text">Low Poly Studio</span></div>
+    <nav>
+      <a href="#create" data-page="create">Create</a>
+      <a href="#sets" data-page="sets">Sets</a>
+      <a href="#assets" data-page="assets">Assets</a>
+      <a href="#videos" data-page="videos">Videos</a>
+      <a href="#characters" data-page="characters">Characters</a>
+      <a href="#gif" data-page="gif">GIF</a>
+      <a href="#settings" data-page="settings">Settings</a>
+    </nav>
+    <div id="queue" class="queue" title="Background jobs"></div>
+  </header>
+  <main id="app"><p class="muted">Loading…</p></main>
+  <div id="toast" class="toast" hidden></div>
+  <script src="/static/app.js"></script>
+  <script src="/static/actors.js"></script>
+</body>
+</html>

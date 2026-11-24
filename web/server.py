@@ -1,0 +1,1475 @@
+"""
+Local web app for making episodes.
+
+    python web/server.py            -> http://127.0.0.1:8765
+
+Standard library only. Long tasks (renders, model imports, voice tests) run one at a time in a
+background job queue; the page polls their logs.
+"""
+import json
+import mimetypes
+import os
+import queue
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import traceback
+import uuid
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+ROOT = Path(__file__).resolve().parent.parent
+WEB = ROOT / "web"
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("model/gltf-binary", ".glb")
+PIPE = ROOT / "pipeline"
+sys.path.insert(0, str(PIPE))
+import autodirect  # noqa: E402
+import catalog  # noqa: E402
+import comfy  # noqa: E402
+import fonts  # noqa: E402
+import logs  # noqa: E402
+import llm  # noqa: E402
+import settings as S  # noqa: E402
+import setgen  # noqa: E402
+import sfx as sfxlib  # noqa: E402
+
+SETS_DIR = ROOT / "sets"
+MUSIC = ROOT / "assets" / "music"
+
+EPISODES = ROOT / "episodes"
+OUTPUT = ROOT / "output"
+VOICES = ROOT / "assets" / "voices"
+BLENDER = os.environ.get("BLENDER", r"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe")
+FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
+MAX_UPLOAD = 300 * 1024 * 1024
+ID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,60}")
+
+
+def slug(s):
+    return re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:60] or "episode"
+
+
+def stamp():
+    return time.strftime("%Y%m%d-%H%M%S")
+
+
+# --------------------------------------------------------------------------- jobs
+class Job:
+    def __init__(self, kind, title, cmd, on_done=None, result=None):
+        self.id = uuid.uuid4().hex[:10]
+        self.kind, self.title, self.cmd = kind, title, cmd
+        self.status, self.log = "queued", []
+        self.created, self.started, self.ended = time.time(), None, None
+        self.on_done, self.result = on_done, result or {}
+        self.progress, self.stage = None, ""          # from "PROGRESS <0-1> <stage>" lines (pipeline/progress.py)
+        self.ip = logs.who()                          # who asked for it (the client IP of that request)
+        logs.job_created(self)
+
+    def to_dict(self, log_from=0):
+        return {"id": self.id, "kind": self.kind, "title": self.title, "status": self.status,
+                "created": self.created, "started": self.started, "ended": self.ended,
+                "progress": self.progress, "stage": self.stage,
+                "last": self.log[-1] if self.log else "",
+                "result": self.result, "log": self.log[log_from:], "log_len": len(self.log)}
+
+
+JOBS, JOB_ORDER = {}, []
+# Three lanes, each one job at a time. Videos queue behind each other; a scene build starts at once even while a
+# video renders; everything else (music, sounds, props, previews, Postiz...) has its own lane.
+LANES = {"render": queue.Queue(), "scene": queue.Queue(), "other": queue.Queue()}
+
+
+def lane_of(job):
+    return "render" if job.kind == "render" else "scene" if job.kind == "set" else "other"
+
+
+def submit(job):
+    JOBS[job.id] = job
+    JOB_ORDER.append(job.id)
+    # keep the 50 newest jobs; older finished ones (and their logs) are dropped so memory doesn't grow forever
+    for old in JOB_ORDER[:-50]:
+        j = JOBS.get(old)
+        if j is None or j.status in ("done", "failed"):
+            JOBS.pop(old, None)
+            JOB_ORDER.remove(old)
+    LANES[lane_of(job)].put(job)
+    return job
+
+
+def worker(lane):
+    while True:
+        run_job(LANES[lane].get())
+
+
+def run_job(job):
+    job.status, job.started = "running", time.time()
+    logs.job_started(job)
+    try:
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
+        proc = subprocess.Popen(job.cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace")
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line.startswith("PROGRESS "):           # progress bar update, not shown in the log
+                parts = line.split(" ", 2)
+                try:
+                    job.progress = max(0.0, min(1.0, float(parts[1])))
+                    job.stage = parts[2] if len(parts) > 2 else job.stage
+                except ValueError:
+                    pass
+                continue
+            if line:
+                job.log.append(line)
+                del job.log[:-3000]
+                logs.job_line(job, line)           # the whole output also goes to logs/jobs/<id>.log
+        ok = proc.wait() == 0
+        if ok:
+            job.progress = 1.0
+        if ok and job.on_done:
+            job.on_done(job)
+        job.status = "done" if ok else "failed"
+    except Exception as exc:  # keep the worker alive
+        job.log.append(f"ERROR: {exc}")
+        job.log.extend(traceback.format_exc().splitlines())
+        job.status = "failed"
+    job.ended = time.time()
+    logs.job_finished(job)
+
+
+for _lane in LANES:
+    threading.Thread(target=worker, args=(_lane,), daemon=True).start()
+
+
+# --------------------------------------------------------------------------- helpers
+def episode_path(eid):
+    if not ID_RE.fullmatch(eid or ""):
+        raise ValueError("bad episode id")
+    return EPISODES / f"{eid}.json"
+
+
+FONT_CACHE = {}
+
+
+def remember_look(path):
+    """Save the look, captions and watermark a video is made with, the first time it renders.
+    A video that already has them keeps them, so later changes to your global settings don't change it.
+    A video set to a look preset keeps using that preset (presets don't change)."""
+    try:
+        ep = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return
+    cfg = S.load_settings()
+    changed = False
+    if "look" not in ep and "look_preset" not in ep:
+        ep["look"] = json.loads(json.dumps(cfg["look"]))
+        changed = True
+    for key in ("captions", "branding"):
+        if key not in ep:
+            ep[key] = json.loads(json.dumps(cfg[key]))
+            changed = True
+    if changed:
+        path.write_text(json.dumps(ep, indent=2), encoding="utf-8")
+
+
+def list_episodes():
+    out = []
+    for p in sorted(EPISODES.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            ep = json.loads(p.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        vid = OUTPUT / f"{slug(p.stem)}.mp4"
+        out.append({"id": p.stem, "title": ep.get("title", ""), "shots": len(ep.get("shots", [])),
+                    "updated": p.stat().st_mtime, "video": f"/media/{vid.name}" if vid.exists() else None})
+    return out
+
+
+def list_videos():
+    out = []
+    by_slug = {slug(p.stem): p.stem for p in EPISODES.glob("*.json")}     # one folder scan, not one per video
+    for v in sorted(OUTPUT.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
+        sheet = v.with_name(v.stem + "_shots.png")
+        ep = by_slug.get(v.stem)
+        title = ""
+        if ep:
+            try:
+                title = json.loads((EPISODES / f"{ep}.json").read_text(encoding="utf-8-sig")).get("title", "")
+            except Exception:
+                pass
+        out.append({"key": v.stem, "name": v.stem, "title": title, "episode": ep, "url": f"/media/{v.name}",
+                    "sheet": f"/media/{sheet.name}" if sheet.exists() else None,
+                    "size": v.stat().st_size, "updated": v.stat().st_mtime})
+    return out
+
+
+def video_file(key):
+    """The mp4 for a video key: "<name>" (output/) or "previous/<name>" (output/previous/)."""
+    if key.startswith("previous/"):
+        stem = key[len("previous/"):]
+        if not re.fullmatch(r"[\w.-]+", stem):
+            raise ValueError("bad video name")
+        return OUTPUT / "previous" / f"{stem}.mp4"
+    if not re.fullmatch(r"[\w.-]+", key):
+        raise ValueError("bad video name")
+    return OUTPUT / f"{key}.mp4"
+
+
+def postiz_base(key):
+    """The episode name behind a video key (an earlier version drops its "-<stamp>")."""
+    stem = key.split("/")[-1]
+    base = re.sub(r"-\d{8}-\d{6}$", "", stem) if key.startswith("previous/") else stem
+    if not ID_RE.fullmatch(base):
+        raise ValueError("bad video name")
+    return base
+
+
+LABELS_FILE = OUTPUT / "labels.json"        # names shown in the Videos list (never change the scripts or the files)
+
+
+def load_labels():
+    try:
+        return json.loads(LABELS_FILE.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {}
+
+
+def delete_video(key):
+    """Moves the video (and its shot sheet) to output/.trash. The script (episode) is kept."""
+    mp4 = video_file(key)
+    if not mp4.exists():
+        raise ValueError("no such video")
+    trash = OUTPUT / ".trash"
+    trash.mkdir(exist_ok=True)
+    sheet = mp4.with_name(mp4.stem + "_shots.png")
+    m = re.fullmatch(r"(.+)-(\d{8}-\d{6})", mp4.stem)
+    if key.startswith("previous/") and m:        # earlier versions keep their sheet as "<name>_shots-<stamp>.png"
+        sheet = mp4.with_name(f"{m.group(1)}_shots-{m.group(2)}.png")
+    for f in (mp4, sheet):
+        if f.exists():
+            f.replace(trash / f"{f.stem}-{stamp()}{f.suffix}")
+    labels = load_labels()
+    if labels.pop(key, None) is not None:
+        LABELS_FILE.write_text(json.dumps(labels, indent=1), encoding="utf-8")
+
+
+def list_previous_videos():
+    """Earlier versions kept when a video was re-rendered (output/previous/), newest first."""
+    out = []
+    folder = OUTPUT / "previous"
+    if not folder.is_dir():
+        return out
+    by_slug = {slug(p.stem): p.stem for p in EPISODES.glob("*.json")}
+    for v in sorted(folder.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
+        base = re.sub(r"-\d{8}-\d{6}$", "", v.stem)          # "<name>-<stamp>" -> "<name>"
+        ep = by_slug.get(base)
+        title = ""
+        if ep:
+            try:
+                title = json.loads((EPISODES / f"{ep}.json").read_text(encoding="utf-8-sig")).get("title", "")
+            except Exception:
+                pass
+        m = re.fullmatch(r"(.+)-(\d{8}-\d{6})", v.stem)       # its sheet was kept as "<name>_shots-<stamp>.png"
+        sheet = v.with_name(f"{m.group(1)}_shots-{m.group(2)}.png") if m else None
+        out.append({"key": f"previous/{v.stem}", "name": v.stem, "title": title or base, "episode": ep, "previous": True,
+                    "url": f"/media/previous/{v.name}",
+                    "sheet": f"/media/previous/{sheet.name}" if sheet and sheet.exists() else None,
+                    "size": v.stat().st_size, "updated": v.stat().st_mtime})
+    return out
+
+
+def character_info(cid):
+    prof = S.load_character(cid)
+    model = ROOT / prof["model"] if prof.get("model") else None
+    info = {"profile": prof, "has_model": bool(model and model.exists()), "report": None,
+            "active": S.load_settings()["active_character"] == cid}
+    rep = (model.with_suffix(".report.json") if model else None)
+    if rep and rep.exists():
+        r = json.loads(rep.read_text(encoding="utf-8-sig"))
+        bones = list(r.get("bones", {}))
+        keys = [k for m in r.get("meshes", {}).values() for k in m.get("shape_keys", [])]
+        info["report"] = {
+            "source": r.get("source"), "height_m": r.get("height_m"), "tris": r.get("tris_after"),
+            "ears": [b for b in bones if "ear" in b.lower() and not b.endswith("_end")][:6],
+            "tail_bones": [b for b in bones if "tail" in b.lower()][:6],
+            "face_shapes": len(keys), "has_expressions": any(k.startswith("Fcl_ALL_") for k in keys),
+        }
+    ref = (prof.get("voice") or {}).get("ref")
+    info["voice_ref_exists"] = bool(ref and (ROOT / ref).exists())
+    pic = S.CHAR_DIR / f"{cid}.preview.png"
+    info["preview"] = f"/charimg/{cid}.preview.png" if pic.exists() else None
+    return info
+
+
+def import_model_job(cid, vrm):
+    blend = S.CHAR_DIR / f"{cid}.blend"
+    cmd = [BLENDER, "-b", "--factory-startup", "--python", str(PIPE / "prepare_character.py"), "--",
+           str(vrm), "--out", str(blend)]
+
+    def done(job):
+        prof = S.load_character(cid)
+        prof["model"] = f"assets/characters/{cid}.blend"
+        S.save_character(cid, prof)
+        job.result = character_info(cid)
+        # every character gets a preview as soon as it has a model
+        pcmd = [sys.executable, "-u", str(PIPE / "character_preview.py"), cid]
+        submit(Job("preview", f"Character preview: {cid}", pcmd))
+    return Job("import", f"Import {vrm.name} -> {cid}", cmd, done)
+
+
+def prop_info(kind, d, used=None):
+    img = ROOT / "assets" / "props" / f"{kind}.png"
+    return {"kind": kind, "name": d.get("name") or kind.replace("_", " "), "looks": d.get("looks", ""),
+            "height": d.get("height"), "width": d.get("width"), "on": d.get("on") or "floor",
+            "place": d.get("place"), "parts": len(d.get("parts", [])), "by": d.get("by", ""),
+            "created": d.get("created") or 0,
+            "needs_picture": bool(d.get("complex") or not d.get("parts")),
+            "sprite": f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}" if d.get("sprite") and img.exists() else None,
+            "used_in": used if used is not None else []}
+
+
+def list_props():
+    """AI-made props + which sets use them (newest first)."""
+    import propgen
+    usage = {}
+    for js in SETS_DIR.glob("*.json"):
+        try:
+            rec = json.loads(js.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        kinds = {p.get("kind") for p in rec.get("props", [])} & set((rec.get("custom_props") or {}).keys())
+        for k in kinds:
+            usage.setdefault(k, []).append({"id": rec.get("id", js.stem), "name": rec.get("name", js.stem)})
+    out = [prop_info(k, d, usage.get(k, [])) for k, d in propgen.library().items()]
+    out.sort(key=lambda p: -p["created"])
+    return out
+
+
+def fx_info(name, ov):
+    import blender_fx
+    import catalog
+    base, eff = blender_fx.FX[name], blender_fx.effective(name, ov)
+    prev = ROOT / "assets" / "fx_previews"
+    mp4, jpg = prev / f"{name}.mp4", prev / f"{name}.jpg"
+    o = ov.get(name) or {}
+    return {"name": name, "label": catalog.PARTICLES.get(name, name), "colors": eff["colors"],
+            "default_colors": base["colors"], "amount": o.get("amount", 1.0), "speed": o.get("speed", 1.0),
+            "size": o.get("size", 1.0), "count": eff["n"], "edited": bool(o),
+            "video": f"/fxprev/{name}.mp4?v={int(mp4.stat().st_mtime)}" if mp4.exists() else None,
+            "poster": f"/fxprev/{name}.jpg?v={int(jpg.stat().st_mtime)}" if jpg.exists() else None,
+            "stale": bool(o) and mp4.exists() and blender_fx.OVERRIDES.exists()
+                     and blender_fx.OVERRIDES.stat().st_mtime > mp4.stat().st_mtime}
+
+
+IMP_PREFIX = "imp_"                     # a placed imported model is the prop kind "imp_<model id>"
+HIDDEN_BUILTIN = {"liquid", "hill", "water", "fence", "rug"}
+
+
+def _def_preview(kind, d):
+    """The picture of a prop definition for the map editor and picker, or None."""
+    if d.get("model"):
+        mid = d["model"].get("id", "")
+        return f"/impimg/{mid}.png" if mid and (ROOT / "assets" / "imported" / "previews" / f"{mid}.png").exists() else None
+    img = ROOT / "assets" / "props" / f"{kind}.png"
+    return f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}" if d.get("sprite") and img.exists() else None
+
+
+def layout_choices():
+    """Everything the map editor's picker offers: built-in shapes, made props (the library), imported models."""
+    import imported
+    import propgen
+    out = []
+    for k in sorted(set(setgen.PROPS) - HIDDEN_BUILTIN):
+        out.append({"key": k, "label": k.replace("_", " "), "group": "built-in", "preview": None,
+                    "height": None, "radius": 0.6, "pack": ""})
+    for k, d in propgen.library().items():
+        out.append({"key": k, "label": str(d.get("name") or k.replace("_", " ")), "group": "made",
+                    "preview": _def_preview(k, d), "height": d.get("height"),
+                    "radius": round(float(d.get("radius", 0.6)), 2), "pack": ""})
+    for pack in imported.packs():
+        for m in pack.get("models", []):
+            if m.get("status") != "ok":
+                continue
+            width = max(m.get("width") or 0.0, m.get("depth") or 0.0, 0.3)
+            out.append({"key": IMP_PREFIX + m["id"], "label": m["name"], "group": "imported",
+                        "preview": _def_preview("", {"model": {"id": m["id"]}}),
+                        "height": m.get("height") if m.get("height") and 0.005 <= m["height"] <= 12 else 1.2,
+                        "radius": round(width / 2, 2), "pack": pack["name"]})
+    return out
+
+
+def _new_prop_def(kind):
+    """The definition to store in a set when the editor adds a made prop or an imported model."""
+    import imported
+    import propgen
+    if kind.startswith(IMP_PREFIX):
+        d = imported.model_def(kind[len(IMP_PREFIX):], kind=kind)
+        if d is None:
+            raise ValueError(f"'{kind}' is not a ready imported model")
+        return d
+    lib = propgen.library()
+    if kind in lib:
+        return json.loads(json.dumps(lib[kind]))
+    raise ValueError(f"'{kind}' can't be placed")
+
+
+def set_layout(sid):
+    """A scene's props for the map editor: where each one stands (metres), turned (radians), scaled, and how it looks."""
+    path = SETS_DIR / f"{sid}.json"
+    if not path.exists():
+        raise ValueError("no such set")
+    rec = json.loads(path.read_text(encoding="utf-8-sig"))
+    custom = rec.get("custom_props") or {}
+    picker = layout_choices()                       # scanned once: the library and every pack
+    choices = {c["key"]: c for c in picker}
+    props = []
+    for i, p in enumerate(rec.get("props", [])):
+        kind = str(p.get("kind"))
+        liquid = kind == "liquid"
+        d = custom.get(kind) or {}
+        c = choices.get(kind) or {}
+        radius = float(p.get("r", 1.5)) if liquid else float(d.get("radius", c.get("radius", 0.6)))
+        label = d.get("name") or c.get("label") or kind.replace("_", " ")
+        preview = _def_preview(kind, d) if d else c.get("preview")
+        props.append({"i": i, "kind": kind, "label": str(label), "pos": p.get("pos", [0, 0]),
+                      "rot": float(p.get("rot", 0.0)), "scale": float(p.get("scale", 1.0)),
+                      "radius": round(radius, 2), "liquid": liquid, "preview": preview,
+                      "height": d.get("height") or c.get("height"), "group": "imported" if d.get("model") else
+                      ("made" if d else "built-in")})
+    return {"id": sid, "name": rec.get("name", sid), "indoor": bool(rec.get("indoor")),
+            "room": rec.get("room") if rec.get("indoor") else None, "props": props, "choices": picker,
+            "marks": rec.get("marks", {})}
+
+
+def save_set_layout(sid, body):
+    """Save the edited positions. The old recipe is copied to sets/.trash first."""
+    path = SETS_DIR / f"{sid}.json"
+    if not path.exists():
+        raise ValueError("no such set")
+    rec = json.loads(path.read_text(encoding="utf-8-sig"))
+    trash = SETS_DIR / ".trash"
+    trash.mkdir(exist_ok=True)
+    shutil.copy2(path, trash / f"layout-{sid}-{stamp()}.json")
+    old = rec.get("props", [])
+    custom = rec.get("custom_props") or {}
+    out = []
+    for item in body.get("props") or []:
+        kind = str(item.get("kind") or "")
+        if kind not in setgen.PROPS and kind != "liquid" and kind not in custom:
+            custom[kind] = _new_prop_def(kind)      # a made prop or an imported model picked in the editor
+        x, y = (max(-30.0, min(30.0, float(v))) for v in item["pos"][:2])
+        base = {}
+        i = item.get("i")
+        if isinstance(i, int) and 0 <= i < len(old) and old[i].get("kind") == kind:
+            base = dict(old[i])                     # keep the other settings of this prop (r, glow, z...)
+        base.update({"kind": kind, "pos": [round(x, 2), round(y, 2)], "rot": round(float(item.get("rot", 0.0)), 4),
+                     "scale": round(max(0.2, min(3.0, float(item.get("scale", 1.0)))), 3)})
+        out.append(base)
+    rec["props"] = out
+    if custom:
+        rec["custom_props"] = custom
+    path.write_text(json.dumps(rec, indent=1), encoding="utf-8")
+    return {"ok": True, "count": len(out)}
+
+
+def list_sets():
+    """All sets, no categories - newest first."""
+    out = []
+    for sid, s in catalog.all_sets().items():
+        img = SETS_DIR / (f"_{sid}.png" if s.get("builtin") else f"{sid}.png")
+        rec, js = {}, SETS_DIR / f"{sid}.json"
+        if js.exists():
+            try:
+                rec = json.loads(js.read_text(encoding="utf-8-sig"))
+            except Exception:
+                pass
+        indoor = rec.get("indoor", sid == "cafe")
+        light = rec.get("light") or ("night" if rec.get("night") else "day")
+        out.append({"id": sid, "name": s["name"], "description": rec.get("description") or s["description"],
+                    "marks": list(s["marks"]), "builtin": sid in catalog.SETS,
+                    "has_3d": (SETS_DIR / f"{sid}.glb").exists(),
+                    "preview": f"/setimg/{img.name}?v={int(img.stat().st_mtime)}" if img.exists() else None,
+                    "props": len(rec.get("props", [])), "textures": list((rec.get("textures") or {}).keys()),
+                    "where": "inside" if indoor else "outside", "light": light,
+                    "updated": rec.get("created") or (js.stat().st_mtime if js.exists() else 0)})
+    out.sort(key=lambda s: -s["updated"])
+    return out
+
+
+def set_job(args, title):
+    cmd = [sys.executable, "-u", str(PIPE / "make_set.py")] + args
+
+    def done(job):
+        sid = next((l.split("=", 1)[1] for l in reversed(job.log) if l.startswith("SET_ID=")), None)
+        job.result = {"set": sid}
+    return Job("set", title, cmd, done)
+
+
+EDGE_VOICES = None
+
+
+def edge_voices():
+    global EDGE_VOICES
+    if EDGE_VOICES is None:
+        try:
+            import asyncio
+            import edge_tts
+            vs = asyncio.run(edge_tts.list_voices())
+            EDGE_VOICES = sorted(({"name": v["ShortName"], "gender": v.get("Gender", ""),
+                                   "locale": v.get("Locale", "")} for v in vs), key=lambda v: v["name"])
+        except Exception:
+            return []
+    return EDGE_VOICES
+
+
+# --------------------------------------------------------------------------- PIN (optional, for LAN use)
+import hashlib  # noqa: E402
+import hmac  # noqa: E402
+
+PUBLIC_PATHS = ("/login", "/manifest.webmanifest", "/favicon.ico", "/favicon.svg", "/apple-touch-icon.png",
+                "/static/style.css", "/static/icons/")
+
+
+def current_pin():
+    return os.environ.get("LOWPOLY_PIN") or (S.load_settings().get("server") or {}).get("pin", "")
+
+
+def pin_token(pin):
+    return hashlib.sha256(f"lowpoly:{pin}".encode()).hexdigest()[:32]
+
+
+LOGIN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#17141f">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest"><title>Low Poly Studio</title>
+<link rel="stylesheet" href="/static/style.css"></head><body>
+<main style="max-width:360px;margin:12vh auto;padding:20px"><div class="panel" style="text-align:center">
+<img src="/static/icons/icon-192.png" alt="" style="width:96px;border-radius:22px">
+<h2 style="margin-top:12px">Low Poly Studio</h2>
+<form method="post" action="/login"><label>PIN<input type="password" name="pin" inputmode="numeric" autofocus
+ style="text-align:center;font-size:22px;letter-spacing:6px"></label>
+<div class="btns" style="justify-content:center"><button class="primary" type="submit">Enter</button></div>
+{msg}</form></div></main></body></html>"""
+
+
+# --------------------------------------------------------------------------- HTTP
+class Handler(BaseHTTPRequestHandler):
+    server_version = "LowPolyStudio/1.0"
+
+    def authorised(self, path):
+        pin = current_pin()
+        if not pin or self.client_address[0] in ("127.0.0.1", "::1"):
+            return True                       # no PIN set, or it's this PC itself
+        if path.startswith(PUBLIC_PATHS):
+            return True
+        cookies = dict(c.strip().split("=", 1) for c in (self.headers.get("Cookie") or "").split(";") if "=" in c)
+        return hmac.compare_digest(cookies.get("lp_auth", ""), pin_token(pin))
+
+    def login(self, method):
+        if method == "POST":
+            n = int(self.headers.get("Content-Length") or 0)
+            from urllib.parse import parse_qs
+            given = parse_qs(self.rfile.read(n).decode("utf-8", "ignore")).get("pin", [""])[0]
+            if given and hmac.compare_digest(given, current_pin()):
+                self.send_response(303)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie", f"lp_auth={pin_token(given)}; Path=/; Max-Age=31536000; "
+                                               "HttpOnly; SameSite=Lax")
+                self.end_headers()
+                return
+            time.sleep(1.0)                   # slow down guessing
+            msg = '<p class="err">Wrong PIN</p>'
+        else:
+            msg = ""
+        body = LOGIN_PAGE.replace("{msg}", msg).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt, *args):  # replaced by log_request (web/logs.py)
+        pass
+
+    def log_request(self, code="-", size="-"):
+        ms = int((time.time() - getattr(self, "_t0", time.time())) * 1000)
+        logs.request(self.client_address[0], self.command, self.path.split("?")[0], code, ms,
+                     self.headers.get("User-Agent", ""), getattr(self, "_logbody", ""))
+
+    # ---- responses
+    def send_json(self, data, status=200):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def fail(self, msg, status=400):
+        self.send_json({"error": msg}, status)
+
+    # ------------------------------------------------------------------ Assets page
+    def assets_api(self, method, arg, rest):
+        import propgen
+        import blender_fx
+        sub = rest[0] if rest else ""
+        if arg == "props":
+            if method == "GET" and not sub:
+                return self.send_json(list_props())
+            if not re.fullmatch(r"[a-z0-9_]+", sub or ""):
+                raise ValueError("bad prop name")
+            lib = propgen.library()
+            if sub not in lib:
+                return self.fail("no such prop", 404)
+            if method == "PUT" and len(rest) == 1:
+                b, d = self.body_json(), lib[sub]
+                if isinstance(b.get("looks"), str):
+                    d["looks"] = b["looks"].strip()[:200]
+                for k, lo, hi in (("height", 0.05, 12.0), ("width", 0.03, 15.0)):
+                    if b.get(k) not in (None, ""):
+                        d[k] = round(max(lo, min(hi, float(b[k]))), 2)
+                if b.get("on") in ("floor", "table", "wall"):
+                    d["on"] = b["on"]
+                    d["size_checked"] = True
+                propgen._save(d)
+                return self.send_json({"ok": True, "prop": prop_info(sub, d)})
+            if method == "POST" and sub == "missing":    # pictures for every prop that has none yet
+                cmd = [sys.executable, "-u", str(PIPE / "propgen.py"), "missing"]
+                return self.send_json(submit(Job("props", "Draw missing prop pictures", cmd)).to_dict())
+            if method == "POST" and rest[1:] == ["redraw"]:
+                b = self.body_json()
+                cmd = [sys.executable, "-u", str(PIPE / "propgen.py"), "redraw", sub]
+                if b.get("looks"):
+                    cmd.append(str(b["looks"])[:200])
+                return self.send_json(submit(Job("props", f"Redraw {sub}", cmd)).to_dict())
+        if arg == "fx":
+            ov = blender_fx.overrides()
+            if method == "GET" and not sub:
+                return self.send_json([fx_info(n, ov) for n in blender_fx.FX])
+            if method == "POST" and sub == "preview":
+                names = [n for n in (self.body_json().get("names") or []) if n in blender_fx.FX]
+                cmd = [sys.executable, "-u", str(PIPE / "fx_preview.py"), *names]
+                return self.send_json(submit(Job("fx", "Effect previews" + (f": {', '.join(names)}" if names else ""), cmd)).to_dict())
+            if sub not in blender_fx.FX:
+                return self.fail("no such effect", 404)
+            if method == "PUT":
+                b = self.body_json()
+                cols = [c for c in (b.get("colors") or []) if isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c)][:8]
+                ov[sub] = {"colors": cols, **{k: round(max(0.1, min(4.0, float(b.get(k, 1.0)))), 2)
+                                              for k in ("amount", "speed", "size")}}
+            elif method == "DELETE":
+                ov.pop(sub, None)
+            else:
+                return self.fail("unknown", 405)
+            blender_fx.OVERRIDES.parent.mkdir(parents=True, exist_ok=True)
+            blender_fx.OVERRIDES.write_text(json.dumps(ov, indent=1), encoding="utf-8")
+            return self.send_json({"ok": True, "fx": fx_info(sub, ov)})
+        return self.fail("unknown assets call", 404)
+
+    def send_file(self, path, cache=False):
+        if not path.is_file():
+            return self.fail("not found", 404)
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        size = path.stat().st_size
+        start, end = 0, size - 1
+        rng = self.headers.get("Range")
+        m = re.match(r"bytes=(\d*)-(\d*)", rng or "")
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else size - 1
+            else:
+                start = max(0, size - int(m.group(2)))
+            end = min(end, size - 1)
+            if start > end:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Cache-Control", "max-age=3600" if cache else "no-cache")
+        self.end_headers()
+        try:
+            with path.open("rb") as fh:
+                fh.seek(start)
+                left = end - start + 1
+                while left > 0:
+                    chunk = fh.read(min(1 << 16, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+            pass
+
+    def body_json(self):
+        raw = getattr(self, "_raw_body", None)           # already read for the log (small JSON bodies)
+        if raw is not None:
+            return json.loads(raw or b"{}") if raw else {}
+        n = int(self.headers.get("Content-Length") or 0)
+        return json.loads(self.rfile.read(n) or b"{}") if n else {}
+
+    def body_to_file(self, dest):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > MAX_UPLOAD:
+            raise ValueError(f"upload must be 1 byte to {MAX_UPLOAD // 2**20} MB")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with dest.open("wb") as fh:
+            left = n
+            while left:
+                chunk = self.rfile.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                fh.write(chunk)
+                left -= len(chunk)
+        return dest
+
+    # ---- routing
+    def route(self, method):
+        path = unquote(urlparse(self.path).path)
+        self._t0, self._logbody, self._raw_body = time.time(), "", None
+        logs.set_request(self.client_address[0], method, path)
+        if method != "GET" and "json" in (self.headers.get("Content-Type") or "") and path != "/login":
+            n = int(self.headers.get("Content-Length") or 0)
+            if 0 < n <= 256 * 1024:                      # small JSON changes: keep the body for the log
+                self._raw_body = self.rfile.read(n)
+                try:
+                    self._logbody = logs.summary(json.loads(self._raw_body or b"{}"))
+                except Exception:
+                    self._logbody = "(not JSON)"
+        try:
+            if path == "/login":
+                return self.login(method)
+            if not self.authorised(path):
+                if path.startswith("/api/"):
+                    return self.fail("PIN required - open the app page to log in", 401)
+                self.send_response(303)
+                self.send_header("Location", "/login")
+                self.end_headers()
+                return
+            # app icons / manifest at the root, where browsers and iOS look for them
+            roots = {"/manifest.webmanifest": "manifest.webmanifest", "/favicon.ico": "icons/favicon.ico",
+                     "/favicon.svg": "icons/favicon.svg", "/apple-touch-icon.png": "icons/apple-touch-icon.png"}
+            if method == "GET" and path in roots:
+                return self.send_file(WEB / roots[path], cache=True)
+            if method == "GET" and (path == "/" or path.startswith("/static/")):
+                name = "index.html" if path == "/" else path[len("/static/"):]
+                target = (WEB / name).resolve()
+                if WEB.resolve() not in target.parents:
+                    return self.fail("not found", 404)
+                return self.send_file(target)
+            if method == "GET" and path.startswith("/media/previous/"):   # earlier versions (output/previous/)
+                name = path[len("/media/previous/"):]
+                if not re.fullmatch(r"[\w.-]+\.(mp4|png)", name):
+                    return self.fail("not found", 404)
+                return self.send_file(OUTPUT / "previous" / name)
+            if method == "GET" and path.startswith("/media/"):
+                name = path[len("/media/"):]
+                if not re.fullmatch(r"[\w.-]+\.(mp4|png|wav)", name):
+                    return self.fail("not found", 404)
+                return self.send_file(OUTPUT / name)
+            if method == "GET" and path.startswith("/propimg/"):
+                name = path[len("/propimg/"):]
+                if not re.fullmatch(r"[\w-]+\.png", name):
+                    return self.fail("not found", 404)
+                return self.send_file(ROOT / "assets" / "props" / name)
+            if method == "GET" and path.startswith("/fxprev/"):
+                name = path[len("/fxprev/"):]
+                if not re.fullmatch(r"[\w-]+\.(mp4|jpg)", name):
+                    return self.fail("not found", 404)
+                return self.send_file(ROOT / "assets" / "fx_previews" / name)
+            if method == "GET" and path.startswith("/impimg/"):          # pictures of imported models
+                name = path[len("/impimg/"):]
+                if not re.fullmatch(r"[\w.-]+\.png", name):
+                    return self.fail("not found", 404)
+                return self.send_file(ROOT / "assets" / "imported" / "previews" / name)
+            if method == "GET" and path.startswith("/charimg/"):
+                name = path[len("/charimg/"):]
+                if not re.fullmatch(r"[a-z0-9_-]+\.preview\.png", name):
+                    return self.fail("not found", 404)
+                return self.send_file(S.CHAR_DIR / name)
+            if method == "GET" and path.startswith("/setimg/"):
+                name = path[len("/setimg/"):]
+                if not re.fullmatch(r"[\w.-]+\.png", name):
+                    return self.fail("not found", 404)
+                return self.send_file(SETS_DIR / name, cache=True)      # the URL has a version: safe to cache
+            if method == "GET" and path.startswith("/sfx/"):
+                m = re.fullmatch(r"/sfx/(builtin|custom)/([\w.-]+\.(wav|mp3|ogg|m4a|flac))", path, re.I)
+                if not m:
+                    return self.fail("not found", 404)
+                return self.send_file((sfxlib.BUILTIN if m.group(1) == "builtin" else sfxlib.CUSTOM) / m.group(2))
+            if method == "GET" and path.startswith("/music/"):
+                name = path[len("/music/"):]
+                if not re.fullmatch(r"[\w .()-]+\.(mp3|wav|ogg|m4a|flac)", name, re.I):
+                    return self.fail("not found", 404)
+                return self.send_file(MUSIC / name)
+            if path.startswith("/api/"):
+                return self.api(method, path[5:].strip("/").split("/"))
+            return self.fail("not found", 404)
+        except ValueError as exc:
+            return self.fail(str(exc))
+        except Exception as exc:
+            logs.error(f"{method} {path}", exc)
+            return self.fail(f"server error: {exc}", 500)
+
+    def do_GET(self):
+        self.route("GET")
+
+    def do_POST(self):
+        self.route("POST")
+
+    def do_PUT(self):
+        self.route("PUT")
+
+    def do_DELETE(self):
+        self.route("DELETE")
+
+    # ---- API
+    def api(self, method, parts):
+        head = parts[0]
+        arg = parts[1] if len(parts) > 1 else None
+        sub = parts[2] if len(parts) > 2 else None
+
+        if head == "meta" and method == "GET":
+            return self.send_json({"catalog": catalog.as_dict(), "characters": S.character_ids(),
+                                   "settings": S.public_settings(), "defaults": S.DEFAULTS,
+                                   "presets": S.LOOK_PRESETS, "tints": S.TINTS, "effects": S.CAPTION_EFFECTS,
+                                   "sfx": sfxlib.all_slots(),
+                                   "network": {"lan": SERVER_INFO["lan"], "port": SERVER_INFO["port"],
+                                               "urls": [f"http://{ip}:{SERVER_INFO['port']}" for ip in lan_addresses()]}})
+
+        # ---- AI helpers (Ollama) - optional, synchronous
+        if head == "ollama" and arg == "models":
+            url = S.load_settings()["ollama"]["url"]
+            try:
+                return self.send_json({"ok": True, "models": llm.list_models(url)})
+            except Exception as exc:
+                return self.send_json({"ok": False, "error": f"Ollama not reachable at {url} ({exc})", "models": []})
+        if head == "ai" and method == "POST":
+            b, cfg = self.body_json(), S.load_settings()
+            o = cfg["ollama"]
+            model = b.get("model") or o["model"]
+            char = S.load_character(b.get("character") or cfg["active_character"])
+            if arg == "script":
+                sets = catalog.all_sets()
+                chosen = b.get("set") or ""
+                if chosen == "auto":           # pick (or plan) the set from the title first
+                    chosen, place = autodirect.auto_set(b.get("title"), b.get("scene_policy", "reuse"), o)
+                if str(chosen).startswith("new:"):
+                    s = {"name": chosen[4:], "description": chosen[4:], "marks": autodirect.GENERIC_MARKS}
+                else:
+                    s = sets.get(chosen) or next(iter(sets.values()))
+                others = []                    # co-stars: the script gives them lines ("Ethan: ...")
+                for cid in [str(c) for c in (b.get("co_stars") or []) if S.valid_id(str(c))]:
+                    prof = S.load_character(cid)
+                    others.append({"name": prof.get("name") or cid, "about": prof.get("about", ""),
+                                   "aliases": S.speaker_names(prof)})
+                lines = llm.generate_script(o["url"], model, b.get("title") or "an ordinary day", char,
+                                            {"name": s["name"], "description": s["description"],
+                                             "marks": list(s["marks"])},
+                                            lines=int(b.get("lines", 6)), tone=b.get("tone", "funny"),
+                                            extra=b.get("extra", ""), temperature=o["temperature"], others=others)
+                return self.send_json({"lines": lines, "script": "\n".join(lines), "model": model, "set": chosen})
+            if arg == "titles":
+                titles = llm.generate_titles(o["url"], model, char, b.get("theme", ""), int(b.get("count", 8)))
+                return self.send_json({"titles": titles, "model": model})
+
+        # ---- sets
+        if head == "assets":         # the Assets page: AI-made props + particle effects
+            return self.assets_api(method, arg, parts[2:])
+
+        if head == "props":          # AI-made props (assets/props) that new sets reuse
+            import propgen
+            if method == "GET" and not arg:
+                return self.send_json([{"kind": k, "looks": d.get("looks", ""), "parts": len(d.get("parts", [])),
+                                        "height": d.get("height"), "place": d.get("place")}
+                                       for k, d in sorted(propgen.library().items())])
+            if method == "DELETE" and arg and re.fullmatch(r"[a-z0-9_]+", arg):
+                f = propgen.LIB / f"{arg}.json"
+                if f.exists():        # sets that already use it keep their own copy
+                    (propgen.LIB / ".trash").mkdir(exist_ok=True)
+                    f.replace(propgen.LIB / ".trash" / f"{arg}-{stamp()}.json")
+                return self.send_json({"ok": True})
+
+        if head == "sets":
+            if method == "GET" and not arg:
+                return self.send_json(list_sets())
+            if method == "POST" and arg == "starter":        # "Generate 3 Starter Sets" (pipeline/starter_sets.py)
+                cmd = [sys.executable, "-u", str(PIPE / "starter_sets.py"), "3"]
+                return self.send_json(submit(Job("set", "Generate 3 starter sets", cmd)).to_dict())
+            if method == "POST" and arg == "from-image":     # a scene copied from a picture (pipeline/make_set.py --image)
+                fname = Path(unquote(self.headers.get("X-Filename") or "picture.png")).name
+                ext = Path(fname).suffix.lower()
+                if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                    raise ValueError("use a PNG, JPG or WEBP picture")
+                refs = ROOT / "build" / "set_refs"
+                dest = refs / f"{stamp()}-{slug(Path(fname).stem)}{ext}"
+                self.body_to_file(dest)
+                idea = unquote(self.headers.get("X-Idea") or "").strip()[:200]
+                args = ["--image", str(dest)] + (["--idea", idea] if idea else [])
+                return self.send_json(submit(set_job(args, f"Scene from picture: {idea or fname}")).to_dict())
+            if method == "POST" and arg == "generate":
+                b = self.body_json()
+                args = []
+                if b.get("idea"):
+                    args += ["--idea", str(b["idea"])[:200]]
+                if b.get("ai") in ("auto", "off"):
+                    args += ["--ai", b["ai"]]
+                if b.get("where") in ("inside", "outside", "air"):
+                    args += ["--where", b["where"]]
+                if b.get("light") in ("day", "sunset", "night"):
+                    args += ["--light", b["light"]]
+                if b.get("name"):
+                    args += ["--name", str(b["name"])[:40]]
+                if b.get("comfy") in ("required", "auto", "off"):
+                    args += ["--comfy", b["comfy"]]
+                if b.get("theme") and re.fullmatch(r"[a-z0-9_]{1,40}", str(b["theme"])):
+                    args += ["--theme", str(b["theme"])]          # auto / random / generated / a theme id
+                title = f"New set: {b['idea'][:30]}" if b.get("idea") else "New random set"
+                return self.send_json(submit(set_job(args, title)).to_dict())
+            if not re.fullmatch(r"[a-z0-9_]{1,80}", arg or ""):
+                raise ValueError("bad set id")
+            if method == "GET" and sub == "model.glb":      # the 3D file for the 3D view
+                if not (SETS_DIR / f"{arg}.glb").exists():
+                    return self.fail("no 3D view yet - make it first", 404)
+                return self.send_file(SETS_DIR / f"{arg}.glb", cache=True)
+            if method == "POST" and sub == "3d":            # make the 3D file (pipeline/set_export.py)
+                if arg in catalog.SETS:
+                    raise ValueError("the built-in sets have no 3D file yet")
+                if not (SETS_DIR / f"{arg}.json").exists():
+                    raise ValueError("no such set")
+                cmd = [sys.executable, "-u", str(PIPE / "set_export.py"), arg]
+                return self.send_json(submit(Job("set", f"3D view: {arg}", cmd)).to_dict())
+            if sub == "layout" and method == "GET":         # the map editor: where each prop stands
+                return self.send_json(set_layout(arg))
+            if sub == "layout" and method == "PUT":
+                return self.send_json(save_set_layout(arg, self.body_json()))
+            if method == "POST" and sub == "regenerate":    # the regenerate popup: rebuild this set with the chosen settings
+                if arg in catalog.SETS:
+                    raise ValueError("the original sets are built in - they can't be regenerated")
+                if not (SETS_DIR / f"{arg}.json").exists():
+                    raise ValueError("no such set")
+                b = self.body_json()
+                args = ["--replace", arg]
+                for key, flag in (("idea", "--idea"), ("name", "--name"), ("room", "--room"), ("floor", "--floor"),
+                                  ("where", "--where"), ("light", "--light"), ("ai", "--ai"), ("comfy", "--comfy"),
+                                  ("theme", "--theme")):
+                    val = str(b.get(key) or "").strip()
+                    if val and val not in ("any", "auto-room"):
+                        args += [flag, val[:200]]
+                if b.get("seed") not in (None, ""):
+                    args += ["--seed", str(int(b["seed"]))]
+                title = f"Regenerate set: {b.get('name') or arg}"
+                return self.send_json(submit(set_job(args, title)).to_dict())
+            if method == "POST" and sub == "preview":
+                cmd = [sys.executable, "-u", str(PIPE / "set_preview.py"), arg]
+                return self.send_json(submit(Job("set", f"Preview {arg}", cmd, result={"set": arg})).to_dict())
+            if method == "DELETE":
+                if arg in catalog.SETS:          # hand-made sets live in code: just hide them
+                    setgen.hide(arg)
+                    return self.send_json({"ok": True})
+                trash = SETS_DIR / ".trash"
+                trash.mkdir(exist_ok=True)
+                when = stamp()
+                for f in (SETS_DIR / f"{arg}.json", SETS_DIR / f"{arg}.png", SETS_DIR / f"{arg}.glb", SETS_DIR / arg):
+                    if f.exists():                    # recipe, preview, 3D file and its textures folder
+                        f.replace(trash / f"{arg}-{when}{f.suffix}")
+                return self.send_json({"ok": True})
+
+        if head == "comfy" and arg == "status":
+            return self.send_json(comfy.status(S.load_settings()["comfy"]["url"], max_age=0))   # always ask now
+
+        if head == "themes" and method == "GET":        # the theme picker: auto, random, generated, then every theme
+            return self.send_json({"options": [{"id": "auto", "name": "Auto (from the words)"},
+                                               {"id": "random", "name": "Random (free, can be odd)"},
+                                               {"id": "generated", "name": "✨ Generated theme (AI writes one)"}],
+                                   "themes": setgen.theme_list()})
+        if head == "fonts":                  # scanning the system fonts is slow: do it once per server run
+            if "list" not in FONT_CACHE:
+                FONT_CACHE["list"] = fonts.list_fonts()
+            return self.send_json(FONT_CACHE["list"])
+
+        if head == "music":
+            if method == "GET":
+                MUSIC.mkdir(parents=True, exist_ok=True)
+                default = S.load_settings()["audio"].get("default_music", "")
+                out = []
+                for p in sorted(MUSIC.iterdir(), key=lambda p: p.name.lower()):
+                    if p.is_file() and p.suffix.lower() in (".mp3", ".wav", ".ogg", ".m4a", ".flac"):
+                        rel = f"assets/music/{p.name}"
+                        out.append({"name": p.name, "path": rel, "url": f"/music/{p.name}", "size": p.stat().st_size,
+                                    "default": rel == default})
+                return self.send_json(out)
+            if method == "POST" and arg == "generate":
+                b = self.body_json()
+                cmd = [sys.executable, "-u", str(PIPE / "music_gen.py"),
+                       "--style", str(b.get("style") or "cheerful retro chiptune, video game, cute")[:300],
+                       "--seconds", str(max(10, min(240, float(b.get("seconds") or 60)))),
+                       "--engine", b.get("engine") if b.get("engine") in ("auto", "ace", "synth") else "auto"]
+                if b.get("name"):
+                    cmd += ["--name", str(b["name"])[:40]]
+
+                def done(job):
+                    name = next((l.split("=", 1)[1] for l in reversed(job.log) if l.startswith("MUSIC=")), None)
+                    job.result = {"music": f"assets/music/{name}" if name else None}
+                return self.send_json(submit(Job("music", "Generate music", cmd, done)).to_dict())
+            if method == "POST":
+                fname = Path(unquote(self.headers.get("X-Filename") or "music.mp3")).name
+                fname = re.sub(r"[^\w .()-]", "_", fname)
+                if not re.fullmatch(r"[\w .()-]+\.(mp3|wav|ogg|m4a|flac)", fname, re.I):
+                    raise ValueError("music must be an mp3, wav, ogg, m4a or flac file")
+                if (MUSIC / fname).exists():
+                    stem, ext = fname.rsplit(".", 1)
+                    fname = f"{stem}-{stamp()}.{ext}"
+                self.body_to_file(MUSIC / fname)
+                return self.send_json({"name": fname, "path": f"assets/music/{fname}", "url": f"/music/{fname}"})
+            if method == "DELETE" and arg:     # moves to assets/music/.trash
+                f = MUSIC / Path(arg).name
+                if f.exists():
+                    (MUSIC / ".trash").mkdir(exist_ok=True)
+                    f.replace(MUSIC / ".trash" / f"{stamp()}-{f.name}")
+                cfg = S.load_settings()
+                if cfg["audio"].get("default_music") == f"assets/music/{f.name}":
+                    cfg["audio"]["default_music"] = ""
+                    S.save_settings(cfg)
+                return self.send_json({"ok": True})
+
+        # ---- sound effects library
+        if head == "sfx":
+            if method == "GET" and not arg:
+                return self.send_json(sfxlib.list_library())
+            if method == "POST" and arg == "regenerate":
+                cmd = [sys.executable, "-u", str(PIPE / "sfx.py")]
+                return self.send_json(submit(Job("sfx", "Regenerate built-in sound effects", cmd)).to_dict())
+            if method == "POST" and arg == "slots":
+                b = self.body_json()
+                name = re.sub(r"[^a-z0-9_]+", "_", (b.get("name") or b.get("label") or "").strip().lower()).strip("_")
+                kind = "ambience" if b.get("kind") == "ambience" else "oneshot"
+                if kind == "ambience" and not name.startswith("amb_"):
+                    name = "amb_" + name
+                sfxlib.add_custom_slot(name, b.get("label", ""), b.get("words", ""), kind)
+                if b.get("generate"):       # make the sound right away from the description
+                    cfg = S.load_settings()
+                    sfxlib.generate_sound(name, b.get("description") or b.get("label") or name, kind == "ambience",
+                                          FFMPEG, cfg["ollama"] if cfg["sets"]["use_ollama"] else None)
+                return self.send_json({"slot": name, "library": sfxlib.list_library()})
+            if arg not in sfxlib.all_slots():
+                raise ValueError("unknown sound effect slot")
+            if method == "POST" and sub == "generate":
+                b, cfg = self.body_json(), S.load_settings()
+                s = sfxlib.all_slots()[arg]
+                desc = (b.get("description") or "").strip() or f"{s['label']} ({s['words']})"
+                sfxlib.generate_sound(arg, desc, s["kind"] == "ambience", FFMPEG,
+                                      cfg["ollama"] if cfg["sets"]["use_ollama"] else None)
+                return self.send_json(sfxlib.list_library())
+            if method == "POST" and not sub:    # upload your own sound for this slot
+                ext = Path(unquote(self.headers.get("X-Filename") or "x.wav")).suffix.lower()
+                if ext not in sfxlib.AUDIO_EXT:
+                    raise ValueError("sound must be wav, mp3, ogg, m4a or flac")
+                old = sfxlib.custom_file(arg)
+                if old:
+                    (sfxlib.CUSTOM / ".trash").mkdir(parents=True, exist_ok=True)
+                    old.replace(sfxlib.CUSTOM / ".trash" / f"{stamp()}-{old.name}")
+                (sfxlib.CUSTOM / f"{arg}.json").unlink(missing_ok=True)   # it's an upload now, not generated
+                self.body_to_file(sfxlib.CUSTOM / f"{arg}{ext}")
+                return self.send_json(sfxlib.list_library())
+            if method == "DELETE" and not sub:     # remove one of YOUR slots entirely (files go to .trash)
+                if arg in sfxlib.SLOTS:
+                    raise ValueError("built-in sounds can't be removed - upload or generate a replacement instead")
+                data = sfxlib.custom_slots()
+                data.pop(arg, None)
+                sfxlib.CUSTOM_SLOTS.write_text(json.dumps(data, indent=1), encoding="utf-8")
+                (sfxlib.CUSTOM / ".trash").mkdir(parents=True, exist_ok=True)
+                for f in sfxlib.CUSTOM.glob(f"{arg}.*"):
+                    f.replace(sfxlib.CUSTOM / ".trash" / f"{stamp()}-{f.name}")
+                return self.send_json(sfxlib.list_library())
+            if method == "DELETE" and sub == "custom":   # back to the built-in sound (upload kept in .trash)
+                old = sfxlib.custom_file(arg)
+                (sfxlib.CUSTOM / f"{arg}.json").unlink(missing_ok=True)
+                if old:
+                    (sfxlib.CUSTOM / ".trash").mkdir(parents=True, exist_ok=True)
+                    old.replace(sfxlib.CUSTOM / ".trash" / f"{stamp()}-{old.name}")
+                return self.send_json(sfxlib.list_library())
+
+        if head == "autodirect" and method == "POST":
+            b = self.body_json()
+            policy = "new" if b.get("scene_policy") == "new" else "reuse"
+            if b.get("set") == "auto":                 # pick where it starts from the title
+                b["set"], _place = autodirect.auto_set(b.get("title"), policy)
+            co = [str(c) for c in (b.get("co_stars") or []) if str(c)]
+            speakers = {}
+            for cid in co:                              # the names a line can start with: "Ethan: ..."
+                try:
+                    for nm in S.speaker_names(S.load_character(cid)) + [cid]:
+                        speakers.setdefault(nm.lower(), cid)
+                except Exception:
+                    pass
+            res = autodirect.direct(b.get("script", ""), b.get("set", "cafe"), b.get("start"), b.get("cast"), policy,
+                                    speakers=speakers, beat_words=int(b.get("beat_words", 4) or 0),
+                                    beat_sets=[x for x in (b.get("beat_sets") or [])
+                                               if x in catalog.all_sets() or str(x).startswith("new:")] or None,
+                                    walk_every=3 if int(b.get("beat_words", 4) or 0) else 0,
+                                    wipe_every=4 if int(b.get("beat_words", 4) or 0) else 0)
+            res["set"] = b.get("set", "cafe")
+            res["co_stars"] = co
+            if b.get("scene_ai") and res["shots"]:      # let Ollama spot scene changes + weather/effects
+                try:
+                    o = S.load_settings()["ollama"]
+                    sets = catalog.all_sets()
+                    start = sets.get(b.get("set", "cafe"), {"name": str(b.get("set", ""))[4:], "description": ""})
+                    plan = llm.find_scenes(o["url"], o["model"], [s.get("line", "") for s in res["shots"]],
+                                           f"{start.get('name', '')} - {start.get('description', '')}", sets, policy)
+                    autodirect.add_scene_plan(res, plan, b.get("set", "cafe"), policy)
+                except Exception as exc:
+                    res["scene_note"] = f"AI scene check skipped ({exc.__class__.__name__})"
+            if b.get("cast_ai") and res["shots"]:       # let Ollama spot people/things the script brings in
+                cfg = S.load_settings()
+                try:
+                    o = cfg["ollama"]
+                    place = (catalog.all_sets().get(b.get("set", "cafe")) or {}).get("description", "")
+                    char = S.load_character(b.get("character") or cfg["active_character"]).get("name", "")
+                    plan = llm.find_cast(o["url"], o["model"], [s.get("line", "") for s in res["shots"]],
+                                         char or "the main character", place)
+                    autodirect.add_cast_plan(res, plan)
+                except Exception as exc:
+                    res["cast_note"] = f"AI cast check skipped ({exc.__class__.__name__})"
+            return self.send_json(res)
+
+        # episodes
+        if head == "episodes":
+            if method == "GET" and not arg:
+                return self.send_json(list_episodes())
+            p = episode_path(arg)
+            if method == "POST" and sub == "apply":      # the video editor's save (web/episode_edit.py)
+                import episode_edit
+                return self.send_json(episode_edit.apply(p, self.body_json()))
+            if method == "GET":
+                if not p.exists():
+                    return self.fail("no such episode", 404)
+                return self.send_json(json.loads(p.read_text(encoding="utf-8-sig")))
+            if method == "PUT":
+                ep = self.body_json()
+                if not isinstance(ep.get("shots"), list):
+                    raise ValueError("episode needs a shots list")
+                EPISODES.mkdir(exist_ok=True)
+                p.write_text(json.dumps(ep, indent=2), encoding="utf-8")
+                return self.send_json({"ok": True, "id": arg})
+            if method == "DELETE":   # never destroys: moves to episodes/.trash
+                if p.exists():
+                    trash = EPISODES / ".trash"
+                    trash.mkdir(exist_ok=True)
+                    p.replace(trash / f"{arg}-{stamp()}.json")
+                return self.send_json({"ok": True})
+
+        if head == "render" and method == "POST":
+            b = self.body_json()
+            p = episode_path(b.get("id"))
+            if not p.exists():
+                return self.fail("save the episode first", 404)
+            remember_look(p)                        # the first render keeps the look this video is made with
+            cmd = [sys.executable, "-u", str(PIPE / "run_episode.py"), str(p)]
+            if b.get("fresh_voice"):
+                cmd.append("--fresh-voice")
+            if b.get("reuse_frames"):
+                cmd.append("--no-render")
+            name = slug(p.stem)
+            if not b.get("reuse_frames"):            # keep the video this render replaces (output/previous/)
+                when = stamp()                       # one stamp for both, so the sheet matches its video
+                for old in (OUTPUT / f"{name}.mp4", OUTPUT / f"{name}_shots.png"):
+                    if old.exists():
+                        (OUTPUT / "previous").mkdir(exist_ok=True)
+                        shutil.copy2(old, OUTPUT / "previous" / f"{old.stem}-{when}{old.suffix}")
+            job = Job("render", f"Render {p.stem}" + (" (look only)" if b.get("reuse_frames") else ""), cmd,
+                      result={"video": f"/media/{name}.mp4", "sheet": f"/media/{name}_shots.png", "episode": p.stem})
+            return self.send_json(submit(job).to_dict())
+
+        if head == "server" and arg == "restart" and method == "POST":   # Settings -> Restart the app
+            b = self.body_json()
+            running = [j for j in JOBS.values() if j.status in ("queued", "running")]
+            if running and not b.get("force"):
+                return self.fail(f"{len(running)} job(s) are still running - restarting stops them. Restart anyway?", 409)
+            logs.event(f"RESTART requested ({len(running)} job(s) stopped)")
+            self.send_json({"ok": True, "stopped_jobs": len(running)})
+            self.wfile.flush()
+            threading.Thread(target=restart_app, daemon=True).start()
+            return
+
+        if head == "translate" and method == "POST":   # Create -> Check translation: every line, English + translated
+            import run_episode
+            b = self.body_json()
+            ep, lang = b.get("episode") or {}, str(b.get("language") or "")
+            if lang not in catalog.LANGUAGES or lang == "en":
+                raise ValueError("pick a language other than English")
+            if not isinstance(ep.get("shots"), list) or not ep["shots"]:
+                raise ValueError("direct the shots first")
+            cfg = S.load_settings()
+            texts = [t for t, _ in run_episode.translation_units(ep, cfg)]
+            try:
+                mem = run_episode.translations_for(ep, cfg, lang, texts, log=lambda m: None)
+            except Exception as exc:
+                return self.fail(f"Translating needs Ollama ({exc.__class__.__name__}: {str(exc)[:160]})", 503)
+            return self.send_json({"language": lang, "lines": [{"en": t, "out": mem[t]} for t in texts]})
+
+        if head == "storage":        # Settings -> Free up disk space (web/storage_web.py)
+            import storage_web
+            busy = [j for j in JOBS.values() if j.status in ("queued", "running")]
+            return storage_web.handle(self, method, parts[1:], root=ROOT, busy=busy)
+
+        if head == "gif":            # the GIF page: video -> high-quality GIF (web/gif_web.py, pipeline/gif.py)
+            import gif_web
+            return gif_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
+
+        if head == "imported":       # imported real asset packs (web/imported_web.py, pipeline/imported.py)
+            import imported_web
+            return imported_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
+
+        if head == "actors":         # extra people for scenes (web/actors_web.py, pipeline/actors.py)
+            import actors_web
+            return actors_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
+
+        if head == "jobs":
+            if not arg:
+                return self.send_json([JOBS[j].to_dict(log_from=10**9) for j in reversed(JOB_ORDER)][:20])
+            if method == "POST" and sub == "retry":        # run a failed job again, same command and settings
+                old = JOBS.get(arg)
+                if not old:
+                    return self.fail("no such job", 404)
+                if old.status != "failed":
+                    raise ValueError("only a failed job can be retried")
+                return self.send_json(submit(Job(old.kind, old.title, old.cmd, old.on_done, dict(old.result))).to_dict())
+            job = JOBS.get(arg)
+            if not job:
+                return self.fail("no such job", 404)
+            q = urlparse(self.path).query
+            m = re.search(r"from=(\d+)", q)
+            return self.send_json(job.to_dict(int(m.group(1)) if m else 0))
+
+        if head == "videos" and method == "GET":
+            items = list_videos() + list_previous_videos()
+            labels = load_labels()
+            for it in items:                          # names you gave a video win over the script's title
+                if it["key"] in labels:
+                    it["title"] = labels[it["key"]]
+            return self.send_json(items)
+        if head == "videos" and method in ("PUT", "DELETE") and len(parts) > 1:
+            key = "/".join(parts[1:])
+            if method == "DELETE":
+                delete_video(key)
+                return self.send_json({"ok": True})
+            title = str((self.body_json() or {}).get("title") or "").strip()[:120]
+            if not title:
+                raise ValueError("give the video a name")
+            if not video_file(key).exists():          # the video must exist
+                raise ValueError("no such video")
+            labels = load_labels()
+            labels[key] = title
+            LABELS_FILE.write_text(json.dumps(labels, indent=1), encoding="utf-8")
+            return self.send_json({"ok": True, "title": title})
+
+        if head == "postiz":                     # drafts on the user's Postiz (nothing is published from here)
+            import postiz
+            if arg == "channels" and method == "GET":
+                try:
+                    chans = postiz.channels()
+                    conf = (S.load_settings().get("postiz") or {}).get("channels") or {}
+                    for c in chans:
+                        c["platform"] = postiz.platform_of(c["identifier"])
+                        c.update({k: conf.get(c["id"], {}).get(k) for k in ("enabled", "discord_channel")})
+                    return self.send_json({"ok": True, "channels": chans})
+                except Exception as exc:
+                    return self.send_json({"ok": False, "error": str(exc), "channels": []})
+            if arg == "captions" and method == "POST":
+                b = self.body_json()
+                video = postiz_base(str(b.get("video") or ""))
+                try:
+                    return self.send_json({"ok": True, "captions": postiz.captions(video)})
+                except Exception as exc:
+                    return self.send_json({"ok": False, "error": str(exc)})
+            if arg == "draft" and method == "POST":
+                b = self.body_json()
+                key = str(b.get("video") or "")
+                video = postiz_base(key)
+                mp4 = video_file(key)
+                if not mp4.exists():
+                    raise ValueError("no such video")
+                cmd = [sys.executable, "-u", str(PIPE / "postiz.py"), "draft", video, "--mp4", str(mp4)]
+                if isinstance(b.get("captions"), dict):
+                    tmp = ROOT / "build" / f"postiz_{video}.json"
+                    tmp.parent.mkdir(exist_ok=True)
+                    tmp.write_text(json.dumps(b["captions"]), encoding="utf-8")
+                    cmd += ["--posts", str(tmp)]
+                return self.send_json(submit(Job("postiz", f"Postiz drafts: {key}", cmd)).to_dict())
+
+        if head == "settings":
+            if method == "GET":
+                return self.send_json(S.public_settings())
+            if method == "PUT":
+                S.save_settings(self.body_json())
+                return self.send_json(S.public_settings())
+
+        if head == "voices" and arg == "edge":
+            return self.send_json(edge_voices())
+
+        # characters
+        if head == "characters":
+            if method == "GET" and not arg:
+                return self.send_json([character_info(c) for c in S.character_ids()])
+            if not S.valid_id(arg or ""):
+                raise ValueError("character id must be lowercase letters, numbers, - or _")
+            if method == "POST" and sub == "preview":         # one still of this character (pipeline/character_preview.py)
+                if not (S.CHAR_DIR / f"{arg}.blend").exists():
+                    raise ValueError("this character has no model yet - import one first")
+                cmd = [sys.executable, "-u", str(PIPE / "character_preview.py"), arg]
+                return self.send_json(submit(Job("preview", f"Character preview: {arg}", cmd)).to_dict())
+            if method == "GET" and not sub:
+                return self.send_json(character_info(arg))
+            if method == "PUT" and not sub:
+                prof = self.body_json()
+                S.save_character(arg, prof)
+                return self.send_json(character_info(arg))
+            if method == "POST" and sub == "activate":
+                cfg = S.load_settings()
+                cfg["active_character"] = arg
+                S.save_settings(cfg)
+                return self.send_json({"ok": True})
+            if method == "POST" and sub == "model":
+                fname = unquote(self.headers.get("X-Filename") or "model.vrm")
+                if not fname.lower().endswith(".vrm"):
+                    raise ValueError("upload a .vrm file exported from VRoid Studio")
+                dest = S.CHAR_DIR / f"{arg}.vrm"
+                if dest.exists():
+                    dest.replace(S.CHAR_DIR / f"{arg}-{stamp()}.vrm")      # keep the previous export
+                blend = S.CHAR_DIR / f"{arg}.blend"
+                if blend.exists():
+                    shutil.copy2(blend, S.CHAR_DIR / f"{arg}-{stamp()}.blend")  # and the previous model
+                self.body_to_file(dest)
+                if not (S.CHAR_DIR / f"{arg}.json").exists():
+                    S.save_character(arg, {"name": arg})
+                return self.send_json(submit(import_model_job(arg, dest)).to_dict())
+            if method == "POST" and sub == "voice-ref":
+                fname = unquote(self.headers.get("X-Filename") or "voice.wav")
+                tmp = VOICES / f".upload-{stamp()}{Path(fname).suffix.lower()[:6]}"
+                self.body_to_file(tmp)
+                out = VOICES / f"{arg}.wav"
+                if out.exists():
+                    out.replace(VOICES / f"{arg}-{stamp()}.wav")
+                r = subprocess.run([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp),
+                                    "-ac", "1", "-ar", "48000", str(out)], capture_output=True, text=True)
+                tmp.unlink(missing_ok=True)
+                if r.returncode != 0:
+                    raise ValueError("could not read that audio file: " + r.stderr[-300:])
+                prof = S.load_character(arg)
+                prof["voice"] = {**(prof.get("voice") or {}), "engine": "local",
+                                 "ref": f"assets/voices/{arg}.wav"}
+                S.save_character(arg, prof)
+                return self.send_json(character_info(arg))
+            if method == "POST" and sub == "say":
+                text = (self.body_json().get("text") or "").strip()[:300]
+                if not text:
+                    raise ValueError("type something to say")
+                out = OUTPUT / f"voice_test_{arg}.wav"
+                cmd = [sys.executable, "-u", str(PIPE / "run_episode.py"), "--say", text, "--character", arg,
+                       "--out", str(out)]
+                job = Job("voice", f"Voice test: {arg}", cmd,
+                          result={"audio": f"/media/{out.name}?t={int(time.time())}"})
+                return self.send_json(submit(job).to_dict())
+
+        return self.fail("unknown API call", 404)
+
+
+SERVER_INFO = {"lan": False, "port": 8765}
+
+
+class StudioServer(ThreadingHTTPServer):
+    """On Windows, SO_REUSEADDR lets a second copy bind a port that is already in use (two copies of the app would
+    both listen and split the requests). Ask for the port exclusively instead, so a second start waits or fails."""
+    if os.name == "nt":
+        allow_reuse_address = False
+
+        def server_bind(self):
+            import socket
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            super().server_bind()
+
+
+def lan_addresses():
+    import socket
+    ips = set()
+    try:     # the address used to reach the internet = the one other devices on the LAN can reach
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        ips.add(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    return sorted(ip for ip in ips if not ip.startswith(("127.", "169.254.")))
+
+
+def restart_app():
+    """Start a fresh copy of this server (same arguments), then let this one exit. The new copy waits for the port."""
+    time.sleep(1.0)                                  # let the browser get its reply first
+    logs.event("RESTART: starting a new copy of the app")
+    flags = (0x00000008 | 0x00000200) if os.name == "nt" else 0   # detached, own process group on Windows
+    subprocess.Popen([sys.executable, str(WEB / "server.py")] + sys.argv[1:], cwd=ROOT,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     creationflags=flags, close_fds=True)
+    time.sleep(0.5)
+    os._exit(0)
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(description="Low Poly Studio web app")
+    ap.add_argument("--lan", action="store_true", help="also allow phones/tablets on your local network")
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8765")))
+    args = ap.parse_args()
+    lan = args.lan or os.environ.get("LOWPOLY_LAN") == "1"
+    host = "0.0.0.0" if lan else "127.0.0.1"
+    SERVER_INFO.update(lan=lan, port=args.port)
+    logs.setup()
+    for attempt in range(60):                        # after a restart the old copy may still hold the port for a moment
+        try:
+            srv = StudioServer((host, args.port), Handler)
+            break
+        except OSError:
+            if attempt == 59:
+                raise
+            time.sleep(1)
+    logs.event(f"server started on {host}:{args.port} (logs in {logs.LOGS})")
+    if not (sfxlib.BUILTIN / "boom.wav").exists():    # a fresh install: synthesise the built-in sounds once
+        submit(Job("sfx", "Make the built-in sound effects (first start)", [sys.executable, "-u", str(PIPE / "sfx.py")]))
+    print(f"Low Poly Studio running at http://127.0.0.1:{args.port}  (Ctrl+C to stop)")
+    print(f"  logging to {logs.LOGS}  (requests, changes, jobs and job output)")
+    if lan:
+        for ip in lan_addresses():
+            print(f"  On your phone (same Wi-Fi):  http://{ip}:{args.port}")
+        print("  PIN: " + ("on" if current_pin() else "off - anyone on your network can use the app "
+                                                     "(set one in Settings -> Phone & network)"))
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

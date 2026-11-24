@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scene 3D view</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1b1726; overflow: hidden; touch-action: none; }
+    #msg { position: fixed; left: 10px; top: 10px; color: #eee; font: 14px system-ui, sans-serif;
+           background: rgba(0, 0, 0, 0.45); padding: 6px 10px; border-radius: 8px; pointer-events: none; }
+  </style>
+  <script type="importmap">
+    { "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <div id="msg">Loading the 3D view…</div>
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    const setId = new URLSearchParams(location.search).get("set");
+    const msg = document.getElementById("msg");
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87b6e0);
+    const cam = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 500);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x886644, 1.1));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(5, 10, 6);
+    scene.add(sun);
+
+    // orbit around a target: drag to look around, wheel (or pinch) to zoom
+    const target = new THREE.Vector3(0, 1, 0);
+    let yaw = 0.6, pitch = 0.35, dist = 14;
+    function place() {
+      cam.position.set(target.x + dist * Math.cos(pitch) * Math.sin(yaw),
+                       target.y + dist * Math.sin(pitch),
+                       target.z + dist * Math.cos(pitch) * Math.cos(yaw));
+      cam.lookAt(target);
+    }
+    let drag = null;
+    renderer.domElement.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; });
+    addEventListener("pointerup", () => { drag = null; });
+    addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      yaw -= (e.clientX - drag.x) * 0.005;
+      pitch = Math.max(0.05, Math.min(1.4, pitch + (e.clientY - drag.y) * 0.005));
+      drag = { x: e.clientX, y: e.clientY };
+      place();
+    });
+    renderer.domElement.addEventListener("wheel", (e) => {
+      dist = Math.max(1.5, Math.min(80, dist * (1 + e.deltaY * 0.001)));
+      place();
+      e.preventDefault();
+    }, { passive: false });
+
+    new GLTFLoader().load(`/api/sets/${encodeURIComponent(setId)}/model.glb`, (gltf) => {
+      scene.add(gltf.scene);
+      const box = new THREE.Box3().setFromObject(gltf.scene);
+      target.copy(box.getCenter(new THREE.Vector3()));
+      dist = Math.max(6, box.getSize(new THREE.Vector3()).length() * 0.6);
+      place();
+      msg.textContent = "Drag to look around · scroll to zoom";
+    }, undefined, (err) => {
+      msg.textContent = "Could not load the 3D view: " + (err && err.message ? err.message : err);
+    });
+
+    place();
+    (function loop() { requestAnimationFrame(loop); renderer.render(scene, cam); })();
+    addEventListener("resize", () => {
+      cam.aspect = innerWidth / innerHeight;
+      cam.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>

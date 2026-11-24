@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "studio",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "web/server.py",
+        "--lan"
+      ],
+      "port": 8765
+    },
+    {
+      "name": "studio-check",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "web/server.py",
+        "--port",
+        "8767"
+      ],
+      "port": 8767
+    }
+  ]
+}
