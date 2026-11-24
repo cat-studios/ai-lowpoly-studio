@@ -21,11 +21,15 @@ python pipeline/sfx.py              # (re)synthesise the 24 built-in sounds
 - Checking Blender code without rendering: an episode with `"_no_render": true` builds the whole scene,
   animation, cast and cameras and writes `timing.json`, but no frames. Use it (on a copy in the scratchpad) to
   test `blender_*.py` changes when the user hasn't asked for a render.
-- Preview servers for Claude's browser pane (`.claude/launch.json`): `studio` (:8765, the live app - the user is
-  probably using it) and `studio-check` (:8767, a separate test server - use this one for your own checks).
+- **Development vs production (since 2026-11-24):** this folder (`C:\Users\kat5\git\ai-lowpoly-studio-dev`, a git
+  repo pushed to GitHub, branch `main`) is the development copy - all code changes happen here. The user's
+  production install is a separate folder, `C:\Users\kat5\ai-lowpoly-studio` (started with its own
+  `start-studio.bat`, port **8765** with `--lan`, holding their characters, voices, sets, videos and settings).
+  Never edit, restart or test against production unless the user asks; they move changes over once they're happy.
+- Preview servers for Claude's browser pane (`.claude/launch.json`): `studio-dev` (:8766) and `studio-check`
+  (:8767). Never use :8765 here - that's production.
 - **The server imports pipeline modules once - restart it after editing any `.py`** (web files are re-read per
   request; reload the page with a cache-busting query like `?v=N`). A 404 on a new route = not restarted yet.
-  Restarting the live app stops running jobs: check `GET /api/jobs` first and ask the user.
 
 ## Environment (Windows 11, PowerShell)
 - **Python 3.15** (`python`) runs the pipeline and server - stdlib only, no pip deps (except `edge-tts`).
@@ -47,8 +51,31 @@ python pipeline/sfx.py              # (re)synthesise the 24 built-in sounds
   `TextEncodeAceStepAudio1.5`). The only "checkpoint" is the music model, so `comfy.image_models()` filters out
   audio/video models.
 
-## Status
-A fresh install: no characters, sets other than Legacy Cafe / Legacy Park, props, packs, music, episodes or videos yet, and no `config/settings.json` (defaults apply until Settings are saved). The first server start synthesises the built-in sounds. Never tested here: ElevenLabs, MDL converters on real game files, the app on a real phone.
+## Status (updated 2026-11-24)
+This dev copy starts as a fresh install: no characters, sets other than Legacy Cafe / Legacy Park, props, packs,
+music, episodes or videos, and no `config/settings.json` (defaults apply until Settings are saved). The first server
+start synthesises the built-in sounds. `tools/voice-venv` (the cloned voice, drawn props, scene from a picture) is not
+in git - see README "Installing on a new PC"; without it the free Edge voices are used. The only working copy is in
+production (`C:\Users\kat5\ai-lowpoly-studio\tools\voice-venv`, moved there 2026-11-24 - its `pip.exe` launchers
+still point at the old path, so use `python -m pip`); this dev copy has none yet. The old project folder
+`C:\Users\kat5\git\ai-low-poly` was deleted on 2026-11-24 (personal data moved to production first).
+Open items:
+- A cast member's spot is picked beside where she stands when they arrive; if she walks on during that shot they can
+  end up between her and the camera for a moment.
+- Not seen in a render yet: walking round furniture in a generated set, "human" cast as a person, the three-lane
+  job queue under load (they build without errors in Blender no-render checks).
+- Sets made before 2026-11-24 can contain stacked props (a theme's tables at (0, 0.3)); older sets name imported
+  props' walk-to places `imp_table` (new sets: `table`).
+- Blender 5.3 prints DeprecationWarnings for `World.use_nodes` / `Material.use_nodes` (removed in Blender 6.0) -
+  harmless now, replace before a Blender 6 upgrade.
+- Cast warning "no free spot ... moved to (x, y), clearance N m" = `spot()` found nothing beside her and
+  `_roomiest()` picked a place instead (expected in crowded sets); the message lists why each spot was refused.
+- Scene jobs can run while a video renders: Blender and ComfyUI can fight for the 12 GB GPU, and regenerating a set
+  changes it under a video that's rendering with it.
+- The local Ollama model's Lithuanian needs checking (🌐 Check translation) - it wrote "Laukinis" for a plane.
+- Never run end to end: ElevenLabs (no API key), importing a VRM through the web page (CLI import works), MDL
+  converters on real game files, starter sets + regenerate popup from the browser, Postiz drafts of earlier versions,
+  the 3D viewer beyond one scene (it needs internet: three.js from unpkg), the app on a real phone.
 
 ## Features and fixes from the 2026-11-24 review
 

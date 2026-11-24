@@ -2,13 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "studio",
+      "name": "studio-dev",
       "runtimeExecutable": "python",
       "runtimeArgs": [
         "web/server.py",
-        "--lan"
+        "--port",
+        "8766"
       ],
-      "port": 8765
+      "port": 8766
     },
     {
       "name": "studio-check",
