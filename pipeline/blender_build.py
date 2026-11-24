@@ -1014,6 +1014,33 @@ def a_point(p, t, T, seg):
     e = env(t, T, seg, 0.25)
     rise = smooth(min(1.0, e * 1.3))                      # the arm lifts with ease, not at a constant speed
     hold = 0.5 + 0.5 * math.sin(t * 1.6)                  # slow, tiny breathing while she holds the pose
+    tgt = seg.get("_at_xy")
+    if tgt is not None and (tgt - p["loc"]).length > 0.3:
+        # aimed at something ("turn on the machine"): she turns part of the way to it (never fully away from
+        # the camera) and the arm on that side takes the rest, the head looking where the finger goes.
+        d = tgt - p["loc"]
+        rel = (math.atan2(d.x, -d.y) - p["yaw"] + math.pi) % (2 * math.pi) - math.pi   # > 0: on her left
+        # her body turns a third of the way (a side target: ~30 degrees; behind her: ~55), so she stays open to the
+        # camera; with a bigger turn plus the head turn she ended up side-on
+        body = max(-0.95, min(0.95, rel * 0.32)) * rise
+        p["yaw"] += body
+        phi = abs(rel) - abs(body)                        # what the arm still has to cover, 0 = straight ahead
+        k = clamp(phi / (math.pi / 2))
+        back = clamp((phi - math.pi / 2) / (math.pi / 2))
+        sd, sg = ("L", 1.0) if rel > 0 else ("R", -1.0)
+        # behind her, the arm also rises over the shoulder so it isn't hidden behind her body from the front
+        p["raise" + sd] = lerp(0.16, lerp(0.3, 1.3, k) + 0.35 * back, rise)
+        p["arm" + sd] = lerp(0.0, lerp(-1.35, -0.05, k) + 0.6 * back + 0.03 * hold, rise)
+        p["elbow" + sd] = lerp(0.12, 0.22 + 0.04 * hold, rise)
+        p["rot" + sd] = lerp(0.0, 0.25, rise)
+        p["turn"] += sg * min(0.35, phi * 0.3) * rise
+        p["twist"] += sg * 0.12 * rise
+        p["lean"] += 0.05 * rise
+        p["shift"] -= sg * 0.025 * rise
+        other = "R" if sd == "L" else "L"
+        p["raise" + other] = lerp(0.16, 0.12, e)
+        p["elbow" + other] = lerp(0.12, 0.45, e)
+        return
     p["raiseR"] = lerp(0.16, 1.0, rise)                   # diagonally out and forward, readable from the front
     p["armR"] = lerp(0.0, -0.7 + 0.03 * hold, rise)
     p["elbowR"] = lerp(0.12, 0.22 + 0.04 * hold, rise)    # a slight bend, never a stiff straight arm
@@ -1216,12 +1243,19 @@ def a_sneeze(p, t, T, seg):
 def a_facepalm(p, t, T, seg):
     """Hand to the forehead, head drops a little, a small sigh of a sway."""
     e = env(t, T, seg, 0.2)
-    p["raiseR"] = lerp(0.16, 1.2, e)
-    p["rotR"] = 1.0 * e
-    p["elbowR"] = lerp(0.12, 2.1, e)
-    p["armR"] = -0.2 * e
-    p["nod"] += (0.25 + 0.04 * math.sin(t * 2.0)) * e
-    p["tilt"] += 0.1 * e
+    # upper arm swung well forward and twisted in (rot < 0) so the folded forearm lies across her face, and the
+    # head drops into the hand. Raising the arm out to the side (the old pose) put the hand at the temple - it read
+    # as a salute; without the twist the hand stays beside her face, at the shoulder's width. Picked from rendered
+    # variants (nod > 0 = head down).
+    p["armR"] = -2.3 * e
+    p["elbowR"] = lerp(0.12, 2.4, e)
+    p["raiseR"] = lerp(0.16, 0.0, e)
+    p["rotR"] = -1.6 * e
+    p["armL"] = -0.2 * e                # the other arm hangs, a little slumped
+    p["elbowL"] = 0.45 * e
+    p["raiseL"] = lerp(0.16, 0.08, e)
+    p["nod"] += (0.45 + 0.04 * math.sin(t * 2.0)) * e
+    p["tilt"] += 0.08 * e
     p["sway"] -= 0.03 * e
 
 
@@ -1458,6 +1492,35 @@ def resolve_pos(v, cur):
     return Vector((v[0], v[1], 0))
 
 
+BUILTIN_THINGS = {   # hand-built sets: where the named things really are (marks are spots in front of them)
+    "cafe": {"machine": (3.4, 3.5), "espresso": (3.4, 3.5), "counter": (2.5, 3.4), "table": (-3.0, 1.5),
+             "door": (-6.95, -2.0), "window": (-2.5, 5.98)},
+    "park": {"bench": (2.8, 3.1), "tree": (-3.2, 4.8), "pond": (5.5, 6.0)},
+}
+
+
+def point_target(name, pos):
+    """Where "point at <name>" aims (x, y), or None: the named thing itself (a hand-built set's furniture, else the
+    generated set's nearest prop of that kind), else the mark of that name. `name` can also be [x, y]."""
+    if name is None:
+        return None
+    if isinstance(name, (list, tuple)):
+        return Vector((float(name[0]), float(name[1]), 0.0))
+    name = str(name)
+    if EP.get("set") in BUILTIN_THINGS and not EP.get("set_recipe") and name in BUILTIN_THINGS[EP["set"]]:
+        return Vector((*BUILTIN_THINGS[EP["set"]][name], 0.0))
+    found = []
+    for pr in (EP.get("set_recipe") or {}).get("props") or []:
+        kind = str(pr.get("kind", ""))
+        if pr.get("pos") and name in (kind, kind.replace("_pc", ""), kind[4:] if kind.startswith("imp_") else None):
+            found.append(Vector((float(pr["pos"][0]), float(pr["pos"][1]), 0.0)))
+    if found:
+        return min(found, key=lambda v: (v - pos).length)
+    if name in MARKS:
+        return Vector((*MARKS[name], 0.0))
+    return None
+
+
 def yaw_for(face, pos, cur):
     if face is None:
         return cur
@@ -1493,7 +1556,7 @@ def build_track(who, start_pos):
             acts = shot.get("actions")
             if not acts:
                 acts = [{"anim": shot.get("action", "idle"),
-                         **{k: shot[k] for k in ("to", "face", "times", "height", "turns") if k in shot}}]
+                         **{k: shot[k] for k in ("to", "face", "times", "height", "turns", "at") if k in shot}}]
         else:
             acts = [{"anim": shot.get("listen", "idle")}]
         want = float(shot.get("duration", 2.0))
@@ -1520,9 +1583,10 @@ def build_track(who, start_pos):
                 alt = 0.0
             expr = (a.get("expression") or (shot.get("expression") if speaks else None)
                     or ANIM_EXPR.get(anim, "neutral"))
+            at_xy = point_target(a.get("at"), p1) if anim == "point" and speaks else None
             for pn, q0, q1, w0, w1 in _pieces(anim, n, p0, p1, yaw, y1):
                 segs.append(dict(f0=frame, n=pn, anim=anim, a=a, p0=q0, p1=q1, y0=w0, y1=w1, shot=si, alt0=a0,
-                                 alt1=alt, expr=expr, listener=not speaks))
+                                 alt1=alt, expr=expr, listener=not speaks, _at_xy=at_xy))
                 frame += pn
             pos, yaw = p1, y1
         if who == PRIMARY:
@@ -1678,6 +1742,8 @@ for si, shot in enumerate(SHOTS):
     SP = TRACKS.get(speaker_of(shot)) or CAST_TRACKS.get(speaker_of(shot)) or TRACKS[PRIMARY]   # whoever speaks
     loc_of, srig = SP["loc"], SP["rig"]
     off = Vector(off) * float(shot.get("zoom", 1.0)) * SP["cam_scale"]
+    if aim == "head" and SP.get("head_dist", 1.0) != 1.0:      # a bigger head: same framing from further back
+        off = Vector((off.x * SP["head_dist"], off.y * SP["head_dist"], off.z))
     f0, n = shot_info[si]["f0"], shot_info[si]["n"]
     f1 = f0 + n - 1
     if SP is not TRACKS[PRIMARY] and SP.get("yaw"):
@@ -1723,8 +1789,24 @@ for si, shot in enumerate(SHOTS):
         aim_obj = empty(f"both{si}", None, (center.x, center.y, 1.0))
     focus = blender_cast.FOCUS.get(si) if EP.get("cast") else None
     if focus is not None and not both and name in ("wide", "medium", "high", "low") and shot.get("move") != "follow":
-        mid = center.lerp(Vector((focus.x, focus.y, 0.0)), 0.45)   # frame her and whoever just arrived
-        off = off * (1.0 + min(0.5, (focus - center).length * 0.08))
+        her_p, new_p = Vector((center.x, center.y, 0.0)), Vector((focus.x, focus.y, 0.0))
+        mid = her_p.lerp(new_p, 0.5)                                # frame her and whoever just arrived
+        # pull back until both sit inside the 9:16 frame with a body's width to spare (whoever is nearer the
+        # camera takes up more of it - a fixed push-back left the arrival at the frame's edge)
+        half = math.atan(10.125 / lens) * 0.82              # horizontal half-angle of a 36 mm-tall 9:16 frame
+        grow = 1.0
+        while grow < 2.6:
+            o = Vector((off.x * grow, off.y * grow, 0.0))
+            cam_at, look = mid + o, (-o).normalized()
+            fits = True
+            for q in (her_p, new_p):
+                v = q - cam_at
+                side_off = abs(v.x * look.y - v.y * look.x) + 0.45         # + half a body
+                fits = fits and math.atan2(side_off, max(0.3, v.dot(look))) <= half
+            if fits:
+                break
+            grow += 0.1
+        off = Vector((off.x * grow, off.y * grow, off.z * (1.0 + (grow - 1.0) * 0.3)))
         center = mid
         aim_obj = empty(f"focus{si}", None, (mid.x, mid.y, 0.95))
     cut = blender_cast.CUT.get(si) if EP.get("cast") else None
@@ -1733,7 +1815,7 @@ for si, shot in enumerate(SHOTS):
         w, h = cut.get("w", cut["r"] * 2), cut["h"]
         dist = max(1.4, w * 0.8 / 0.63, h * 1.5 / 1.12)      # wide things may run off the sides
         if cut.get("verb") == "fly_by":
-            dist = max(dist, 6.0)            # wide enough to watch it cross
+            dist = max(dist * 1.3, 3.0)      # the camera follows it across (TRACK_TO), so it can stay close
         elif cut["moving"]:
             dist *= 1.2
         center = cut["center"].copy()

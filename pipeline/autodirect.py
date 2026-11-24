@@ -84,6 +84,10 @@ MOOD = {  # mood: (action, expression, preferred camera, camera move)
 }
 
 
+# handling something ("turn on the machine"): she points at it - at the thing she stands by if the line names none
+HANDLING = re.compile(r"\b(turn(s|ing)? (it )?on|switch(es|ing)? (it )?on|press\w*|push(es|ing)? the|"
+                      r"flip(s|ping)? the|button|lever|grab\w*|pick(s|ing)? up|plug\w* in)\b", re.I)
+
 # Action words: a line that says these gets that animation (checked in order; the first match wins).
 # Used when the line's mood is neutral, happy, a question or smug. Strong moods keep their own animations.
 ACTION_WORDS = [
@@ -94,6 +98,7 @@ ACTION_WORDS = [
     ("clap", re.compile(r"\b(clap\w*|applause|bravo|hooray)\b", re.I)),
     ("bow", re.compile(r"\b(bow|greetings|welcome to|ladies and gentlemen|nice to meet you)\b", re.I)),
     ("point", re.compile(r"\b(point\w*|look at (that|this)|over there|that way|this way|see that)\b", re.I)),
+    ("point", HANDLING),     # handling something ("turn on the machine"): she points at it
     ("dance", re.compile(r"\b(dance|dancing|boogie|groove)\b", re.I)),
     ("spin", re.compile(r"\b(spin|spinning|twirl\w*)\b", re.I)),
     ("jump", re.compile(r"\b(jump\w*|hop|hopping|bounce\w*)\b", re.I)),
@@ -171,7 +176,9 @@ def parse_directions(line, marks):
             d["face"] = t.split(":", 1)[-1].replace("face_", "")
         elif re.fullmatch(r"\d+(\.\d+)?s?", t):
             d["duration"] = float(t.rstrip("s"))
-    if "to" in d and d.get("action") not in catalog.MOVE_ANIMS:
+    if "to" in d and d.get("action") == "point":
+        d["at"] = d.pop("to")              # "[point counter]": point AT it, don't walk there
+    elif "to" in d and d.get("action") not in catalog.MOVE_ANIMS:
         d["action"] = d.get("action") if d.get("action") in catalog.MOVE_ANIMS else "walk_to"
     return d, m.group(2).strip()
 
@@ -222,8 +229,9 @@ def _stage_for_events(shot, d):
         shot["camera"] = "wide"
     if any(e["do"] == "crash_in" for e in big) and "move" not in d:
         shot["move"] = "shake"
-    if any(e["do"] == "enter" for e in shot.get("events", [])) and "camera" not in d and shot.get("camera") in ("closeup", "dramatic"):
-        shot["camera"] = "medium"
+    if any(e["do"] in ("enter", "appear") and not e.get("cutaway") for e in shot.get("events", [])) \
+            and "camera" not in d and shot.get("camera") not in ARRIVAL_CAMS:
+        shot["camera"] = "medium"     # only these cameras pull back to show the arrival beside her (a side shot lost the dog)
 
 
 def add_cast_plan(result, plan):
@@ -460,6 +468,46 @@ def expand_beats_grouped(lines, n, speakers=None):
     return out
 
 
+EXITS = ("door", "far")
+ARRIVAL_CAMS = ("wide", "medium", "high", "low")   # blender_build frames her + an arrival together only for these
+PLAIN_MARKS = ("center", "front", "left", "right", "back", "far")   # places, not things she could point at                 # walking there mid-line looks like she's leaving
+CLOSE_CAMS = ("closeup", "macro", "dramatic")   # too tight to follow a walk (the camera ends up in her hair)
+SHOW_ANIMS = ("wave", "blow_kiss", "clap", "celebrate", "point")   # gestures that need the front and her hands
+
+
+def _xy(sets, set_id, name):
+    """A mark's (x, y) in a set, or None. y grows away from the camera."""
+    m = GENERIC_MARKS if str(set_id).startswith("new:") else (sets.get(set_id) or {}).get("marks") or {}
+    try:
+        v = m.get(name) if isinstance(m, dict) else None
+        return float(v[0]), float(v[1])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _opening_walk(sets, set_id, marks, pos):
+    """(from, to) for the opening walk, so she walks TOWARD the camera (face visible) instead of away from it:
+    to a mark nearer the camera if there is one, else in from a mark further back to where she starts."""
+    p = _xy(sets, set_id, pos)
+    xy = {m: _xy(sets, set_id, m) for m in marks if m != pos and m not in EXITS}
+    xy = {m: v for m, v in xy.items() if v}
+    if p and xy:
+        nearer = [m for m, v in xy.items() if v[1] < p[1] - 1.0]
+        if nearer:
+            return pos, min(nearer, key=lambda m: xy[m][1])
+        back = [m for m, v in xy.items() if v[1] > p[1] + 1.0]
+        if back:
+            return ("center" if "center" in back else
+                    min(back, key=lambda m: (xy[m][0] - p[0]) ** 2 + (xy[m][1] - p[1]) ** 2)), pos
+    return pos, next((m for m in marks if m not in (pos, "front", "far")), "center")
+
+
+def _pick_dest(marks, pos, visits):
+    """Where a walk with no "to" goes: a mark she's been to least, not where she is, not an exit."""
+    options = [m for m in marks if m != pos and m not in EXITS] or [m for m in marks if m != pos] or ["center"]
+    return min(options, key=lambda m: (visits.get(m, 0), options.index(m)))
+
+
 def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse", speakers=None, beat_words=0,
            beat_sets=None, walk_every=0, wipe_every=0):
     """walk_every: every Nth beat she walks, with the camera following her (0 = never).
@@ -481,7 +529,13 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             speakers.setdefault(who, who)
     pairs = expand_beats_grouped(lines, beat_words, speakers)
     lines, line_groups = [t for t, _ in pairs], [g for _, g in pairs]
-    shots, prev_cam, pos = [], None, start or marks[0]
+    line_text = {}                         # beat group -> the whole script line (a pointed-at thing may be named later)
+    for t, g in pairs:
+        if g is not None:
+            line_text[g] = f"{line_text.get(g, '')} {t}"
+    start = start if start in start_marks else ("front" if "front" in start_marks else start_marks[0])
+    shots, prev_cam, pos = [], None, start
+    visits, prev_set = {}, set_name        # where she has walked (walks spread over the set); the last shot's set
     cast = dict(cast or {})
     for who in cast:                       # cast people can say lines too: "Clerk: ..." or "store clerk: ..."
         if (cast[who] or {}).get("type") != "thing":
@@ -520,10 +574,19 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         action, expr, cam, move = MOOD[mood]
         if mood in ("neutral", "happy", "question", "smug") and action_of(text):
             action = action_of(text)                 # the words say what she does
+        elif mood in ("neutral", "happy") and not starts_line and shots \
+                and shots[-1].get("beat_group") == line_groups[i] \
+                and shots[-1].get("expression") in ("angry", "surprised", "scared", "sad"):
+            # the rest of an emotional line ("Fine. I'll hiss back." ... "Hsssss!") keeps its feeling
+            action, expr = shots[-1]["action"], shots[-1]["expression"]
+            if action in catalog.MOVE_ANIMS:
+                action = "idle"
         shot = {}
         if i == 0 and "action" not in d:
-            # open by walking in to somewhere interesting
-            dest = next((m for m in marks if m not in (pos, "front", "far")), "center")
+            # open by walking in, toward the camera so her face is seen (she may start further back)
+            origin, dest = _opening_walk(sets, cur_set, marks, pos)
+            if cur_set == set_name and origin in start_marks:
+                start = pos = origin
             shot.update(action="walk_to", to=dest, camera="wide", move="static",
                         expression=expr if expr != "neutral" else "happy")
         else:
@@ -532,9 +595,18 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             if cam is None or cam == prev_cam:
                 cam = next(c for c in CAM_CYCLE[i % len(CAM_CYCLE):] + CAM_CYCLE if c != prev_cam)
             shot.update(action=action, camera=cam, move=move, expression=expr)
-            if walk_every and i % walk_every == walk_every - 1 and action in ("idle", "wave", "nod") and "action" not in d:
+            if walk_every and i % walk_every == walk_every - 1 and action in ("idle", "wave", "nod") \
+                    and "action" not in d and len(text.split()) > 2:      # not on a short "Nya!" / "Hsssss!"
                 shot.update(action="walk_to", camera="medium", move="follow")     # a tracking shot as she walks
         shot.update(d)
+        if shot.get("action") in catalog.MOVE_ANIMS and shot.get("camera") in CLOSE_CAMS and "camera" not in d:
+            shot.update(camera="medium", move="follow")      # a walk gets a tracking shot, not an eye close-up
+        if shot.get("action") in SHOW_ANIMS and "camera" not in d \
+                and shot.get("camera") in CLOSE_CAMS + ("side", "back", "silhouette"):
+            shot["camera"] = "medium"     # a wave seen from the front with her hands in frame (closeups cut them off)
+        if i and cur_set != prev_set and "camera" not in d:
+            shot.update(camera="wide", move="static")        # a new place opens on a wide shot of it
+        prev_set = cur_set
         if wipe_every and i and i % wipe_every == 0:
             shot["wipe"] = True                  # a blurred foreground wipe covers this cut (run_episode)
         if line_groups[i] is not None:
@@ -572,19 +644,52 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             if ev["who"] not in cast:
                 cast[ev["who"]] = {"type": cast_kind(ev["who"]), "looks": ev["who"].replace("_", " ")}
         if shot.get("action") in catalog.MOVE_ANIMS:
-            shot.setdefault("to", next((m for m in marks if m != pos), "center"))
+            shot.setdefault("to", _pick_dest(marks, pos, visits))
             pos = shot["to"]
+            visits[pos] = visits.get(pos, 0) + 1
+        elif shot.get("action") == "point":
+            # what she points at: "[point machine]", else a place named in the line, else the thing she stands at
+            whole = line_text.get(line_groups[i], raw) if line_groups[i] is not None else raw
+            words = set(re.findall(r"[a-z]+", re.sub(r"\[[^\]]*\]", " ", whole.lower())))
+            named = [m for m in marks if m not in PLAIN_MARKS and set(m.split("_")) <= words]
+            near = pos if pos in marks and pos not in PLAIN_MARKS and HANDLING.search(text) else None
+            at = shot.get("at") or shot.pop("to", None) or (named[0] if named else None) or near
+            if at:
+                shot["at"] = at
         else:
             shot.pop("to", None)
         shot["line"] = re.sub(r"\s{2,}", " ", re.sub(r"\[[^\]]*\]|\([^)]*\)", "", text)).strip() or text
         if "sfx" not in shot:
-            fx = sfxlib.suggest(text, shot.get("action"))
+            # a trigger word always counts; the action's sound only on a line's first beat, and never the same
+            # sound twice in a row inside one line ("" = none, so the render doesn't add it back)
+            fx = sfxlib.trigger(text) or (sfxlib.ACTION_SFX.get(shot.get("action") or "") if starts_line else None)
+            same_line = not starts_line and shots and shots[-1].get("beat_group") == shot.get("beat_group")
+            if fx and same_line and shots[-1].get("sfx") == fx:
+                fx = None
             if fx:
                 shot["sfx"] = fx
+            elif sfxlib.suggest(text, shot.get("action")):
+                shot["sfx"] = ""
         prev_cam = shot["camera"]
         shots.append(shot)
+    # someone who walks in and talks in the same shot says the line walking, often with their back to the camera:
+    # they arrive during the shot before instead, so they're there and turned to her when they speak
+    for k in range(1, len(shots)):
+        sp = shots[k].get("speaker")
+        evs = shots[k].get("events") or []
+        arrive = [e for e in evs if e["who"] == sp and e.get("do") in ("enter", "run_to", "walk_to", "crash_in")]
+        if not arrive or shots[k - 1].get("set", set_name) != shots[k].get("set", set_name) \
+                or any(e["who"] == sp for e in shots[k - 1].get("events") or []) or shots[k - 1].get("cutaway"):
+            continue
+        for e in arrive:
+            evs.remove(e)
+            shots[k - 1].setdefault("events", []).append(e)
+        if shots[k - 1].get("camera") not in ARRIVAL_CAMS:
+            shots[k - 1]["camera"] = "medium"            # wide enough to see them arrive beside her
+        if not evs:
+            shots[k].pop("events")
     used = {e["who"] for s in shots for e in s.get("events", [])}
-    return {"start": start if start in start_marks else ("front" if "front" in start_marks else start_marks[0]),
+    return {"start": start,
             "shots": shots,
             "cast": {k: v for k, v in cast.items() if k in used}}
 

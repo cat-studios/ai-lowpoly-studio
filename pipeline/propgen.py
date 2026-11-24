@@ -146,6 +146,162 @@ def clean(raw, kind, looks="", by="ollama"):
             "by": by, "created": time.time()}
 
 
+# --------------------------------------------------------------------------- animals
+# The AI's own animal designs come out as a few blocks (a pigeon was an upright cylinder with boxes), so animals
+# are built from a body template instead: head, eyes, beak/snout, ears, legs, wings/fins, tail. The AI design (or
+# the description) still gives the colours, and real_size() scales it to the real animal.
+ANIMAL_FAMILIES = {
+    "bird": set("""bird birds pigeon pigeons dove crow raven sparrow parrot seagull gull duck duckling chicken hen
+rooster chick owl eagle hawk falcon penguin robin flamingo swan goose turkey canary budgie toucan pelican
+magpie""".split()),
+    "beast": set("""cat cats kitten kitty dog dogs puppy pup doggo fox wolf horse pony cow cows bull calf pig piglet sheep
+lamb goat bear cub rabbit bunny mouse mice rat hamster deer reindeer lion tiger leopard cheetah raccoon squirrel
+elephant donkey capybara panda koala otter hedgehog ferret llama alpaca camel moose zebra giraffe hippo rhino
+kangaroo monkey dinosaur dino""".split()),
+    "fish": set("fish goldfish shark whale dolphin salmon tuna koi trout piranha orca".split()),
+}
+ANIMAL_COLORS = {   # body, wing/back, beak/snout - when the description names no colour
+    "pigeon": ("#8d93a3", "#6c7282", "#3a3c44"), "dove": ("#eceef2", "#c9ccd4", "#e8a050"),
+    "crow": ("#2b2b33", "#1d1d24", "#3a3a3a"), "raven": ("#2b2b33", "#1d1d24", "#3a3a3a"),
+    "duck": ("#d8b46a", "#3f7a4a", "#f0a030"), "chicken": ("#f2efe6", "#e0d8c8", "#f0b030"),
+    "hen": ("#b5651d", "#8a4a16", "#f0b030"), "penguin": ("#26262e", "#26262e", "#f0a030"),
+    "flamingo": ("#ff8fb8", "#f2709e", "#2a2a2a"), "parrot": ("#3fb04a", "#d94a4a", "#f2d14e"),
+    "owl": ("#9a7650", "#6e5236", "#d8b040"), "swan": ("#f4f4f4", "#e4e4e8", "#f08a30"),
+    "cat": ("#e0a060", "#c78446", "#f2b8b0"), "kitten": ("#e0a060", "#c78446", "#f2b8b0"),
+    "dog": ("#b5835a", "#8a5f3c", "#2a2a2a"), "puppy": ("#d6b07a", "#b58a58", "#2a2a2a"),
+    "fox": ("#e07a30", "#f4efe6", "#2a2a2a"), "wolf": ("#8a8f99", "#6a6f78", "#2a2a2a"),
+    "pig": ("#f2b0b8", "#e898a4", "#e07a8a"), "sheep": ("#f2f0ea", "#3a3a3a", "#3a3a3a"),
+    "cow": ("#f4f2ee", "#2a2a2a", "#f2b8b8"), "horse": ("#8a5a36", "#5a3a22", "#3a2a1a"),
+    "bear": ("#6e4a2e", "#553820", "#2a2a2a"), "panda": ("#f4f4f4", "#26232a", "#26232a"),
+    "rabbit": ("#ece6dc", "#d8d0c4", "#f2b8c0"), "bunny": ("#ece6dc", "#d8d0c4", "#f2b8c0"),
+    "mouse": ("#a8a4a0", "#8a8682", "#f2b8c0"), "rat": ("#8a8682", "#6e6a66", "#f2b8c0"),
+    "frog": ("#5aa84a", "#3f8a3a", "#2a2a2a"), "elephant": ("#9a9aa2", "#85858d", "#9a9aa2"),
+    "lion": ("#d8a050", "#a0682a", "#3a2a1a"), "tiger": ("#f08a30", "#2a2a2a", "#f4efe6"),
+    "goldfish": ("#f08a30", "#f2b060", "#f4efe6"), "shark": ("#7a8a99", "#5a6a78", "#f4f4f4"),
+    "whale": ("#4a6a8a", "#3a5470", "#d8dde4"), "dolphin": ("#8a9aaa", "#6f7f8f", "#d8dde4"),
+}
+FAMILY_COLORS = {"bird": ("#9a8a7a", "#7a6a5a", "#e8a040"), "beast": ("#a07850", "#80603c", "#2a2a2a"),
+                 "fish": ("#5a8ab0", "#3f6a90", "#f4f4f4")}
+FAMILY_HEIGHT = {"bird": 0.35, "beast": 0.6, "fish": 0.5}       # without Ollama to ask (real_size)
+
+
+def animal_family(kind, looks=""):
+    """"bird" / "beast" / "fish" when the prop is an animal (by its name, else its description), else None.
+    The name decides first: a "bird feeder" or "cat bed" isn't an animal."""
+    name = set(re.split(r"[^a-z]+", str(kind).lower().replace("_", " ")))
+    for fam, words in ANIMAL_FAMILIES.items():
+        if name & words and not name & THING_WORDS:
+            return fam
+    if not str(looks).strip():
+        return None
+    desc = re.split(r"[^a-z]+", str(looks).lower())
+    if len(name - {""}) <= 1 and not name & THING_WORDS:      # "+fluffy a fluffy grey cat" - the looks name it
+        for fam, words in ANIMAL_FAMILIES.items():
+            if set(desc[:4]) & words:
+                return fam
+    return None
+
+
+THING_WORDS = set("""bed feeder food bowl cage house toy statue plush plushie poster picture painting sign tank
+bath kennel hutch nest coop mask costume pillow figurine bone collar leash""".split())
+
+
+def _shade(hexcol, f):
+    c = hexcol.lstrip("#")
+    r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4))
+    return "#%02x%02x%02x" % tuple(max(0, min(255, round(v * f))) for v in (r, g, b))
+
+
+def _animal_colours(kind, looks, fam, ai_parts=None):
+    """(body, second, accent): a colour word in the description, else the animal's usual colours, else the AI
+    design's main colour, else the family's."""
+    import catalog
+    words = re.split(r"[^a-z]+", f"{looks}".lower())
+    named = [catalog.CAST_COLORS[w] for w in words if w in catalog.CAST_COLORS]
+    base = next((ANIMAL_COLORS[w] for w in re.split(r"[^a-z]+", f"{kind} {looks}".lower().replace("_", " "))
+                 if w in ANIMAL_COLORS), None)
+    if named:
+        body = named[0]
+        second = named[1] if len(named) > 1 else _shade(body, 0.78)
+        return body, second, (base or FAMILY_COLORS[fam])[2]
+    if base:
+        return base
+    if ai_parts:
+        cols = {}
+        for p in ai_parts:
+            v = p["size"][0] * p["size"][1] * p["size"][2]
+            cols[p["color"]] = cols.get(p["color"], 0) + v
+        body = max(cols, key=cols.get)
+        return body, _shade(body, 0.78), FAMILY_COLORS[fam][2]
+    return FAMILY_COLORS[fam]
+
+
+def _part(shape, pos, size, color, rot=(0, 0, 0)):
+    return {"shape": shape, "pos": [round(v, 3) for v in pos], "size": [round(v, 3) for v in size],
+            "rot": [float(v) for v in rot], "color": color, "glow": False}
+
+
+def animal_parts(fam, body, second, accent):
+    """A chunky low-poly animal facing -y (the camera), standing on z=0, about 1 unit tall."""
+    eye, white = "#141418", "#f4f4f4"
+    if fam == "bird":
+        return [
+            _part("sphere", (0, 0.02, 0.42), (0.46, 0.72, 0.46), body),                     # body
+            _part("sphere", (0, -0.3, 0.74), (0.32, 0.32, 0.32), body),                     # head
+            _part("cone", (0, -0.5, 0.72), (0.1, 0.1, 0.2), accent, (90, 0, 0)),             # beak
+            _part("sphere", (0.12, -0.42, 0.8), (0.07, 0.07, 0.07), eye),                   # eyes
+            _part("sphere", (-0.12, -0.42, 0.8), (0.07, 0.07, 0.07), eye),
+            _part("sphere", (0.25, 0.06, 0.46), (0.1, 0.52, 0.3), second, (-12, 0, 0)),      # wings
+            _part("sphere", (-0.25, 0.06, 0.46), (0.1, 0.52, 0.3), second, (-12, 0, 0)),
+            _part("box", (0, 0.42, 0.42), (0.26, 0.3, 0.06), second, (-25, 0, 0)),          # tail
+            _part("cylinder", (0.09, 0, 0.1), (0.04, 0.04, 0.2), accent),                   # legs
+            _part("cylinder", (-0.09, 0, 0.1), (0.04, 0.04, 0.2), accent),
+        ]
+    if fam == "fish":
+        return [
+            _part("sphere", (0, 0, 0.32), (0.3, 0.9, 0.55), body),                          # body
+            _part("cone", (0, 0.58, 0.32), (0.08, 0.36, 0.42), second, (-90, 0, 0)),        # tail
+            _part("cone", (0, 0.02, 0.66), (0.06, 0.3, 0.22), second),                      # top fin
+            _part("box", (0.17, -0.08, 0.26), (0.04, 0.2, 0.12), second, (0, 25, 0)),       # side fins
+            _part("box", (-0.17, -0.08, 0.26), (0.04, 0.2, 0.12), second, (0, -25, 0)),
+            _part("sphere", (0.12, -0.3, 0.4), (0.09, 0.09, 0.09), white),                  # eyes
+            _part("sphere", (-0.12, -0.3, 0.4), (0.09, 0.09, 0.09), white),
+            _part("sphere", (0.15, -0.33, 0.4), (0.05, 0.05, 0.05), eye),
+            _part("sphere", (-0.15, -0.33, 0.4), (0.05, 0.05, 0.05), eye),
+        ]
+    return [                                                                                 # four legs
+        _part("sphere", (0, 0.05, 0.52), (0.46, 0.9, 0.44), body),                          # body
+        _part("sphere", (0, -0.5, 0.78), (0.4, 0.38, 0.38), body),                          # head
+        _part("box", (0, -0.7, 0.72), (0.2, 0.16, 0.15), second),                           # snout
+        _part("sphere", (0, -0.79, 0.76), (0.07, 0.05, 0.06), accent),                      # nose
+        _part("sphere", (0.1, -0.67, 0.86), (0.07, 0.05, 0.07), eye),                       # eyes
+        _part("sphere", (-0.1, -0.67, 0.86), (0.07, 0.05, 0.07), eye),
+        _part("cone", (0.13, -0.47, 1.0), (0.13, 0.08, 0.18), second),                      # ears
+        _part("cone", (-0.13, -0.47, 1.0), (0.13, 0.08, 0.18), second),
+        _part("cylinder", (0.15, -0.25, 0.18), (0.12, 0.12, 0.36), body),                   # legs
+        _part("cylinder", (-0.15, -0.25, 0.18), (0.12, 0.12, 0.36), body),
+        _part("cylinder", (0.15, 0.32, 0.18), (0.12, 0.12, 0.36), body),
+        _part("cylinder", (-0.15, 0.32, 0.18), (0.12, 0.12, 0.36), body),
+        _part("cylinder", (0, 0.56, 0.68), (0.07, 0.07, 0.36), second, (-40, 0, 0)),        # tail
+    ]
+
+
+def make_animal(d, kind, looks, fam):
+    """Replace an animal definition's parts with the body template, keeping its colours, size and the rest."""
+    body, second, accent = _animal_colours(kind, looks, fam, d.get("parts"))
+    parts = animal_parts(fam, body, second, accent)
+    h0 = max(p["pos"][2] + p["size"][2] / 2 for p in parts)
+    want = float(d.get("height") or 0) if d.get("size_checked") else FAMILY_HEIGHT[fam]
+    f = (want or FAMILY_HEIGHT[fam]) / h0
+    for p in parts:
+        p["pos"] = [round(v * f, 3) for v in p["pos"]]
+        p["size"] = [round(max(0.01, v * f), 3) for v in p["size"]]
+    radius = max(math.hypot(abs(p["pos"][0]) + p["size"][0] / 2, abs(p["pos"][1]) + p["size"][1] / 2) for p in parts)
+    d.update(parts=parts, height=round(h0 * f, 2), radius=round(radius, 2), animal=fam,
+             complex=True)       # a drawn picture still wins when ComfyUI can make one
+    return d
+
+
 def needs_picture(d):
     """Only objects too detailed for simple 3D shapes (or with no shape at all) get a 2D picture.
     Priority: imported model > generated 3D model > 2D picture."""
@@ -261,6 +417,15 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
     if have:
         log(f"[props] reusing '{kind}' from the prop library")
         changed = False
+        fam = animal_family(kind, have.get("looks", ""))
+        if fam and not have.get("animal") and have.get("source") != "imported":
+            # an animal designed before the body templates (a few blocks): rebuilt once, the old file kept
+            (LIB / ".trash").mkdir(parents=True, exist_ok=True)
+            (LIB / ".trash" / f"{kind}-blocks-{time.strftime('%Y%m%d-%H%M%S')}.json").write_text(
+                json.dumps(have, indent=1), encoding="utf-8")
+            make_animal(have, kind, have.get("looks", ""), fam)
+            log(f"[props] '{kind}' rebuilt as a {fam} (the old shape is in assets/props/.trash)")
+            changed = True
         if ollama and not have.get("size_checked"):        # older library props get a real size...
             real_size(have, ollama, log)
             changed = have.get("size_checked", False)
@@ -288,10 +453,14 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         log(f"[props] '{kind}': simple stand-in shape (no usable AI design)")
     else:
         log(f"[props] designed new prop '{kind}' ({len(d['parts'])} parts, {d['radius']} m wide, {d['height']} m tall)")
+    fam = animal_family(kind, looks)
+    if fam:                                    # animals: a body template, coloured like the design
+        make_animal(d, kind, looks, fam)
+        log(f"[props] '{kind}' built as a {fam}")
     real_size(d, ollama, log)
     if needs_picture(d):                       # 3D first: a picture only for complicated or shapeless objects
         add_sprite(d, comfy_cfg, log)
-    if save and (d.get("by") == "ollama" or d.get("sprite")):
+    if save and (d.get("by") == "ollama" or d.get("sprite") or d.get("animal")):
         _save(d)
     return d
 

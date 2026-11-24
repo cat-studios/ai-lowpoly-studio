@@ -138,7 +138,16 @@ def _tts_local(text, raw, voice):
 ENGINES = {"edge": _tts_edge, "elevenlabs": _tts_elevenlabs, "windows": _tts_windows, "local": _tts_local}
 
 
+_WARNED_NO_LOCAL = []
+
+
 def _normalize_voice(voice):
+    if voice.get("engine") == "local" and not VOICE_PY.exists():
+        # no Chatterbox on this PC (tools/voice-venv): use the free Edge voice instead of stopping the render
+        if not _WARNED_NO_LOCAL:
+            print("  (local voice engine not installed - tools/voice-venv; using the free Edge voice instead)")
+            _WARNED_NO_LOCAL.append(1)
+        voice = {"engine": "edge", **({"shift": voice["shift"]} if voice.get("shift") else {})}
     return {**DEFAULT_VOICE, **voice} if voice.get("engine", "edge") == "edge" else dict(voice)
 
 
@@ -280,15 +289,19 @@ def resolve_co_stars(ep, cfg, log=print):
 
 
 def speaker_voice(ep, cfg, shot):
-    """The voice for a shot's line: global < its speaker's character voice < episode voice (shot voice on top)."""
+    """The voice for a shot's line: global < its speaker's character voice < episode voice (shot voice on top).
+    The episode's own "voice" is the main character's: cast people and co-stars keep theirs."""
     sp = shot.get("speaker")
     if sp and sp not in {c["id"] for c in ep.get("co_stars") or []} and sp in (ep.get("cast") or {}):
         import actors as AC                       # a cast person speaks with their actor's voice
-        act = AC.get((ep["cast"][sp] or {}).get("actor") or AC.GENERIC_ID) or AC.get(AC.GENERIC_ID)
-        return S.layered_voice(cfg["voice"], act.get("voice"), ep.get("voice"))
+        info = ep["cast"][sp] or {}
+        act = AC.get(info.get("actor") or AC.GENERIC_ID) or AC.get(AC.GENERIC_ID)
+        own = AC.role_voice(sp, info.get("looks", ""), act.get("voice"))     # "mom" gets a woman's voice
+        return S.layered_voice(cfg["voice"], own)
     prof = next((c for c in ep.get("co_stars") or [] if c["id"] == sp), None) if sp else None
-    prof = prof or ep["character"]
-    return S.layered_voice(cfg["voice"], prof.get("voice"), ep.get("voice"))
+    if prof:
+        return S.layered_voice(cfg["voice"], prof.get("voice"))
+    return S.layered_voice(cfg["voice"], ep["character"].get("voice"), ep.get("voice"))
 
 
 def ass_time(t):
@@ -468,7 +481,8 @@ def sfx_events(ep, timing, sx):
                 at = t0 + 0.05
                 words = (shot.get("line_src") or shot.get("line") or "").lower().split()
                 trig = sfxlib.all_slots().get(name, {}).get("words", "").split()
-                hit = next((k for k, w in enumerate(words) if re.sub(r"[^\w-]", "", w) in trig), None)
+                hit = next((k for k, w in enumerate(words)
+                            if any(sfxlib.word_rx(t).fullmatch(re.sub(r"[^\w-]", "", w)) for t in trig)), None)
                 if hit is not None and shot.get("talk"):
                     weights = [len(w) + 2 for w in words]
                     at = t0 + lead + shot["talk"] * sum(weights[:hit]) / sum(weights)
@@ -1089,7 +1103,8 @@ def main():
                                       str(seg_json), str(seg_frames), str(seg_dir / "scene.blend")],
                                      stdout=fh, stderr=subprocess.STDOUT)
             text = log.read_text(encoding="utf-8", errors="replace")
-            if res.returncode != 0 or "Traceback" in text or not any(seg_frames.glob("f_*.png")):
+            check_only = bool(ep.get("_no_render"))      # a build check: scene + timing.json, no frames
+            if res.returncode != 0 or "Traceback" in text or (not check_only and not any(seg_frames.glob("f_*.png"))):
                 print(text[-4000:])
                 sys.exit(f"Blender failed - full log: {log}")
             if not multi:
@@ -1107,6 +1122,9 @@ def main():
         if multi:
             merged["total_frames"] = offset
             (build / "timing.json").write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        if ep.get("_no_render"):
+            print(f"Build check done (_no_render: no frames, no video) - {build / 'timing.json'}")
+            return
     if not (build / "timing.json").exists():
         sys.exit("No earlier render to reuse (build/<episode>/timing.json is missing) - render it in full first.")
     timing = json.loads((build / "timing.json").read_text(encoding="utf-8-sig"))

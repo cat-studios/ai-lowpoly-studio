@@ -20,7 +20,8 @@ python pipeline/sfx.py              # (re)synthesise the 24 built-in sounds
   `reuse_frames`) - only when the shots are the same as in that render (it stops otherwise).
 - Checking Blender code without rendering: an episode with `"_no_render": true` builds the whole scene,
   animation, cast and cameras and writes `timing.json`, but no frames. Use it (on a copy in the scratchpad) to
-  test `blender_*.py` changes when the user hasn't asked for a render.
+  test `blender_*.py` changes when the user hasn't asked for a render. `run_episode` stops after the Blender
+  build(s) with "Build check done" (multi-scene episodes build every scene).
 - **Development vs production (since 2026-11-24):** this folder (`C:\Users\kat5\git\ai-lowpoly-studio-dev`, a git
   repo pushed to GitHub, branch `main`) is the development copy - all code changes happen here. The user's
   production install is a separate folder, `C:\Users\kat5\ai-lowpoly-studio` (started with its own
@@ -148,6 +149,53 @@ Open items:
   bind - this keeps it that way). PIN checks use `hmac.compare_digest`.
 
 
+## Test render review (2026-11-24, `episodes/zz_test_cafe_day.json`, dev copy)
+A 22-shot cafe → park test render was checked frame by frame. Fixed and checked in re-renders
+(`output/zz_test_cafe_day_v2.mp4` … `_v4.mp4`, `output/zz_test_mom_scene.mp4`, pose grid `output/zz_test_pose.mp4`):
+- No `tools/voice-venv`: a `local` voice now falls back to the Edge voice with a warning (`_normalize_voice`)
+  instead of stopping the render.
+- `autodirect.direct`: the opening walk goes TOWARD the camera (`_opening_walk`: to a nearer mark, or in from a
+  mark further back to the start, so the episode's `start` can change) - before, she walked away showing her back.
+  Walks with no `to` pick the least-visited mark, never `door`/`far` (`_pick_dest`, `EXITS`) - before, every
+  auto-walk went to the set's first mark (the cafe door), so she left mid-line. No auto-walk on beats of 1-2 words.
+  A walk never keeps a closeup/macro/dramatic camera (`CLOSE_CAMS` → medium follow; the macro camera ended up in
+  her hair). A new place opens on a wide shot. A mood-less beat keeps the previous beat's emotion in the same line.
+- Sounds: trigger words match endings and stretched letters (`sfx.word_rx`: hissing, Hsssss, popping);
+  `sfx.trigger()` = words only. The action's sound (`ACTION_SFX`) only on a line's first beat, and never the same
+  sound twice in a row in one line (`"sfx": ""` written so the render doesn't add it back).
+- Cast people: an actor with the default voice gets one from their name/looks (`actors.role_voice`: mom → a
+  female Edge voice, grandma → elderly, little girl → child; a voice set on the actor wins) - mom used to speak
+  with the male `ACTOR_VOICE`. The studio body's head is about twice hers: `CAST_TRACKS` carry `cam_scale` = their
+  height and `head_dist` 1.6, so head shots (closeup/dramatic/macro) pull back - mom's close-up filled the frame.
+  `autodirect.direct` moves a speaker's arrival (enter/walk_to/run_to/crash_in) to the shot BEFORE their line (and
+  makes that shot medium if it was a close one) - mom said her line walking in, filmed from behind because she
+  stood in the way. Arrival shots (`blender_cast.FOCUS`) pull back until both fit the frame (an angle test
+  per person) - the old fixed push-back left the arrival outside it.
+- Gestures at the viewer (`SHOW_ANIMS`: wave, blow_kiss, clap, celebrate, point) get a front medium shot when the
+  camera came from the cycle (closeups cut the hand off; the side camera showed the wave in profile).
+- `a_facepalm`: upper arm well forward and twisted in (`rotR` -1.6), elbow folded, head down (`nod` > 0 = down) -
+  the old arm-out-to-the-side pose read as a salute. Picked from rendered variants; use the same approach (a few
+  temporary `ANIMS` entries in one closeup episode, removed afterwards) for other poses.
+- "turn on / press / push the / button / grab / pick up" lines → `point` (`ACTION_WORDS`).
+- Cutaways: a `fly_by` subject makes a short pass (±2.2 m, 1.7 m up) and the camera follows it from ~3 m (was a
+  14 m pass filmed from 6 m: a speck); a cutaway thing with a drawn sprite shows the sprite even when it has parts.
+- An episode-level `voice` is the main character's only: co-stars and cast people keep theirs (`speaker_voice`).
+- Animals (`propgen.animal_family` by the prop's NAME - "cat bed"/"bird feeder" are not animals, `THING_WORDS`):
+  built from a body template (`animal_parts`: bird / beast (four legs) / fish - head, eyes, beak or snout, ears,
+  legs, wings/fins, tail), coloured from colour words in the looks, else `ANIMAL_COLORS`, else the AI design's main
+  colour; sized by `real_size`; `"animal": fam` and `complex: true` (a ComfyUI sprite still wins when one can be
+  drawn). Library animals without `"animal"` are rebuilt once when next used (old file → `assets/props/.trash/
+  <kind>-blocks-<stamp>.json`); Assets edits (looks/height/on) are kept. The AI's own animals were a few blocks.
+- `point` aims: shot `"at"` (mark name or [x, y]). Director: `[point counter]` (point is the exception to "action
+  + mark = walk there"), else a non-plain mark named anywhere in the script line, else - for handling words
+  (`HANDLING`: turn on, press...) - the thing she stands at. Blender `point_target()`: hand-built sets'
+  `BUILTIN_THINGS` (the machine is behind its mark), a generated set's nearest prop of that kind, else the mark.
+  `a_point`: body turns a third of the way (≤ 0.95 rad), the arm on that side covers the rest (behind her: back
+  and up over the shoulder). From the front camera a target straight behind her still reads as "off to the side".
+- Arrivals (enter/appear, not cutaways) get a camera that can frame both (`ARRIVAL_CAMS`), also when the director
+  moves a speaker's entrance - a side shot lost the dog.
+Checking poses: renders at `"render_res": [540, 960]` - at the default 216×384 the facing was misread twice.
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and
@@ -204,7 +252,7 @@ Open items:
 | `pipeline/prepare_character.py` | VRM → `.blend` (decimate, 128 px textures, hard alpha cut-out, fog-ready materials with `fog_in`/`fog_out` nodes) + `.report.json`. |
 | `pipeline/character_preview.py` | Still preview `assets/characters/<id>.preview.png`; runs after a model import and from the Characters page. |
 | `pipeline/blender_cast.py` | The rest of the cast, on the global timeline after the main characters: people = `build_catgirl(look, cat=False)` driven by the same ANIMS (they can talk: mouth from `talk`); things = `blender_sets.make_thing` keyframed by verb (enter, crash_in + debris, fall, fly_by, appear, vanish, exit, bounce, spin, shake, hold). `spot()` (beside her, in the marks area, in view, not `hidden()`) → `_roomiest()` fallback (`_gap()` clearance, warns). `attach_to_hand`, `CUT[si]` for cutaways. Warns when a thing has lines. |
-| `pipeline/actors.py` | Actor store (`assets/actors/<id>.json`, deleted → `.trash`): extra people, kinds `generic` (studio body dressed with `look`), `rigged` (a .blend), `imported`. Matched to cast names by role; a cast person speaks with its actor's voice (default `en-US-EricNeural`). The generic human (`GENERIC_ID`) is built in. Not the main characters (those are in `assets/characters`). |
+| `pipeline/actors.py` | Actor store (`assets/actors/<id>.json`, deleted → `.trash`): extra people, kinds `generic` (studio body dressed with `look`), `rigged` (a .blend), `imported`. Matched to cast names by role; a cast person speaks with its actor's voice (default: picked from the role by `role_voice`). The generic human (`GENERIC_ID`) is built in. Not the main characters (those are in `assets/characters`). |
 | `pipeline/imported.py` | Imported asset packs: zip import (safe extraction, nested folders), MDL conversion, Blender measuring, pictures (`make_previews`), `match(kind, looks, setting)`. Index `assets/imported/index.json`. CLI `imported.py import <zip> --pack NAME --license TEXT --source ORIGINAL.zip`, `imported.py previews`. |
 | `pipeline/imported_probe.py`, `imported_preview.py` | Inside Blender: measure each model; render a still of each for the Imported tab. |
 | `pipeline/blender_models.py` | Loads OBJ/FBX/BLEND models inside Blender (`load_model`, `bounds`, `clear_scene`). |

@@ -295,7 +295,10 @@ def animate_person(who, info, side):
     for fr in range(1, B.TOTAL + 1):
         last = track.get(fr, last)
         track[fr] = last.copy()
-    B.CAST_TRACKS[who] = {"loc": track, "yaw": yaws, "rig": R, "cam_scale": 1.0}
+    # the studio body has a big cartoon head (about twice hers): head shots pull back further so it fits the frame
+    big_head = not isinstance(R, B.VRoidRig)
+    B.CAST_TRACKS[who] = {"loc": track, "yaw": yaws, "rig": R, "cam_scale": h if big_head else 1.0,
+                          "head_dist": 1.6 if big_head else 1.0}
     print(f"[cast] {who}: person, {len(evs)} events, height {h:.2f}")
 
 
@@ -331,6 +334,9 @@ def debris(name, at, colors, f_hit, count=12):
 
 def animate_thing(who, info, side):
     d = info.get("def")
+    is_cut = any(e.get("cutaway") for s in B.SHOTS for e in s.get("events", []) or [] if e.get("who") == who)
+    if is_cut and d and d.get("sprite") and d.get("parts"):
+        d = dict(d, complex=True)     # a cutaway fills the frame: its drawn picture reads better than a few blocks
     root = B.blender_sets.make_thing(who, info.get("prop", who), d, B.types.SimpleNamespace(
         prim=B.prim, empty=B.empty, mat=B.mat, add_fog=B.add_fog, hexcol=B.hexcol, FOG=B.FOG,
         setup_world=B.setup_world, add_sun=B.add_sun, scene=B.scene))
@@ -360,6 +366,9 @@ def animate_thing(who, info, side):
             sgn = -1 if frm == "left" else 1
             p0 = her(f) + Vector((sgn * (OFF + 3), 2.5, 2.4))
             p1 = her(f) + Vector((-sgn * (OFF + 3), 2.5, 2.4))
+            if e.get("cutaway"):     # the whole shot is about it: a short pass the camera can follow up close
+                p0 = her(f) + Vector((sgn * 2.2, 1.0, 1.7))
+                p1 = her(f) + Vector((-sgn * 2.2, 1.0, 1.7))
         elif verb in ("enter", "crash_in"):
             p0 = offstage(tgt, e, side) if not present else pos.copy()
             if verb == "crash_in" and not present:

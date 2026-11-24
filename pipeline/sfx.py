@@ -168,18 +168,35 @@ def generate_builtin(ffmpeg="ffmpeg", force=False, log=print):
     return made
 
 
-def suggest(line, action=None):
-    """Pick one effect for a shot from trigger words in the line, else from the action."""
+_WORD_RX = {}
+
+
+def word_rx(w):
+    """A trigger word as a regex that also matches its endings and stretched letters:
+    "hiss" -> hiss, hisses, hissing, hisssss; "hsss" -> hssssss; "pop" -> pops, popped, popping."""
+    w = w.lower()
+    if w not in _WORD_RX:
+        runs = re.findall(r"((.)\2*)", w)
+        body = "".join(re.escape(ch) + (f"{{{len(run)},}}" if len(run) > 1 else "+") for run, ch in runs)
+        _WORD_RX[w] = re.compile(rf"\b{body}(?:s|es|ed|ing|in)?\b")
+    return _WORD_RX[w]
+
+
+def trigger(line):
+    """The effect whose trigger words are in the line (your own sounds win over built-ins), else None."""
     text = (line or "").lower()
-    slots = all_slots()
-    ordered = sorted(slots.items(), key=lambda kv: kv[1]["builtin"])    # your own sounds win over built-ins
+    ordered = sorted(all_slots().items(), key=lambda kv: kv[1]["builtin"])
     for name, s in ordered:
         if s["kind"] != "oneshot" or not s["words"]:
             continue
-        for w in s["words"].split():
-            if re.search(rf"\b{re.escape(w)}\b", text):
-                return name
-    return ACTION_SFX.get(action or "")
+        if any(word_rx(w).search(text) for w in s["words"].split()):
+            return name
+    return None
+
+
+def suggest(line, action=None):
+    """Pick one effect for a shot from trigger words in the line, else from the action."""
+    return trigger(line) or ACTION_SFX.get(action or "")
 
 
 def ambience_for(theme):

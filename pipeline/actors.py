@@ -33,6 +33,41 @@ GENERIC_ID = "generic_human"
 ACTOR_VOICE = {"engine": "edge", "name": "en-US-EricNeural", "rate": "+0%", "pitch": "+0Hz"}
 NOISE = {"the", "a", "an", "of", "and", "with", "in", "on", "at", "one", "some", "person", "people", "actor"}
 
+# role words -> which kind of voice a generic actor gets (a voice set on the actor always wins)
+FEMALE_WORDS = set("""mom mum mother mama mommy grandma granny grandmother nana sister sis aunt auntie woman women lady
+girl girls wife bride daughter queen princess witch waitress actress nun mrs miss ms she her female girlfriend
+""".split())
+MALE_WORDS = set("""dad father papa daddy grandpa grandfather brother bro uncle man men guy gentleman boy boys husband
+groom son king prince wizard waiter actor mr sir he him male boyfriend""".split())
+CHILD_WORDS = set("kid kids child children baby toddler little tiny boy girl son daughter".split())
+OLD_WORDS = set("grandma granny grandmother nana grandpa grandfather old elderly".split())
+ROLE_VOICES = {   # several per kind: two cast people of the same kind usually sound different
+    "female": ["en-US-JennyNeural", "en-US-AriaNeural", "en-US-MichelleNeural", "en-GB-SoniaNeural"],
+    "male": ["en-US-EricNeural", "en-US-GuyNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural"],
+    "old_female": ["en-GB-SoniaNeural"], "old_male": ["en-US-RogerNeural"],
+    "girl": ["en-GB-MaisieNeural"], "boy": ["en-GB-MaisieNeural"],
+}
+
+
+def role_voice(name, looks="", voice=None):
+    """The voice a cast person speaks with. An actor's own voice (anything but the generic default) wins; otherwise
+    their name and description pick a female/male/child/elderly Edge voice ("mom" no longer sounds like a man)."""
+    voice = dict(voice or ACTOR_VOICE)
+    if voice != ACTOR_VOICE:
+        return voice
+    ws = set(re.split(r"[^a-z]+", f"{name} {looks}".lower().replace("_", " ")))
+    female, male = ws & FEMALE_WORDS, ws & MALE_WORDS
+    if not female and not male:
+        return voice
+    kind = "female" if len(female) >= len(male) else "male"
+    if ws & OLD_WORDS:
+        kind = "old_" + kind
+    elif ws & CHILD_WORDS:
+        kind = "girl" if kind == "female" else "boy"
+    pool = ROLE_VOICES[kind]
+    pick = pool[sum(map(ord, str(name))) % len(pool)]
+    return {**voice, "name": pick, "pitch": "+10Hz" if kind == "boy" else "+0Hz"}
+
 
 def slug(text):
     return re.sub(r"[^a-z0-9]+", "_", str(text or "").lower()).strip("_")[:48]
