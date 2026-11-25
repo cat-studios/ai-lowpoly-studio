@@ -1901,20 +1901,60 @@ async function pageIdeas() {
   });
 }
 
+// 🖼 Cover: the video's cover picture (made with every render), downloaded for posting, or picked again
+function openCover(key, episode, img, title) {
+  const draw = (src) => src ? `<img src="${esc(src)}" alt="Cover" class="cover-big">` : `<p class="muted">No cover yet - this video was made before covers existed.</p>`;
+  openModal({
+    title: `🖼 Cover - ${title}`,
+    body: `<div class="cover-wrap">${draw(img)}</div>
+      <p class="muted small">The best frame of the video (the picture model picks it) with the title on top, in the video's look. Post it as the Reel's cover.</p>
+      <div class="btns" style="align-items:center">
+        ${img ? `<a class="btn" id="cv-dl" href="${esc(img.split("?")[0])}" download>⬇ Download</a>` : ""}
+        ${episode ? `<button id="cv-again">🔄 Let the AI pick again</button>
+        <label class="small" style="display:flex;gap:6px;align-items:center">or use shot <input id="cv-shot" type="number" min="1" style="width:64px"></label>
+        <button id="cv-use">Use it</button>` : ""}</div>
+      <div id="cv-job" class="inline-job"></div>`,
+    buttons: [{ label: "Close" }],
+    onOpen: (box) => {
+      const run = (shot) => guard(async (e) => {
+        const btnEl = e.currentTarget;
+        btnEl.disabled = true;
+        const job = await api("POST", `/api/videos/${encodeURIComponent(key)}/cover`, { episode, shot });
+        watchJob(job, $("#cv-job", box), (j) => {
+          btnEl.disabled = false;
+          if (j.status !== "done") { toast("Couldn't make the cover - see the log", true); return; }
+          const src = j.result.cover + "?t=" + Date.now();
+          $(".cover-wrap", box).innerHTML = draw(src);
+          $("#cv-job", box).innerHTML = "";
+          toast("New cover ✓");
+        });
+      });
+      if ($("#cv-again", box)) $("#cv-again", box).onclick = run(0);
+      if ($("#cv-use", box)) $("#cv-use", box).onclick = (e) => {
+        const n = Number($("#cv-shot", box).value);
+        if (!n) { toast("Type a shot number (🎞 Shots shows them in order)", true); return; }
+        run(n)(e);
+      };
+    },
+  });
+}
+
 async function pageVideos() {
   const vids = await api("GET", "/api/videos");
   app.innerHTML = `<h2>Videos</h2>${vids.length ? `<div class="cards">${vids.map((v) => `
-    <div class="card"><video src="${esc(v.url)}" controls preload="none" playsinline></video>
+    <div class="card"><video src="${esc(v.url)}" ${v.cover ? `poster="${esc(v.cover)}"` : ""} controls preload="none" playsinline></video>
       <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${v.series ? `<span class="pill" title="Series: ${esc(v.series.idea || "")}">📺 ${esc(String(v.series.idea || "").slice(0, 24))} ${v.series.part}/${v.series.of}</span> ` : ""}${esc(v.title || v.name)}</div>
       <div class="muted small">${ago(v.updated)} · ${(v.size / 1048576).toFixed(1)} MB</div>
       <div class="btns"><a class="btn" href="${esc(v.url)}" download>⬇ Download</a>
         ${v.episode ? `<button data-redit="${esc(v.episode)}" class="primary">✏️ Edit</button>` : ""}
         ${META.settings.postiz?.url ? `<button data-pz="${esc(v.key)}">📤 Postiz</button>` : ""}
         ${v.sheet ? `<button data-sheet="${esc(v.sheet)}" title="One frame from every shot">🎞 Shots</button>` : ""}
+        ${!v.previous && (v.cover || v.episode) ? `<button data-cover="${esc(v.key)}" data-ep="${esc(v.episode || "")}" data-img="${esc(v.cover || "")}" data-title="${esc(v.title || v.name)}" title="The cover picture for posting">🖼 Cover</button>` : ""}
         <button data-rename="${esc(v.key)}" data-title="${esc(v.title || v.name)}">✏️ Rename</button>
         <button data-delete="${esc(v.key)}" data-title="${esc(v.title || v.name)}" class="danger">🗑 Delete</button></div>
       <div class="pz-box" id="pz-${esc(v.key)}"></div></div>`).join("")}</div>`
     : '<p class="muted">No videos yet. Make one on the Create page.</p>'}`;
+  $$("[data-cover]").forEach((b) => b.onclick = () => openCover(b.dataset.cover, b.dataset.ep, b.dataset.img, b.dataset.title));
   $$("[data-sheet]").forEach((b) => b.onclick = () => {
     const card = b.closest(".card");
     const open = $(".sheet-strip", card);

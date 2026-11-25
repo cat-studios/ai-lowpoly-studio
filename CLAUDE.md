@@ -631,6 +631,18 @@ The popup saves the episode first (`W.previewId`), and the real render then uses
   and the word is drawn at up to 2x size (`\fs`, capped so it fits the frame width: 0.92 * width / (0.68 * letters)),
   in its cycle colour. Drawn at render resolution like every caption, so it stays pixelated.
 
+## Cover pictures (2026-11-26)
+`pipeline/cover.py`, step 5 of every full render (never fails the video; not for previews): `candidates` = the middle
+frame of shots whose camera shows her (`GOOD_CAMS`, no cutaways), scored (close cameras, an expression, early in
+the video, her own lines), at most `MAX_CANDIDATES` 8 spread over the video; `grid` tiles them (ffmpeg `tile`,
+216x384 each) for ONE vision call (`pick`: "best": n; no Ollama / bad answer = best heuristic score); `render`
+puts the frame through `low_res_chain` + the title ASS (`title_ass`: caption font, title colours, second half in
+`title_color2`, as big as fits, top third) at render res, then the neighbor upscale and grade ->
+`output/<name>_cover.jpg`, `build/<name>/cover.json` {shot, why}. CLI `cover.py episodes/<id>.json [--shot N]` =
+`POST /api/videos/<key>/cover {episode, shot?}` (job kind `cover`, other lane; needs `build/<name>/frames`).
+`list_videos` gives `cover` (with an mtime `?v=`), the card uses it as the `<video poster>`; earlier versions /
+delete / trash carry the cover like the shot sheet. `/media/` serves jpg.
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and
@@ -702,6 +714,7 @@ The popup saves the episode first (`W.previewId`), and the real render then uses
 | `pipeline/llm.py` | Ollama: `generate_script`, `generate_titles`, `design_set` (text or `image=`), `make_coherent`, `make_theme`, `find_cast`, `find_scenes`, `place_for_title`, `social_copy`, `chat_json` (format=json). |
 | `pipeline/comfy.py` | ComfyUI client: status/models, `find_server`, Z-Image + checkpoint txt2img, `texture_set(mode=required|auto)`, `object_sprite`, `floor_prompt`, `colour_word`. |
 | `pipeline/postiz.py` | Postiz client: `channels()`, `upload()`, `captions()` (`llm.social_copy` + `TRENDY` tags), `draft()` (POST /posts type "draft", one per ticked channel, `settings_for()` per provider; discord needs a channel ID). Base `<url>/api/public/v1`, header `Authorization: <key>` (no Bearer). **Drafts only - never schedule/publish.** |
+| `pipeline/cover.py` | The Reel's cover picture: best frame (vision pick from a grid) + title in the video's look. |
 | `pipeline/gif.py` | Video → GIF: palette from all frames, Sierra dithering; keeps under 10 MB by stepping down fps, then size, then colours. |
 
 **Web app**

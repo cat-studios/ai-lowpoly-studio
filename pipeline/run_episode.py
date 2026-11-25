@@ -1633,6 +1633,17 @@ def main():
                     f"select='{picks}',scale=432:768,tile={len(timing['shots'])}x1",
                     "-frames:v", "1", "-update", "1", str(sheet)], cwd=build, check=True)
 
+    # 5. cover picture: the best frame (the picture model picks) + the title, in the video's look
+    report(0.99, "Making the cover")
+    try:
+        import cover
+        cov, info = cover.make(ep, timing, build, name, look, S.deep_merge(cfg["captions"], ep.get("captions", {})),
+                               ffmpeg, cfg["ollama"])
+        if cov:
+            print(f"Cover -> {cov} (shot {info['shot'] + 1}: {info['why']})")
+    except Exception as exc:                       # a cover never fails the video
+        print(f"  (no cover: {exc.__class__.__name__}: {str(exc)[:160]})")
+
     report(1.0, "Done")
     print(f"Done in {time.time() - t0:.0f}s -> {out}  ({total / fps:.1f}s video)")
     print(f"Shot sheet -> {sheet}")

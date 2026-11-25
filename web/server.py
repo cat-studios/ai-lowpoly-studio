@@ -205,8 +205,10 @@ def list_videos():
                 title, series = e.get("title", ""), e.get("series")
             except Exception:
                 pass
+        cover = v.with_name(v.stem + "_cover.jpg")
         out.append({"key": v.stem, "name": v.stem, "title": title, "episode": ep, "url": f"/media/{v.name}",
                     "series": series if isinstance(series, dict) else None,
+                    "cover": f"/media/{cover.name}?v={int(cover.stat().st_mtime)}" if cover.exists() else None,
                     "sheet": f"/media/{sheet.name}" if sheet.exists() else None,
                     "size": v.stat().st_size, "updated": v.stat().st_mtime})
     return out
@@ -251,10 +253,12 @@ def delete_video(key):
     trash = OUTPUT / ".trash"
     trash.mkdir(exist_ok=True)
     sheet = mp4.with_name(mp4.stem + "_shots.png")
+    cover = mp4.with_name(mp4.stem + "_cover.jpg")
     m = re.fullmatch(r"(.+)-(\d{8}-\d{6})", mp4.stem)
     if key.startswith("previous/") and m:        # earlier versions keep their sheet as "<name>_shots-<stamp>.png"
         sheet = mp4.with_name(f"{m.group(1)}_shots-{m.group(2)}.png")
-    for f in (mp4, sheet):
+        cover = mp4.with_name(f"{m.group(1)}_cover-{m.group(2)}.jpg")
+    for f in (mp4, sheet, cover):
         if f.exists():
             f.replace(trash / f"{f.stem}-{stamp()}{f.suffix}")
     labels = load_labels()
@@ -793,12 +797,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(OUTPUT / "previews" / name)
             if method == "GET" and path.startswith("/media/previous/"):   # earlier versions (output/previous/)
                 name = path[len("/media/previous/"):]
-                if not re.fullmatch(r"[\w.-]+\.(mp4|png)", name):
+                if not re.fullmatch(r"[\w.-]+\.(mp4|png|jpg)", name):
                     return self.fail("not found", 404)
                 return self.send_file(OUTPUT / "previous" / name)
             if method == "GET" and path.startswith("/media/"):
                 name = path[len("/media/"):]
-                if not re.fullmatch(r"[\w.-]+\.(mp4|png|wav)", name):
+                if not re.fullmatch(r"[\w.-]+\.(mp4|png|wav|jpg)", name):
                     return self.fail("not found", 404)
                 return self.send_file(OUTPUT / name)
             if method == "GET" and path.startswith("/propimg/"):
@@ -1268,7 +1272,7 @@ class Handler(BaseHTTPRequestHandler):
             name = slug(p.stem)
             if not b.get("reuse_frames"):            # keep the video this render replaces (output/previous/)
                 when = stamp()                       # one stamp for both, so the sheet matches its video
-                for old in (OUTPUT / f"{name}.mp4", OUTPUT / f"{name}_shots.png"):
+                for old in (OUTPUT / f"{name}.mp4", OUTPUT / f"{name}_shots.png", OUTPUT / f"{name}_cover.jpg"):
                     if old.exists():
                         (OUTPUT / "previous").mkdir(exist_ok=True)
                         shutil.copy2(old, OUTPUT / "previous" / f"{old.stem}-{when}{old.suffix}")
@@ -1376,6 +1380,16 @@ class Handler(BaseHTTPRequestHandler):
                 if it["key"] in labels:
                     it["title"] = labels[it["key"]]
             return self.send_json(items)
+        if head == "videos" and method == "POST" and len(parts) == 3 and parts[2] == "cover":
+            # 🖼 Cover -> 🔄 pick again (the AI) or a shot picked by hand: pipeline/cover.py on the render's frames
+            key, b = parts[1], self.body_json() or {}
+            p = episode_path(b.get("episode"))
+            if not video_file(key).exists() or not p.exists() or slug(p.stem) != key:
+                raise ValueError("no such video (or its script is gone)")
+            shot = int(b.get("shot") or 0)
+            cmd = [sys.executable, "-u", str(PIPE / "cover.py"), str(p)] + (["--shot", str(shot)] if shot > 0 else [])
+            job = Job("cover", f"Cover {key}", cmd, result={"cover": f"/media/{key}_cover.jpg", "video": key})
+            return self.send_json(submit(job).to_dict())
         if head == "videos" and method in ("PUT", "DELETE") and len(parts) > 1:
             key = "/".join(parts[1:])
             if method == "DELETE":

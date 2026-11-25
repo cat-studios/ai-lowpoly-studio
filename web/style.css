@@ -612,3 +612,5 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .status-fix { grid-column: 3; color: var(--accent); }
 @media (max-width: 760px) { .status-row { grid-template-columns: 24px 1fr; } .status-row .muted, .status-fix { grid-column: 2; } }
 .status-row .muted { overflow-wrap: anywhere; }
+.cover-wrap { text-align: center; }
+.cover-big { width: min(300px, 100%); aspect-ratio: 9 / 16; object-fit: cover; border-radius: 12px; background: #000; }

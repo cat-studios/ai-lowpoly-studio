@@ -25,6 +25,12 @@ question of at most 8 words - the AI writer is told so, and its editor checks it
 she says it (no more walking in), and the hook's key word pops up twice the size as she says it (Settings → Text &
 branding → "Hook word pops up big").
 
+**Cover picture**: every render also makes `output/<video>_cover.jpg` (1080x1920) - the best frame of the video
+(the picture model looks at up to 8 shots that show her face and picks one) with the title on top, in the same
+look. On the Videos page it's the video's still before you press play; **🖼 Cover** shows it big with ⬇ Download,
+🔄 Let the AI pick again, or "use shot N" (the order 🎞 Shots shows). Picking again needs the render's frames
+(Settings → Free up disk space deletes them).
+
 ## Installing on a new PC (Windows 10/11)
 
 1. **Python 3.12 or newer** (python.org; tick "Add to PATH"), then the one package the app itself needs:
