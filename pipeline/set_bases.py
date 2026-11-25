@@ -458,8 +458,9 @@ class _Picker:
         self.pal, self.setting, self.ollama, self.log, self.comfy = pal, setting, ollama, log, comfy_cfg
         self.pack = None
 
-    def get(self, kind, looks=""):
-        """(prop kind for the recipe, its custom def or None, width) - or (None, None, 0)."""
+    def get(self, kind, looks="", design=True):
+        """(prop kind for the recipe, its custom def or None, width) - or (None, None, 0). design=False: only a
+        built-in prop or an imported model (the AI's made props are kept for the hero spot)."""
         kind = propgen.slug(kind or "")
         if not kind:
             return None, None, 0.0
@@ -470,9 +471,12 @@ class _Picker:
             self.pack = self.pack or real.get("pack")
             return "imp_" + kind, real, float(real.get("width") or 1.0)
         if real:
-            self.log(f"[set] '{kind}': the imported one is from another pack ({real.get('pack')}) - making one "
-                     "in this set's style instead")
-        cols = ", ".join(self.pal[k] for k in ("accent", "accent2", "trim", "wood") if self.pal.get(k))
+            self.log(f"[set] '{kind}': the imported one is from another pack ({real.get('pack')})")
+        if not design:
+            return None, None, 0.0
+        import comfy                     # colour NAMES: the look check marked a prop down for "missing #ffd36b"
+        cols = ", ".join(dict.fromkeys(comfy.colour_word(self.pal[k]) for k in ("accent", "accent2", "trim", "wood")
+                                       if self.pal.get(k)))
         d = propgen.design(kind, f"{looks or kind.replace('_', ' ')}; colours: {cols}", self.setting, self.ollama,
                            self.log, comfy_cfg=self.comfy, use_imported=False)
         return (kind, d, float(d.get("width") or 2 * float(d.get("radius") or 0.5))) if d else (None, None, 0.0)
@@ -551,7 +555,9 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
     night = light == "night"
     log(f"[set] base: {b['name']} ({base_id}), palette {pname}, {light}")
     title = str(choice.get("name") or name or idea or b["name"]).strip()[:40] or b["name"]
-    recipe = {"id": None, "name": name or title.title(), "theme": f"base:{base_id}", "style": "base", "base": base_id,
+    set_name = name or title.title()
+    recipe = {"id": (re.sub(r"[^a-z0-9]+", "_", set_name.lower()).strip("_")[:40] or base_id) + f"_{seed % 10000}",
+              "name": set_name, "theme": f"base:{base_id}", "style": "base", "base": base_id,
               "seed": seed, "indoor": b["indoor"], "light": light, "night": night, "snowy": bool(pal.get("snowy")),
               "description": str(choice.get("description") or f"{b['name']} - {idea}")[:200],
               "palette": {k: pal[k] for k in ("floor", "wall", "trim", "accent", "fog") if k in pal}
@@ -607,7 +613,11 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
             _piece(recipe, f"base_{kind[1:]}", parts, sd["pos"], h, r)
             marks[kind[1:]] = [sd["pos"][0], round(sd["pos"][1] - r - 0.7, 2)]
             continue
-        k, d, width = picker.get(kind, looks)
+        default = b["defaults"].get(sid) or ""
+        if want and default and not default.startswith("@") and \
+                propgen.slug(kind).split("_")[-1] == default.split("_")[-1]:
+            kind, looks = default, ""            # a "cloud_bed" is still a bed: the hand-built one (it scored 4/10)
+        k, d, width = picker.get(kind, looks, design=(sid == "hero"))
         if not k and want:                       # the AI's thing couldn't be made: the default
             k, d, width = picker.get(b["defaults"].get(sid) or "", "")
         if not k:
