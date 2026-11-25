@@ -26,12 +26,15 @@ python pipeline/sfx.py              # (re)synthesise the 24 built-in sounds
   repo pushed to GitHub, branch `main`) is the development copy - all code changes happen here. The user's
   production install is a separate folder, `C:\Users\kat5\ai-lowpoly-studio` (started with its own
   `start-studio.bat`, port **8765** with `--lan`, holding their characters, voices, sets, videos and settings).
-  Never edit, restart or test against production unless the user asks; they move changes over once they're happy:
+  **Test scenes and test videos run in production** (the user's decision, 2026-11-25: the dev copy lacks voice-venv
+  and their assets, so tests there hit errors): push the change, ask the user to `git pull` there and restart, then
+  test on :8765. Never edit production code, and never pull or restart it yourself; they move changes over:
   production is a clean clone of the same GitHub repo (`main`), so the route is dev branch → merged into `main` on
   GitHub → `git pull` in production → restart the studio. All personal data is gitignored, so a pull never touches
   it - keep it that way when adding new data folders (add them to `.gitignore`). Never run `git clean` there.
 - Preview servers for Claude's browser pane (`.claude/launch.json`): `studio-dev` (:8766) and `studio-check`
-  (:8767). Never use :8765 here - that's production.
+  (:8767), for checking the web pages of dev code. Don't start a server on :8765 - that's production (already
+  running from its own folder; test videos go through it, see above).
 - **The server imports pipeline modules once - restart it after editing any `.py`** (web files are re-read per
   request; reload the page with a cache-busting query like `?v=N`). A 404 on a new route = not restarted yet.
 
