@@ -3587,3 +3587,29 @@ async function openVideoEditor(id) {
     },
   });
 }
+
+/* ---- the status dot (top bar): every service the studio needs, green / amber / red (web/status_web.py) */
+const STATUS_ICON = { ok: "🟢", warn: "🟡", bad: "🔴" };
+let STATUS = null;
+async function refreshStatus() {
+  try { STATUS = await api("GET", "/api/status"); } catch { return; }
+  const dot = document.getElementById("status-dot");
+  if (!dot) return;
+  dot.className = "status-dot " + STATUS.level;
+  const bad = STATUS.checks.filter((c) => c.level !== "ok").map((c) => c.name);
+  dot.title = bad.length ? "Needs a look: " + bad.join(", ") : "Everything is running";
+}
+async function openStatus() {
+  await refreshStatus();
+  if (!STATUS) return toast("Couldn't ask the studio for its status", true);
+  openModal({ title: "Studio status", wide: true,
+    body: `<div class="status-list">${STATUS.checks.map((c) => `<div class="status-row ${c.level}">
+      <span class="status-ic">${STATUS_ICON[c.level]}</span><b>${esc(c.name)}</b>
+      <span class="muted small">${esc(c.detail)}</span>${c.fix ? `<span class="status-fix small">→ ${esc(c.fix)}</span>` : ""}</div>`).join("")}</div>
+      <p class="muted small" style="margin:10px 0 0">Checked ${new Date(STATUS.time * 1000).toLocaleTimeString()}.</p>`,
+    buttons: [{ label: "🔄 Check again", onClick: async (m) => { await refreshStatus(); $(".modal-x", m.parentElement)?.click(); setTimeout(openStatus, 200); return false; } },
+      { label: "Close", primary: true }] });
+}
+document.getElementById("status-dot")?.addEventListener("click", () => openStatus());
+refreshStatus();
+setInterval(refreshStatus, 120000);

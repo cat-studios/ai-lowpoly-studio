@@ -592,3 +592,17 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .cw-trend .chip-btn { white-space: normal; text-align: left; }
 .id-sources { flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; align-items: center; }
 .id-sources .chip-btn.src-empty { opacity: .65; }
+
+/* the status dot in the top bar and its panel */
+.status-dot { background: none; border: 0; padding: 6px; cursor: pointer; display: flex; align-items: center; }
+.status-dot i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); display: block; }
+.status-dot.ok i { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.status-dot.warn i { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+.status-dot.bad i { background: var(--bad); box-shadow: 0 0 8px var(--bad); animation: mw-glow .9s ease-in-out infinite alternate; }
+.status-list { display: flex; flex-direction: column; gap: 6px; }
+.status-row { display: grid; grid-template-columns: 24px 170px 1fr; gap: 4px 8px; align-items: baseline;
+  padding: 7px 10px; border-radius: 10px; background: var(--panel2); }
+.status-row.bad { box-shadow: inset 3px 0 0 var(--bad); } .status-row.warn { box-shadow: inset 3px 0 0 var(--accent2); }
+.status-fix { grid-column: 3; color: var(--accent); }
+@media (max-width: 760px) { .status-row { grid-template-columns: 24px 1fr; } .status-row .muted, .status-fix { grid-column: 2; } }
+.status-row .muted { overflow-wrap: anywhere; }

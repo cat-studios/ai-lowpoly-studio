@@ -1311,6 +1311,9 @@ class Handler(BaseHTTPRequestHandler):
             import imported_web
             return imported_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
 
+        if head == "status":           # the status dot / panel in the top bar (web/status_web.py)
+            import status_web
+            return status_web.handle(self, method, parts[1:], root=ROOT, jobs=JOBS)
         if head == "client-error" and method == "POST":   # the web page's own errors (app.js reportError)
             b = self.body_json() or {}
             msg = " ".join(str(b.get("message") or "?").split())[:300]
