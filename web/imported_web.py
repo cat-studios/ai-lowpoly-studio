@@ -6,6 +6,7 @@ pipeline/imported.py; this module only handles the requests and starts the impor
     POST   /api/imported/upload         -> body = the .zip, headers X-Filename, X-Pack-Name, X-License
     DELETE /api/imported/pack/<id>      -> moves the pack to assets/imported/packs/.trash (never hard-deletes)
     GET    /api/imported/all            -> {models: [... with "category"], packs: [...]} (the Assets page)
+    PUT    /api/imported/model/<id>     -> {name, description, category} your own (category "" = automatic)
     DELETE /api/imported/model/<id>     -> one model's files to packs/.trash/models-<stamp>/
     POST   /api/imported/delete         -> {"ids": [...]} several models at once (same trash)
     GET    /api/imported/duplicates     -> {groups, extra, examples}; POST /api/imported/dedupe removes the copies
@@ -48,6 +49,11 @@ def handle(h, method, parts, *, submit, Job, root):
         return h.send_json({"models": IM.categorised(),
                             "packs": [{k: p.get(k) for k in ("id", "name", "license", "source", "added", "skipped")}
                                       | {"count": len(p.get("models", []))} for p in IM.packs()]})
+
+    if method == "PUT" and arg == "model" and len(parts) > 1:      # your own name / description / category
+        b = h.body_json() or {}
+        return h.send_json({"ok": True, "model": IM.edit_model(parts[1], b.get("name"), b.get("description"),
+                                                               b.get("category"))})
 
     if method == "DELETE" and arg == "model" and len(parts) > 1:   # one model (its files go to the trash)
         return h.send_json({"ok": True, "deleted": IM.delete_models([parts[1]])})

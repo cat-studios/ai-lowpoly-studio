@@ -596,6 +596,13 @@ def imported_def(kind, looks="", setting="", log=print):
             if d:
                 log(f"[props] '{kind}' is a crowd of {len(d['crowd'])} imported models ({d['name']})")
             return d
+        if re.split(r"[_\s]+", kind.lower())[-1] in imported.PERSON_NOUNS:
+            # one person in a set ("pedestrian"): one of your imported people, not a few blocks (a city's
+            # pedestrian was designed from 4 boxes, failed its look check and became a flat picture)
+            d = imported.crowd_def(kind, looks, setting, n=1)
+            if d:
+                log(f"[props] '{kind}' is an imported person ({d['crowd'][0]['name']})")
+                return d
         d = imported.match(kind, looks, setting)
     except Exception as exc:
         log(f"[props] imported models unavailable ({exc.__class__.__name__}: {str(exc)[:80]})")

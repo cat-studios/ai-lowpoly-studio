@@ -368,13 +368,15 @@ def find_scenes(url, model, lines, start_place, sets, policy="reuse", temperatur
     return chat_json(url, model, system, user, temperature)
 
 
-def _clean_lines(text, keep=()):
+def _clean_lines(text, keep=(), main=(), people=True):
     """Script lines from the model's answer. "Name: ..." prefixes are dropped (the model likes to label the main
     character) unless the name is in `keep` (co-stars) or is a person the script brings in with "+name" - those
     are who says the line (autodirect turns them into the shot's speaker)."""
     keep = {k.lower() for k in keep}
     keep |= {w.replace("_", " ") for w in re.findall(r"\+([a-z0-9_]+)", text.lower())} | \
         set(re.findall(r"\+([a-z0-9_]+)", text.lower()))
+    main = {m.lower() for m in main} | NOT_SPEAKERS
+    brought = set()                     # +names seen so far
     lines = []
     # some models put the whole script on one line: a new "[directions]" after a sentence starts a new line
     text = re.sub(r"(?<=[.!?\"'])\s+(?=\[)", "\n", text)
@@ -383,17 +385,37 @@ def _clean_lines(text, keep=()):
         s = re.sub(r'"\s*,?\s*$', "", s).strip()     # a line the model wrapped like JSON: ... nya!",
         s = re.sub(r"^\*{1,2}([^*:]{1,30})(?:\*{1,2}:|:\*{1,2})\s*", r"\1: ", s)   # **Name:** / **Name**: -> Name:
         s = re.sub(r"^(\d+[.)]|[-*•]|line\s*\d+:)\s*", "", s, flags=re.I)   # numbering / bullets
-        m = re.match(r"^([A-Z][\w ]{0,20}):\s+", s) if not s.startswith("[") else None
-        if m and m.group(1).strip().lower() not in keep:
-            s = s[m.end():]                                                   # "Catgirl: ..." -> "..."
+        m = re.match(r"^(\[[^\]]*\]\s*)?([A-Z][\w ]{0,20}):\s+", s)
+        if m:
+            name = m.group(2).strip().lower()
+            if name in main or not people:              # titles etc.: no speakers at all
+                s = (m.group(1) or "") + s[m.end():]                         # "Catgirl: ..." -> "..."
+            elif name not in keep and len(name.split()) <= 3:
+                # someone else speaks: they say it themselves with their own voice (she used to read it out,
+                # label stripped) - bring them in on their first line if the script didn't
+                keep.add(name)
+            if name in keep:
+                slug = re.sub(r"[^a-z0-9]+", "_", name).strip("_")[:24]
+                if slug and slug not in brought and f"+{slug}" not in s.lower():
+                    head = m.group(1) or ""
+                    head = (head[:1] + f"+{slug} enter, " + head[1:]) if head else f"[+{slug} enter] "
+                    s = head + s[len(m.group(1) or ""):]
+        brought |= set(re.findall(r"\+([a-z0-9_]+)", s.lower()))
+        # *emphasis* the model writes would be read out and captioned with its stars
+        s = re.sub(r"\*+([^*\n]+?)\*+", r"\1", s).replace("*", "")
         if not s or s.lower().startswith(("here", "sure", "title", "script")) or s.startswith("#"):
             continue
         lines.append(s)
     return lines
 
 
+NOT_SPEAKERS = {"narrator", "character", "main character", "host", "me", "i", "she", "you", "speaker", "voice",
+                "voiceover", "voice over", "catgirl", "line", "scene", "shot", "note", "wait", "fact", "fun fact",
+                "bonus", "ps", "update", "warning", "title", "script", "hook", "ending", "intro", "outro"}
+
+
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
-                    others=None, polish=True, scenes="auto"):
+                    others=None, polish=True, scenes="auto", explain=False):
     """others: the other main characters in the video, [{"name", "about"}] - they get some lines too.
     scenes: "stay" (one place), "move" (the story travels: 1-3 [@ place] changes) or "auto" (only when it moves)."""
     others = [o for o in (others or []) if isinstance(o, dict) and o.get("name")]
@@ -414,26 +436,29 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         f"cameras: {cams}\nactions: {anims}\nexpressions: {exprs}\n"
         "An action that is NOT in that list can be written as do: and one word - [do:salute], [do:yawn], [do:flex] - "
         "and it will be animated for you; use that only for clear body actions.\n"
-        f"places to walk to (with walk_to/run_to/sneak_to): {marks} - walk at most once or twice in the whole "
+        f"places to walk to (with walk_to/run_to/sneak_to): {marks} - walk at most ONCE in the whole "
         "script, only when the story needs her somewhere else; for variety change the camera, her action or "
         "expression, bring something on screen or change the place instead of walking about\n"
         f"sound effects (optional, at most one per line, only when it fits): {sfx_names}\n"
         "When another person or a thing actually shows up in the scene, bring it on screen with '+name verb' in "
         "the brackets (ONE lowercase word or words_joined_by_underscores, e.g. +mail_van, never two separate "
-        "words; reuse the same name later). A person you brought in may say a "
-        "line: start that line with their name and a colon (Mom: You forgot your lunch!). Things never speak; "
-        "keep most lines for the main character.\n"
+        "words; reuse the same name later). Anyone you bring in speaks FOR THEMSELVES: give them at least one line "
+        "of their own, starting with their name and a colon (Mom: You forgot your lunch!). The main character never "
+        "tells what someone else says or thinks (no \"Mom says...\", \"she told me...\") and never talks about a "
+        "person who isn't brought in with +name. Things never speak; keep most lines for the main character.\n"
+        "A catchphrase or sound like \"nya\" at most twice in the whole script - not at the end of every line.\n"
         "Lighting can change at a line with one of: day, sunset, night, dawn in the brackets (it lasts until the "
         "next change) - only when time really passes in the story.\n"
         f"verbs for things: {', '.join(catalog.CAST_VERBS)} (crash_in may add from_left / from_right / from_back)\n"
         "verbs for people: enter, exit, appear, vanish, or any action above (wave, angry, laugh, dance...)\n"
         "Floating: [+balloons hold] gives her a bunch of balloons, [float_up] lifts her off the ground (she stays up), "
         "[land] brings her back down. Always close brackets with ] and never put directions mid-line.\n"
-        "Explaining how something works (a toilet, a volcano, a heart, an engine)? Bring a model of it on beside her "
-        "with [show: thing] (one word, or words_joined), [show: thing open] when you talk about its inside, "
-        "[show: thing part] to look closely at one part (e.g. [show: toilet flap]), and [show: off] when you're "
-        "done with it. Name each part and say what it does in plain words (\"the chain lifts the flap\") - the "
-        "model's parts move on those words.\n"
+        + ("Explaining how something works (a toilet, a volcano, a heart, an engine)? Bring a model of it on beside "
+           "her with [show: thing] (one word, or words_joined), [show: thing open] when you talk about its inside, "
+           "[show: thing part] to look closely at one part (e.g. [show: toilet flap]), and [show: off] when you're "
+           "done with it. Name each part and say what it does in plain words (\"the chain lifts the flap\") - the "
+           "model's parts move on those words.\n" if explain else "")
+        +
         "Changing place: when the story moves somewhere else, start that line with [@ place] - a short "
         "description of the new place, e.g. [@ on the moon] or [@ a busy train station] - it lasts until the next "
         "[@ ...]. Never write [@ ...] for the place the video starts in.\n"
@@ -462,7 +487,8 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
     text = chat(url, model, system, user, temperature)
     alias = {a.lower(): o["name"] for o in others for a in (o.get("aliases") or []) + [o["name"]]}
     out = []
-    for line in _clean_lines(text, keep=list(alias)):
+    main_names = [str(character.get("name") or ""), str(character.get("id") or "")]
+    for line in _clean_lines(text, keep=list(alias), main=[n for n in main_names if n]):
         # "[cameras: macro, happy]", "[action: shrug]": the prompt's list labels copied into the brackets (the
         # director would try to animate "cameras: macro")
         line = re.sub(r"(?<=[\[,])\s*(?:cameras?|actions?|expressions?|moods?|emotions?)\s*:\s*", " ", line, flags=re.I)
@@ -499,7 +525,9 @@ def polish_script(url, model, title, lines, tone="funny", temperature=0.4):
               "it. Check: wrong or made-up facts (the title's question must get a real, true answer, said simply - "
               "a joke can exaggerate, but the answer itself is true); broken or unnatural English and made-up words; "
               "lines that don't follow from the one before; a joke or idea used twice; an ending that doesn't land "
-              "(the last line is a punchline); more than 14 words in a line; swearing. Keep the same number of "
+              "(the last line is a punchline); more than 14 words in a line; swearing; the main character telling "
+              "what someone else says (\"Mom says...\") instead of letting them say it, or talking about someone "
+              "who never appears; \"nya\" (or any catchphrase) more than twice. Keep the same number of "
               "lines in the same order, each line keeping its job (who speaks, names and +name words exactly). "
               "Reply with JSON only: "
               '{"problems": ["..."], "lines": ["...", "..."]}')
@@ -583,7 +611,7 @@ def generate_titles(url, model, character, theme="", count=8, temperature=1.0, s
     user = ((f"Topic: {theme}\n" if theme else "Any topic - surprise me with things people wonder about.\n")
             + f"Give {int(count)} different titles.")
     out = []
-    for t in _clean_lines(chat(url, model, system, user, temperature)):
+    for t in _clean_lines(chat(url, model, system, user, temperature), people=False):
         t = clean_title(t)
         if 8 < len(t) < 90 and t.lower() not in (x.lower() for x in out):
             out.append(t)
@@ -599,7 +627,10 @@ def series_titles(url, model, idea, count=3, starts=None, hint="", temperature=0
               "they cover the idea; order them so the first one hooks people. "
               f"Start each title with one of: {', '.join(starts or TITLE_STARTS)}. "
               + (f"Each title is about {hint}. " if hint else "")
-              + "Rules: under 10 words; no character names, no cat words, no emoji, no numbering, no 'Part 1'. "
+              # "What if cats ruled the world?" became gravity / naps / silence: the titles must stay on the idea
+              + "Every title must clearly be about the idea itself - keep its main subject in the title. "
+              + "Rules: under 10 words; no character names, no emoji, no numbering, no 'Part 1'"
+              + ("" if re.search(r"\bcats?\b|\bkitt", str(idea), re.I) else ", no cat words") + ". "
               'Reply with JSON only: {"titles": ["...", "..."]}')
     # a few extra, then the best ones by rank_titles (it scores "a real question with a real answer" - the first
     # try gave "How does your skin know when you're full?")

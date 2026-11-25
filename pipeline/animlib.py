@@ -143,7 +143,7 @@ def library():
     """name -> animation: the built-in examples, then assets/anims/*.json (a file wins over a built-in)."""
     out = {n: validate(dict(a, name=n)) for n, a in BUILTIN.items()}
     extra = os.environ.get("ANIMLIB_EXTRA")        # animgen's check render: a candidate that isn't saved yet
-    files = sorted(LIB.glob("*.json")) if LIB.exists() else []
+    files = sorted(p for p in LIB.glob("*.json") if not p.name.startswith(".")) if LIB.exists() else []   # not .not_actions.json
     for p in files + ([Path(extra)] if extra and Path(extra).exists() else []):
         try:
             a = validate(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)

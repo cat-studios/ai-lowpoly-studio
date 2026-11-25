@@ -54,7 +54,9 @@ def main(spec_path):
         extra = (f"This is episode {i} of {len(titles)} of a series about: {idea}."
                  + (f" The other episodes are: {'; '.join(others)} - don't repeat what they cover." if others else "")
                  + (" End with a one-line hook for the next episode." if i < len(titles) else "")
-                 + (f" Also: {spec['note']}" if spec.get("note") else ""))
+                 # "dreaming and wakes up at the end" was followed in 1 of 4 episodes as a soft "Also:"
+                 + (f" A MUST for this episode (the person who ordered the series asked for it): {spec['note']}"
+                    if spec.get("note") else ""))
         step(0.05, "writing the script")
         r = call(base, "POST", "/api/ai/script", {"title": title, "set": "auto", "scene_policy": "reuse",
                                                   "character": spec.get("character") or "", "model": model,

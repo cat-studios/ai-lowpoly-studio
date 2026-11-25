@@ -49,6 +49,10 @@ CAPS = re.compile(r"\b[A-Z]{3,}\b")
 CAM_CYCLE = ["closeup", "medium", "side", "dramatic", "low", "macro", "high", "closeup", "medium", "tiny", "dramatic"]
 # a "camera beat" (move_every): instead of her walking about, the camera does something - a new angle that moves
 WALK_GAP = 5          # an automatic walk never comes within this many shots of another walk
+TIME_WORDS = re.compile(r"\b(night\w*|dark\w*|evening|sunset|dusk|dawn|sunrise|morning|noon|midday|midnight|"
+                        r"afternoon|day(?:time|light|s)?|today|tonight|hours?|o'?clock|sleep\w*|asleep|"
+                        r"slept|dream\w*|wak(?:e|es|ing)|woke|bed ?time|moon\w*|stars?|lights? (?:out|off|on))\b", re.I)
+MAX_WALKS = 2        # walks in a whole video, the opening walk-in included (the rest become standing shots)
 CAMERA_BEATS = [("side", "orbit"), ("low", "push_in"), ("high", "pull_out"), ("wide", "orbit"),
                 ("dramatic", "push_in"), ("side", "pull_out")]
 
@@ -143,8 +147,16 @@ def parse_directions(line, marks):
         inner = inner[:cut.start()] + inner[cut.end():]
     sc = re.search(r"@\s*([^,\]]+)", inner)           # "@ falling through clouds" = scene change
     if sc:
-        d["scene"] = sc.group(1).strip()
-        inner = inner[:sc.start()] + inner[sc.end():]
+        # "[@ kitchen jump, excited]" / "[@library enter]": direction words the AI glued onto the place go back to
+        # the directions (the set was made for a "kitchen jump")
+        ws = sc.group(1).split()
+        vocab = set(catalog.ANIMS) | set(catalog.CAMERAS) | set(catalog.MOVES) | set(catalog.EXPRESSIONS) \
+            | set(catalog.CAST_VERBS) | set(getattr(catalog, "LIGHTS", {}))
+        tail = []
+        while len(ws) > 1 and ws[-1].lower() in vocab:
+            tail.insert(0, ws.pop())
+        d["scene"] = " ".join(ws).strip()
+        inner = inner[:sc.start()] + (", " + ", ".join(tail) + "," if tail else "") + inner[sc.end():]
     tokens = [t.replace("-", "_") for t in re.split(r"[,\s]+", inner.strip().lower()) if t]
     tokens = _take_cast(tokens, marks, d)
     late = []                              # actions named only by the AI's own words ("floating")
@@ -189,6 +201,12 @@ def parse_directions(line, marks):
             d["face"] = t.split(":", 1)[-1].replace("face_", "")
         elif re.fullmatch(r"\d+(\.\d+)?s?", t):
             d["duration"] = float(t.rstrip("s"))
+        elif t in CAM_WORDS:                        # "[mid, happy]": the AI's own camera words
+            d.setdefault("camera", CAM_WORDS[t])
+        elif t in MOVE_WORDS:                       # "[zoom_in]" was made into a pose by the animation maker
+            d.setdefault("move", MOVE_WORDS[t])
+        elif t in catalog.CAST_VERBS or t in JUNK_WORDS or re.fullmatch(r"[a-z]+_(to|by|in|out|off)", t):
+            pass      # verbs for other things ("hold", "bounce"), film words ("angle"), made-up walks ("swim_by")
         elif t in MOOD_WORDS:                       # "[jump, excited]": the AI's own mood words
             d.setdefault("expression", MOOD_WORDS[t])
         elif t in ANIM_WORDS:                       # "[floating]" - only when no real action was named
@@ -223,6 +241,22 @@ def _known_word(t, marks):
 
 
 # words the AI writes in brackets that aren't in the vocabulary, mapped onto it
+CAM_WORDS = {    # -> camera ("[mid, wave]" asked the animation maker to invent a "mid" pose)
+    **dict.fromkeys("mid mid_shot midshot medium_shot waist full full_shot two_shot".split(), "medium"),
+    **dict.fromkeys("close close_up closeshot close_shot face".split(), "closeup"),
+    **dict.fromkeys("wide_shot long long_shot establishing far_shot".split(), "wide"),
+    **dict.fromkeys("overhead top_down birds_eye aerial".split(), "high"),
+    **dict.fromkeys("low_angle worms_eye".split(), "low"),
+    **dict.fromkeys("extreme_closeup extreme_close_up eyes".split(), "macro"),
+}
+MOVE_WORDS = {"zoom_in": "push_in", "zoom": "push_in", "dolly_in": "push_in", "zoom_out": "pull_out",
+              "dolly_out": "pull_out", "pan": "orbit", "circle": "orbit", "tracking": "follow", "track": "follow",
+              "handheld": "shake", "shaky": "shake"}
+JUNK_WORDS = set("angle shot cut scene camera cam pov frame focus beat pause transition fade still static_shot "
+                 "background foreground center_frame mid_frame dreamy busy serious".split())
+# things the AI's cast step sometimes calls people ("the sun crashed in" got a human body)
+NOT_PEOPLE = set("sun moon star stars cloud clouds rain storm wind lightning rainbow planet comet meteor sky "
+                 "light shadow ghost_light clock alarm_clock tv phone robot_arm car bus truck van train plane".split())
 MOOD_WORDS = {   # -> expression
     **dict.fromkeys("excited joyful cheerful delighted glad thrilled giddy ecstatic playful".split(), "happy"),
     **dict.fromkeys("shocked amazed startled stunned shook astonished gasp".split(), "surprised"),
@@ -342,6 +376,8 @@ def add_cast_plan(result, plan, skip=()):
         if not cur.get("looks") or cur.get("looks") == who.replace("_", " "):
             cur["looks"] = str(info.get("looks") or who.replace("_", " "))[:120]
         cur["type"] = info.get("type") if info.get("type") in ("person", "thing") else cur.get("type") or cast_kind(who)
+        if cur["type"] == "person" and who in NOT_PEOPLE:
+            cur["type"] = "thing"
         cast[who] = cur
     for e in plan.get("events") or []:
         try:
@@ -703,6 +739,12 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                     pos = "center" if "center" in marks else marks[0]
         d, text = parse_directions(raw, marks)
         d.pop("scene", None)
+        if d.get("want") in catalog.CAST_VERBS:     # "[@library enter]": a verb for other things, not a pose to make
+            d.pop("want")
+        if d.get("light") and i and not TIME_WORDS.search(text):
+            # the AI uses [night] like a mood ("[night, surprised] Wait... why is the sun here?") - it went dark at
+            # noon. The light only changes on a line that talks about the time of day (or sleep / waking up).
+            d.pop("light")
         show_now, shot_events_pre = None, []
         if "show" in d:
             # "[show: toilet]" brings an explainer object on beside her (it stays until another is shown or
@@ -865,6 +907,26 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                     shot.update(camera="side", move="static")
         else:
             shot.pop("to", None)
+        # "+mom enter from_left Mom! You're..." - a stage direction the AI wrote after the brackets: it was spoken
+        # and captioned ("from left mom"). A leading +name followed by verbs / from_x / places is a direction.
+        lead = re.match(r"\s*\+([A-Za-z0-9_]+)((?:\s+[a-z_]+)*)", text)
+        if lead:
+            words = lead.group(2).split()
+            n = 0
+            while n < len(words) and (words[n] in catalog.CAST_VERBS or words[n] in catalog.ANIMS
+                                      or words[n].startswith("from_") or words[n] in marks):
+                n += 1
+            if n:
+                who = lead.group(1).lower()[:24]
+                ev = {"who": who, "do": next((w for w in words[:n] if w in catalog.CAST_VERBS or w in catalog.ANIMS), "enter")}
+                side = next((w[5:] for w in words[:n] if w.startswith("from_") and w[5:] in catalog.FROM_SIDES), None)
+                if side:
+                    ev["from"] = side
+                if not any(e["who"] == who and e.get("do") == ev["do"] for e in shot.get("events") or []):
+                    shot.setdefault("events", []).append(ev)
+                cast.setdefault(who, {"type": cast_kind(who), "looks": who.replace("_", " ")})
+                rest = lead.group(2).split(None, n)
+                text = (rest[n] if len(rest) > n else "") + text[lead.end():]
         for who in re.findall(r"\+([a-z0-9_]+)", text, re.I):    # "Hi there, +tiny_dragon!" (outside the brackets)
             who = who.lower()[:24]
             if who not in cast and not any(e["who"] == who for s in shots for e in s.get("events", [])):
@@ -901,6 +963,15 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             shots[k - 1]["camera"] = "medium"            # wide enough to see them arrive beside her
         if not evs:
             shots[k].pop("events")
+    # she walks too much (the user, twice): at most MAX_WALKS walks in a video, the opening walk-in included -
+    # later ones stay where she is and the camera does the moving
+    walks = [k for k, s in enumerate(shots) if s.get("action") in catalog.MOVE_ANIMS]
+    for k in walks[MAX_WALKS:]:
+        s = shots[k]
+        s["action"] = "look_around" if s.get("expression") in ("surprised", "scared") else "idle"
+        s.pop("to", None)
+        if s.get("move") == "follow":
+            s["move"] = "push_in"
     used = {e["who"] for s in shots for e in s.get("events", [])}
     return {"start": start,
             "shots": shots,

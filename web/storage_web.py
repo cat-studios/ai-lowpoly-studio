@@ -2,7 +2,7 @@
 Settings -> Free up disk space (mounted by web/server.py under /api/storage).
 
     GET  /api/storage                 -> {"groups": [...], "total": bytes}
-    POST /api/storage/clean {what}    -> what = "frames" | "previous" | "trash"
+    POST /api/storage/clean {what}    -> what = "frames" | "previous" | "trash" | "generated"
 
 What can be cleaned, and what it costs:
   frames   - render work files in build/<episode>/ (PNG frames, Blender scenes). Deleted for good. Renders make them
@@ -41,6 +41,24 @@ def _size(p):
     return total, files
 
 
+def _generated(root):
+    """Everything the AI made: generated sets (recipe, preview, 3D view, texture folder) and the prop library
+    (3D props, sprites, their pictures). Not themes, the hidden list, imported models or anything else."""
+    out = []
+    sets = root / "sets"
+    if sets.is_dir():
+        for js in sets.glob("*.json"):
+            if js.name.startswith("."):
+                continue
+            out.append(js)
+            out += [p for p in (sets / f"{js.stem}.png", sets / f"{js.stem}.glb", sets / js.stem) if p.exists()]
+    props = root / "assets" / "props"
+    if props.is_dir():
+        out += [p for p in props.iterdir() if p.is_file() and not p.name.startswith(".")
+                and p.suffix in (".json", ".png")]
+    return out
+
+
 def _frame_paths(root):
     return [p for g in FRAME_GLOBS for p in root.glob(g) if "tts_cache" not in p.parts]
 
@@ -72,6 +90,17 @@ def report(root):
                    "parts": parts,
                    "note": "Everything you removed in the app (videos, sets, sounds, props, packs...) and the code "
                            "backup. Deleted for good - it can't be undone."})
+    gen = _generated(root)
+    nsets = sum(1 for p in gen if p.parent.name == "sets" and p.suffix == ".json")
+    nprops = sum(1 for p in gen if p.parent.name == "props" and p.suffix == ".json")
+    gb = sum(_size(p)[0] for p in gen)
+    groups.append({"key": "generated", "label": f"Everything the AI made: {nsets} scene(s), {nprops} prop(s) and "
+                                                 f"sprite(s)",
+                   "bytes": gb, "files": len(gen), "action": "trash",
+                   "note": "Generated sets (with their previews, 3D views and textures) and every made 3D prop and "
+                           "2D sprite move to the trash, so new videos make fresh ones. Built-in Legacy Cafe/Park, "
+                           "your imported models, characters and finished videos stay. Older videos that used them "
+                           "can't be re-rendered until the trash is restored."})
     cb, cf = _size(root / "build" / "tts_cache") if (root / "build" / "tts_cache").is_dir() else (0, 0)
     groups.append({"key": "tts", "label": "Voice cache (build/tts_cache)", "bytes": cb, "files": cf, "action": None,
                    "note": "Kept: re-rendering an old video would otherwise record new voice takes."})
@@ -115,6 +144,12 @@ def clean(root, what):
             stamp = time.strftime("%Y%m%d-%H%M%S")
             for f in src.iterdir():
                 f.replace(dst / f"{f.stem}-trashed-{stamp}{f.suffix}")
+    elif what == "generated":            # to sets/.trash/cleared-<stamp>/ and assets/props/.trash/cleared-<stamp>/
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        for p in _generated(root):
+            dst = p.parent / ".trash" / f"cleared-{stamp}"
+            dst.mkdir(parents=True, exist_ok=True)
+            p.replace(dst / p.name)
     elif what == "trash":
         for rel in TRASH_DIRS:
             d = root / rel

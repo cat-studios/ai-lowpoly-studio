@@ -2632,7 +2632,7 @@ function impModelCard(m) {
     <div class="asset-thumb checker">${m.preview ? `<img src="${esc(m.preview)}?v=${m.preview_v || 1}" alt="${esc(m.name)}" loading="lazy">`
       : `<div class="asset-noimg"><span>📦</span><small>no picture</small></div>`}
       ${IMP.select ? `<span class="badge-corner" style="background:${on ? "var(--accent)" : "rgba(23,20,31,.85)"};color:${on ? "#1b1524" : "var(--muted)"}">${on ? "✓ picked" : "pick"}</span>` : ""}</div>
-    ${IMP.select ? "" : `<div class="asset-actions"><button data-imp-rm="${esc(m.id)}" title="Delete this model">🗑</button></div>`}
+    ${IMP.select ? "" : `<div class="asset-actions"><button data-imp-edit="${esc(m.id)}" title="Name, description, category">✏️</button><button data-imp-rm="${esc(m.id)}" title="Delete this model">🗑</button></div>`}
     <div class="asset-info"><div class="asset-name">${esc(m.name)}</div>
       <div class="asset-meta"><span class="chip">${esc(IMP_FORMAT[m.format] || m.format)}</span>${h ? `<span class="chip">${h}</span>` : ""}
         <span class="pill ${cls}" title="${esc(m.note || "")}">${label}</span></div>
@@ -2762,6 +2762,29 @@ async function assetsImported(box) {
       redraw();
     });
   }
+  // your own name, description and category (they win over the file name, the picture model and the AI)
+  const editImp = async (m) => {
+    const cats = [...new Set(models.map((x) => x.category).filter(Boolean))].sort();
+    const v = await openModal({ title: `✏️ ${m.name}`, wide: true,
+      body: `<div class="prop-edit"><div class="prop-big checker">${m.preview ? `<img src="${esc(m.preview)}?v=${m.preview_v || 1}" alt="">` : ""}</div>
+        <div class="prop-form">
+          <label class="modal-field">Name <span class="muted">(what scenes and scripts find it by)</span><input type="text" data-ie="name" value="${esc(m.name)}"></label>
+          <label class="modal-field">Description<textarea rows="3" data-ie="description">${esc(m.description || "")}</textarea></label>
+          <label class="modal-field">Category <span class="muted">(pick or type a new one; empty = automatic)</span>
+            <input type="text" data-ie="category" list="imp-cats" value="${esc(m.category || "")}"><datalist id="imp-cats">${cats.map((c) => `<option value="${esc(c)}">`).join("")}</datalist></label>
+          <p class="muted small">File: ${esc(m.original_name || m.name)} · ${esc(m.pack)}</p></div></div>`,
+      buttons: [{ label: "Cancel", value: null }, { label: "💾 Save", primary: true, onClick: (mm) =>
+        Object.fromEntries($$("[data-ie]", mm).map((x) => [x.dataset.ie, x.value.trim()])) }] });
+    if (!v) return;
+    if (!v.name) return toast("A model needs a name", true);
+    await api("PUT", `/api/imported/model/${encodeURIComponent(m.id)}`, v);
+    toast(`Saved ${v.name}`);
+    await pageAssets("imported");
+  };
+  $$("[data-imp-edit]").forEach((b) => b.onclick = guard(async (e) => { e.stopPropagation(); await editImp(models.find((x) => x.id === b.dataset.impEdit)); }));
+  if (!IMP.select) $$("[data-imp-card]").forEach((c) => c.onclick = guard(async (e) => {
+    if (!e.target.closest("button")) await editImp(models.find((x) => x.id === c.dataset.impCard));
+  }));
   $$("[data-imp-rm]").forEach((b) => b.onclick = guard(async (e) => {
     e.stopPropagation();
     const m = models.find((x) => x.id === b.dataset.impRm);

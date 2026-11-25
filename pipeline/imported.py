@@ -100,6 +100,29 @@ def packs():
     return load_index()["packs"]
 
 
+def edit_model(mid, name=None, description=None, category=None):
+    """Assets -> Imported -> ✏️: your own name, description and category for a model (they win over the file name,
+    the picture model's naming and the AI's categories; matching uses the new name's words too)."""
+    idx = load_index()
+    m = next((x for p in idx["packs"] for x in p.get("models", []) if x["id"] == mid), None)
+    if not m:
+        raise ValueError("no such model")
+    if name is not None and str(name).strip() and str(name).strip() != m.get("name"):
+        m.setdefault("original_name", m.get("name"))
+        m["name"] = re.sub(r"\s+", " ", str(name)).strip()[:60]
+        m["tags"] = sorted(set(m.get("tags") or []) | words(m["name"]))
+    if description is not None:
+        m["description"] = re.sub(r"\s+", " ", str(description)).strip()[:300]
+    if category is not None:
+        c = re.sub(r"\s+", " ", str(category)).strip()[:30]
+        if c:
+            m["category"] = c[:1].upper() + c[1:]
+        else:
+            m.pop("category", None)             # back to the automatic category
+    save_index(idx)
+    return m
+
+
 # ----------------------------------------------------------------------------- MDL flavours
 def mdl_flavour(path):
     """Which engine an .mdl came from, read from its header (the file extension is the same for all of them)."""
@@ -737,9 +760,20 @@ ANIMAL_ALIASES = {"feline": "cat", "felines": "cat", "kitties": "cat", "kittens"
 
 POSE_WORDS = set("marching running cheering walking waving sitting standing angry happy scared tiny giant big small "
                  "little huge loud cheerful busy".split())
+# cast people by role ("Mom: ...") - played by one of the user's imported people, a woman for mom, a man for dad
+FEMALE_WORDS = set("mom mum mommy mother woman women girl girls lady grandma granny grandmother aunt sister wife "
+                   "queen princess daughter waitress actress she her female".split())
+MALE_WORDS = set("dad daddy father man men boy boys guy grandpa grandfather uncle brother husband king prince son "
+                 "waiter he him male".split())
+CHILD_WORDS = set("kid kids child children boy boys girl girls baby toddler son daughter".split())
+ROLE_WORDS = FEMALE_WORDS | MALE_WORDS | CHILD_WORDS | set(
+    "teacher doctor nurse chef cook baker police officer cop firefighter farmer mailman postman neighbor neighbour "
+    "friend boss scientist pilot driver waiter waitress cashier clerk librarian coach judge stranger".split()) \
+    - {"she", "her", "he", "him", "female", "male"}
 PERSON_NOUNS = set("person persons man men woman women boy boys girl girls human humans soldier kid kids child "
                    "children student students fan fans shopper shoppers tourist tourists villager villagers "
-                   "guard guards customer customers".split())
+                   "guard guards customer customers pedestrian pedestrians passerby passersby commuter commuters "
+                   "visitor visitors traveler travelers traveller travellers worker workers people".split()) | ROLE_WORDS
 
 
 def is_group(name):
@@ -756,6 +790,18 @@ def _one_per_name(models):
         if k not in best or rank < best[k][0]:
             best[k] = (rank, pack, m)
     return [(p, m) for _, p, m in best.values()]
+
+
+def person_def(name, looks="", setting="", seed=0):
+    """One imported person for a cast member ("mom", "pedestrian"): a model definition like any imported prop
+    (it moves as a whole and can't move its mouth, but speaks with its own voice), or None."""
+    d = crowd_def(name, looks, setting, n=1, seed=seed)
+    if not d or not d.get("crowd"):
+        return None
+    m = dict(d["crowd"][0])
+    m.update(kind=re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_"), looks=looks or m.get("looks", ""),
+             person=True)
+    return m
 
 
 def crowd_def(name, looks="", setting="", n=None, seed=0):
@@ -794,12 +840,21 @@ def crowd_def(name, looks="", setting="", n=None, seed=0):
                                 and (seats or "sitting" not in m["name"].lower())])
         if not people:
             return None
+        # a woman for "mom", a man for "dad", a child for "kid" - when the pack names say which
+        sex = "female" if ws & FEMALE_WORDS else "male" if ws & MALE_WORDS else None
+        kid = bool(ws & CHILD_WORDS)
+        fit = [pm for pm in people if (not sex or sex in words(pm[1]["name"]) or
+                                       (sex == "female" and words(pm[1]["name"]) & {"woman", "girl", "lady"}) or
+                                       (sex == "male" and words(pm[1]["name"]) & {"man", "boy", "guy"}))
+               and (not kid or words(pm[1]["name"]) & {"kid", "child", "boy", "girl"})]
+        people = fit or people
         want = next((poses for trig, poses in CROWD_POSES if ws & set(trig)), ("standing", "waving", "lookingup"))
 
         def pose_rank(pm):
             nm = pm[1]["name"].lower().replace(" ", "")
             return next((i for i, p in enumerate(want) if p in nm), len(want))
-        people.sort(key=lambda pm: (pose_rank(pm), rng.random()))
+        # one person (a cast member): the plainest pose ("Female Standing", not "...CoveringEyes")
+        people.sort(key=lambda pm: (pose_rank(pm), len(words(pm[1]["name"])) if n == 1 else 0, rng.random()))
         best = [pm for pm in people if pose_rank(pm) < len(want)] or people
         k = n or rng.randint(5, 7)
         pick = (best * k)[:k] if len(best) < k else best[:max(k, 1)]
@@ -865,6 +920,13 @@ def match(kind, looks="", setting=""):
             hs = _word_score(head, tags)
             if hs <= 0:
                 continue
+            if m.get("original_name") and m.get("name"):
+                # renamed by the picture model (Name & describe): what it SEES wins over the file name - the file
+                # "building-structure" is a "Wooden Farm Fence" and was used as a city's buildings; and the thing is
+                # before "with" ("Single Bed with Pillow" is a bed, not a pillow)
+                own = set(_ordered_words(re.split(r"\s+with\s+", m["name"], flags=re.I)[0]))
+                if _word_score(head, own) <= 0:
+                    continue
             mcat = cats.get(m["id"])
             if indoor and mcat in OUTDOOR_ONLY and kcat != mcat:
                 continue

@@ -342,6 +342,7 @@ DRESSING = re.compile(r"(chair|stool|seat|bench|plant|flower|pot|vase|crate|box|
                       r"fern|grass|reed|coral|shell|crystal|gumdrop|lollipop|tombstone|grave|statue|pillar|column)s?$")
 
 
+TALL_SINGLES = re.compile(r"(lamp|lantern|pillar|column|statue|shelf|cabinet|clock|ladder)")   # at most 2 of each
 ONE_OFF = re.compile(r"(door|gate|portal|entrance|arch|flag|banner|altar|throne|counter|stage|sign_?board)")
 
 
@@ -363,10 +364,13 @@ def fill_view(rng, placed, indoor, log=print, target=None):
     if not counts:
         return 0
     added, fails = 0, 0
+    # how many of one thing a set may have: a row of 5 identical floor lamps read as odd poles in a bedroom
+    limit = lambda k: 2 if TALL_SINGLES.search(k) else (4 if indoor else 6)
     while have + added < target and fails < 24:
-        kind = min(counts, key=lambda k: (counts[k] + rng.random() * 0.9))
-        if counts[kind] >= 6:
+        open_kinds = [k for k in counts if counts[k] < limit(k)]
+        if not open_kinds:
             break
+        kind = min(open_kinds, key=lambda k: (counts[k] + rng.random() * 0.9))
         q = _place(rng, kind, rng.choice(["showcase", "view"]), placed, indoor)
         if q and in_view(*q["pos"]):
             placed.append(q)
@@ -923,7 +927,9 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
             n = 1
         # real imported models come first: if one matches this prop, use it and generate nothing
         k_slug = propgen.slug(kind)
-        if e.get("generate"):                    # make_set's look check asked for it: designed, not an imported
+        if e.get("generate") and k_slug.split("_")[-1] in __import__("imported").PERSON_NOUNS:
+            e = dict(e, generate=False)          # people always come from your imported people, never blocks
+        if e.get("generate"):                  # make_set's look check asked for it: designed, not an imported
             gen_kinds.add(k_slug)                # stand-in (the user's imported bookshelf is an empty frame)
         if k_slug and k_slug not in banned and k_slug not in LIQUIDS and k_slug not in propgen.SHAPES                 and not e.get("generate"):
             real = propgen.imported_def(k_slug, looks.get(k_slug, ("", 0, ""))[0], plan_setting, log)

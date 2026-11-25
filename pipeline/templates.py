@@ -17,7 +17,7 @@ TEMPLATES = {
         "script": "",                      # the writer's normal rules
         "tone": "funny",
         "lines": (6, 8),
-        "direct": {"beat_words": 4, "walk_every": 8, "move_every": 3, "wipe_every": 4},
+        "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},
     },
     "how_it_works": {
         "name": "How it works",
@@ -59,7 +59,7 @@ TEMPLATES = {
                    "the story on."),
         "tone": "wholesome",
         "lines": (7, 10),
-        "direct": {"beat_words": 4, "walk_every": 6, "move_every": 3, "wipe_every": 4},
+        "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},
     },
 }
 DEFAULT = "what_if"

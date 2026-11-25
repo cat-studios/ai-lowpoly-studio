@@ -912,7 +912,8 @@ class Handler(BaseHTTPRequestHandler):
                                              "marks": list(s["marks"])},
                                             lines=int(b.get("lines", 6)), tone=b.get("tone") or tpl["tone"],
                                             extra=extra, temperature=o["temperature"], others=others,
-                                            scenes=str(b.get("scenes") or "auto"))
+                                            scenes=str(b.get("scenes") or "auto"),
+                                            explain=b.get("template") == "how_it_works")   # [show:] models only there
                 return self.send_json({"lines": lines, "script": "\n".join(lines), "model": model, "set": chosen})
             if arg == "titles":
                 tpl = templates.get(b.get("template")) if b.get("template") else None

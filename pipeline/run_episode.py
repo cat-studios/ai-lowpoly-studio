@@ -639,7 +639,15 @@ def person_look(who, info):
     for k, v in special.items():
         if re.search(rf"\b{k}\b", words):
             look.update(v)
-    look.update(info.get("look") or {})        # anything set by hand wins
+    hand = info.get("look") or {}
+    if "hair" not in hand and "hair" not in words and look["hair"] != look["skin"]:
+        # random brown hair on brown skin read as one solid block for a head (Mom, under the VHS filter): the
+        # hair takes the first colour that stands clearly apart from the skin
+        lum = lambda c: sum(int(c[i:i + 2], 16) * w for i, w in ((1, .299), (3, .587), (5, .114)))
+        if abs(lum(look["hair"]) - lum(look["skin"])) < 45:
+            look["hair"] = next((h for h in sorted(HAIR, key=lambda h: rng.random())
+                                 if abs(lum(h) - lum(look["skin"])) >= 45), look["hair"])
+    look.update(hand)                          # anything set by hand wins
     height = 1.0
     for ws, hh in ((("baby", "toddler"), 0.55), (("kid", "child", "boy", "girl", "little", "tiny", "small"), 0.75),
                    (("grandma", "granny", "grandpa"), 0.92), (("dad", "father", "man", "boss", "police", "tall"), 1.15),
@@ -790,6 +798,8 @@ def resolve_cast(ep, cfg, log=print):
                 continue
         explicit = "type" in info                    # the video editor / script can force person or thing
         info.setdefault("type", autodirect.cast_kind(who))
+        if info["type"] == "person" and who in autodirect.NOT_PEOPLE and not info.get("actor"):
+            info["type"] = "thing"                   # the AI cast "the sun" as a person: it got a human body
         if info["type"] == "thing" and re.search(r"\bhumans?\b", str(info.get("looks") or ""), re.I):
             info["type"] = "person"                  # "human" is a person: a thing has no mouth, so it can't talk
             explicit = False
@@ -802,6 +812,16 @@ def resolve_cast(ep, cfg, log=print):
             log(f"  cast: {who} (actor '{act['name']}', imported model)")
         elif act and not explicit:
             info["type"] = "person"                  # an actor for this name is a person
+        if info["type"] == "person" and not info.get("actor") and (not act or act.get("id") == AC.GENERIC_ID
+                                                                   or act.get("builtin")):
+            # no actor of your own for them: one of your imported people plays them (a woman for "mom") - the
+            # studio's block body read as a brown box for a head. It speaks with its own voice (no mouth moves).
+            import imported
+            pd = imported.person_def(who, info.get("looks") or "", setting)
+            if pd:
+                info["type"], info["def"] = "thing", pd
+                info.pop("look", None)
+                log(f"  cast: {who} (imported person '{pd['name']}')")
         if info["type"] == "person":
             act = act if act and act["kind"] != "imported" else AC.get(AC.GENERIC_ID)
             info["actor"] = act["id"]
@@ -1244,6 +1264,11 @@ def main():
         # breathing room: a calm intro before the first line and a hold after the last one
         intro = float(cfg["audio"].get("intro", 0.7)) if i == 0 else 0.0
         outro = float(cfg["audio"].get("outro", 1.3)) if i == len(ep["shots"]) - 1 else 0.0
+        brand = S.deep_merge(cfg["branding"], ep.get("branding", {}))
+        if outro and brand.get("end_text"):
+            # the end card shows for the last end_seconds: hold long enough that it comes after her last word
+            # (it covered the last line's captions in every video of a series)
+            outro = max(outro, float(brand.get("end_seconds", 2.0)) + 0.3)
         if i in grouped:
             g = shot["beat_group"]
             idx = groups[g]

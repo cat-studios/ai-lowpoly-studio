@@ -468,6 +468,38 @@ camera.
   `" qwen3-coder-next:latest"` typed in, his server answered 404 (no such model) and the log said "not reachable"
   (`propgen.design_call` now says which).
 
+## Series review (2026-11-25, "What if cats ruled the world?", 4 mini-story episodes rendered in production)
+- Walking: no automatic walks in any template (`walk_every` 0) and `autodirect.MAX_WALKS` 2 per video, the opening
+  walk-in included (later walks become standing shots, `follow` -> `push_in`); the writer may walk ONCE.
+- End card: the last shot's hold is at least `branding.end_seconds` + 0.3 s, so the end card comes after her last
+  word (it covered the last caption in all 4 videos).
+- Stage directions after the brackets ("[medium] +mom enter from_left Mom! ...") are taken as directions (they were
+  spoken and captioned "from left mom"). `[@ kitchen jump]` / `[@library enter]`: direction words glued to a place go
+  back to the directions. Light changes only on a line with time words (`TIME_WORDS`: "[night] Wait..." went dark at
+  noon). The AI's own words: `CAM_WORDS` (mid -> medium...), `MOVE_WORDS` (zoom_in -> push_in), `JUNK_WORDS` and
+  cast verbs / made-up `x_to`/`x_by` are ignored - they used to reach the animation maker (it made "zoom_in",
+  "angle", "sidewalk_to", "swim_by" poses). `NOT_PEOPLE`: the sun was cast as a person.
+- Others speak for themselves (the user): the writer gives anyone brought in their own `Name:` lines and never has
+  her report them ("Mom says..."); `_clean_lines(main=)` keeps another person's `Name:` label (it was stripped, so
+  she read Mom's line) and adds `[+name enter]` on their first line; only labels for her (`main`, `NOT_SPEAKERS`)
+  go. "nya" at most twice; `*emphasis*` stars removed; `[show:]` only taught for how_it_works (`explain=`);
+  `polish_script` checks these too. Series: titles must keep the idea's subject (the "no cat words" rule made
+  cats-ruled-the-world titles about gravity and naps); the series note is a MUST.
+- Cast people without an actor of your own are played by one of your imported people (`imported.person_def`: a
+  woman for mom - `FEMALE_WORDS`/`MALE_WORDS`/`CHILD_WORDS`, the plainest pose), as a thing with a voice (no mouth
+  moves); the studio body is the fallback (its hair now always contrasts with the skin - Mom was a brown block).
+  Set props named after people ("pedestrian", `PERSON_NOUNS` + `ROLE_WORDS`) also use imported people, never blocks.
+- Imported matching: a model renamed by Name & describe matches by its seen name (the file "building-structure" is a
+  "Wooden Farm Fence" and was a city's buildings; "Single Bed with Pillow" is a bed, not a pillow).
+- Fill the view: at most 2 of each tall thing (`TALL_SINGLES`: lamps, shelves...), 4 indoors / 6 outdoors of others.
+- `animlib.library()` skips dotfiles (`.not_actions.json` was read as an animation every render).
+- Checked fine in these renders: word-timed captions (every shot had `word_t`), lead camera used, no `use_nodes`
+  warnings. The brown blurs are the wipes (`wipe_every`), copied from the reference video on purpose.
+- New: Settings -> Free up disk space -> "Everything the AI made" (`storage_web._generated`: sets' recipes, previews,
+  .glb, texture folders + the whole prop library) -> `sets/.trash/cleared-<stamp>/`, `assets/props/.trash/...`.
+  Assets -> Imported: ✏️ / click a card = your own name, description, category (`imported.edit_model`,
+  `PUT /api/imported/model/<id>`; category "" = automatic).
+
 ## Create page = three buttons + the Custom Video popup (2026-11-25, the user's mock-up)
 - The page shows only 🎲 Make a Random Video, 📺 Make a Series and 🪄 Custom Video (`.hero-btn`, star bursts from
   `sparkle()`), the progress (`#make-status`, `#job`) and the finished video (`#result`). The old step-by-step page

@@ -146,6 +146,8 @@ never.
   back into its 3D model (🧊 **Use the 3D model**); sprites can be 🎨 **Redrawn**. Edits apply to every set and
   video that uses it on its next render.
 - **📦 Imported** - asset packs you upload as a zip of OBJ, FBX, BLEND or MDL models (folders inside are fine).
+  Click a model (or ✏️) to give it your own name, description and category - scenes and scripts find it by that
+  name. People in a story (Mom, a teacher, a pedestrian) are played by your imported people.
   Each model gets a picture. MDL files from Quake 1, Half-Life and Source are converted (not yet tried on real
   game files). Models are sorted into categories made from their own names (Vehicles, Animals, Furniture, Food...)
   with search; the AI sorts names it doesn't recognise on every import (or press **🏷 Categorize**). A model that is
@@ -200,8 +202,9 @@ except your active character, the Postiz connection and the phone PIN.
 **Free up disk space** (Settings, right-hand side) shows what takes room and cleans it: render work files (frames
 of old renders - deleted for good; a new render makes them again, but *Re-apply look only* won't work for those
 videos until then), earlier versions of videos (moved to the trash), and every trash folder (emptied for good -
-this also deletes the code backup in `.trash`). Finished videos and the voice cache are never touched. It waits
-until no job is running.
+this also deletes the code backup in `.trash`). **Everything the AI made** moves every generated scene and every made
+3D prop and sprite to the trash, so new videos make fresh ones (Legacy Cafe/Park, imported models, characters and
+finished videos stay). Finished videos and the voice cache are never touched. It waits until no job is running.
 
 Picking a **look preset** for one video (Create page, or ✏️ Edit on the Videos page) replaces that video's saved look
 with the preset; tick individual settings in the editor to change them on top of it.
