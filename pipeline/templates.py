@@ -62,6 +62,66 @@ TEMPLATES = {
         "lines": (7, 10),
         "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},
     },
+    "top_five": {
+        "name": "Top 5",
+        "icon": "🏆",
+        "about": "A countdown of five things, from number 5 to the most amazing number 1.",
+        "title_starts": ["What are the 5", "Which 5", "What are the five"],
+        "title_hint": "five real things of one kind to count down (animals, places, inventions, foods...)",
+        "script": ("This is a TOP 5 COUNTDOWN. First line: a one-line hook that says what is being counted. Then one "
+                   "line per entry, counting DOWN: each starts with a [cutaway: the thing] that shows exactly that "
+                   "entry, then the number (\"[cutaway: <the entry>] Number 5: <the entry>...\"), then one true, "
+                   "surprising reason it is on the list. Number 1 is the most amazing and gets a big reaction ([surprised] or [celebrate]). "
+                   "End with a short line asking which one the viewer would pick. Keep every fact true."),
+        "tone": "excited",
+        "lines": (7, 8),
+        "direct": {"beat_words": 3, "walk_every": 0, "move_every": 2, "wipe_every": 3},
+    },
+    "myth_or_fact": {
+        "name": "Myth or fact?",
+        "icon": "🤔",
+        "about": "She reads out things people believe, asks 'myth or fact?' and reveals the truth.",
+        "title_starts": ["Is it true that", "Do", "Can", "Does"],
+        "title_hint": "a common belief people are not sure about",
+        "script": ("This is MYTH OR FACT. First line: a hook. Then 3 claims about the topic, each in TWO lines: the "
+                   "claim, ending with \"Myth or fact?\" ([think]), then the reveal starting with \"Myth!\" or "
+                   "\"Fact!\" ([surprised] or [laugh], [closeup]) with the real reason in plain words. Mix myths and "
+                   "facts, save the most surprising for last, and keep every answer TRUE. End with one short line "
+                   "asking the viewer which one fooled them."),
+        "tone": "silly",
+        "lines": (7, 8),
+        "direct": {"beat_words": 4, "walk_every": 0, "move_every": 2, "wipe_every": 4},
+    },
+    "this_or_that": {
+        "name": "This or that?",
+        "icon": "⚖️",
+        "about": "Two things side by side: she weighs them up and asks the viewer to pick.",
+        "title_starts": ["Which is better", "Would you rather", "Which would win"],
+        "title_hint": "two real things to compare (two animals, foods, places, superpowers...)",
+        "script": ("This is THIS OR THAT: two things compared. First line: the question, naming both. Then she "
+                   "takes turns: a line for the first thing with a [cutaway: first thing], a line for the second "
+                   "with a [cutaway: second thing], two or three rounds, each round a different point (speed, size, "
+                   "taste, how fun...). Use true facts and fair points. She ends by saying which she would pick and "
+                   "asking the viewer to say theirs."),
+        "tone": "silly",
+        "lines": (6, 8),
+        "direct": {"beat_words": 4, "walk_every": 0, "move_every": 2, "wipe_every": 4},
+    },
+    "guess_what": {
+        "name": "Guess what?",
+        "icon": "🔍",
+        "about": "Clues one at a time, from hard to easy - then the big reveal at the end.",
+        "title_starts": ["Can you guess", "What could", "Can you tell what"],
+        "title_hint": "one real thing (an animal, an object, a place) to guess from clues",
+        "script": ("This is GUESS WHAT: the viewer guesses a thing from clues. Never name the thing until the reveal. "
+                   "First line: a hook (\"I'm thinking of something...\"). Then 4 to 5 clues, one per line, from "
+                   "hardest to easiest, each a true fact ([think], [look_around], [closeup] on the trickiest). One "
+                   "line tells the viewer to guess now. The LAST line is the reveal: it starts with [cutaway: the "
+                   "thing] [surprised] and says what it is with one last amazing fact."),
+        "tone": "mysterious",
+        "lines": (6, 8),
+        "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},
+    },
 }
 DEFAULT = "what_if"
 

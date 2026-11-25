@@ -437,7 +437,12 @@ camera.
 - **Templates** (`pipeline/templates.py`: `TEMPLATES`, `get`, `pacing`, `as_list`; in `catalog.as_dict()["templates"]`)
   = the KIND of video, never the look: `what_if` (default, the classic), `how_it_works` (`[show:]` explainer
   objects, no walks), `quick_facts` (3-5 true facts each with a `[cutaway:]`, faster cuts: beat_words 3,
-  move_every 2, wipe_every 3), `mini_story` (`[@ place]` + `+name`, a twist). Each has title starts + a hint
+  move_every 2, wipe_every 3), `mini_story` (`[@ place]` + `+name`, a twist), and since 2026-11-26 `top_five`
+  (countdown, `[cutaway:]` per entry), `myth_or_fact` (claim + "Myth or fact?", then the reveal), `this_or_that`
+  (two things, a cutaway each per round), `guess_what` (clues hard to easy, the reveal's cutaway last). Lines like
+  "Number 5: ..." / "Clue 2: ..." / "Myth: ..." are spoken (`llm.SPOKEN_LABEL`, scripts only - title lists still
+  strip labels) and directions written after the label are moved in front of it. `ideas.TEMPLATE_IDS` lists them
+  for the Ideas picker. Writer examples use placeholders (`<the entry>`), never a real thing (the whale lesson). Each has title starts + a hint
   (`llm.generate_titles(starts=, hint=)`), extra writer rules + a default tone and line range, and director
   pacing (`beat_words/walk_every/move_every/wipe_every` for `autodirect.direct`). Server: `/api/ai/titles`,
   `/api/ai/script`, `/api/autodirect` take `template`; the episode keeps `"template"`. UI: Create → 1 Idea →

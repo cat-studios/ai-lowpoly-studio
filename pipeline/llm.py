@@ -387,6 +387,13 @@ def _clean_lines(text, keep=(), main=(), people=True):
         s = re.sub(r"^\*{1,2}([^*:]{1,30})(?:\*{1,2}:|:\*{1,2})\s*", r"\1: ", s)   # **Name:** / **Name**: -> Name:
         s = re.sub(r"^(\d+[.)]|[-*•]|line\s*\d+:)\s*", "", s, flags=re.I)   # numbering / bullets
         m = re.match(r"^(\[[^\]]*\]\s*)?([A-Z][\w ]{0,20}):\s+", s)
+        if m and people and SPOKEN_LABEL.match(m.group(2).strip()):
+            # "Number 5: ...", "Clue 2: ...", "Myth: ..." are said aloud; directions after the label go first
+            rest = s[m.end():]
+            dirs = re.match(r"(\[[^\]]*\]\s*)+", rest)
+            if dirs:
+                s = (m.group(1) or "") + dirs.group(0).strip() + " " + m.group(2).strip() + ": " + rest[dirs.end():]
+            m = None
         if m:
             name = m.group(2).strip().lower()
             if name in main or not people:              # titles etc.: no speakers at all
@@ -410,6 +417,9 @@ def _clean_lines(text, keep=(), main=(), people=True):
     return lines
 
 
+# list labels the formats (Top 5, Myth or fact, Guess what) start lines with: part of what she says, not a person
+SPOKEN_LABEL = re.compile(r"(?i)(number|no|clue|round|reason|step|tip|question|myth|fact|truth|bonus|option|choice)"
+                          r"(\s+(\d+|one|two|three|four|five|a|b))?$|.*\d")
 NOT_SPEAKERS = {"narrator", "character", "main character", "host", "me", "i", "she", "you", "speaker", "voice",
                 "voiceover", "voice over", "catgirl", "line", "scene", "shot", "note", "wait", "fact", "fun fact",
                 "bonus", "ps", "update", "warning", "title", "script", "hook", "ending", "intro", "outro"}

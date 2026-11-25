@@ -296,10 +296,14 @@ def gather(log=print, cfg=None):
 
 
 # --------------------------------------------------------------------------- the AI picks and shapes ideas
+TEMPLATE_IDS = ("what_if", "how_it_works", "quick_facts", "mini_story", "top_five", "myth_or_fact", "this_or_that",
+                "guess_what")
 PICK = (
     "You find ideas for short, funny, family-friendly animated videos where a cute cartoon catgirl answers a "
     "curious question (kinds: what_if = an impossible situation imagined, how_it_works = how a real thing works, "
-    "quick_facts = surprising true facts, mini_story = a small adventure). From the trending items, keep ONLY "
+    "quick_facts = surprising true facts, mini_story = a small adventure, top_five = a countdown of five things, "
+    "myth_or_fact = common beliefs checked, this_or_that = two things compared, guess_what = guess a thing from "
+    "clues). From the trending items, keep ONLY "
     "those that can become such a video for all ages: science, nature, animals, space, food, games, inventions, "
     "places, holidays, sports in general, everyday mysteries. Skip anything about a real person by name, "
     "politics, tragedies, crime, weapons, gossip, betting, adult topics and anything sad, and never name a brand, "
@@ -311,7 +315,7 @@ PICK = (
     "first -> how that invention works), unless none can be family-friendly. "
     "Reply with JSON only: {\"ideas\": [{\"item\": number, "
     "\"topic\": \"2-6 words\", \"angle\": \"the video's angle in one short sentence\", \"template\": "
-    "\"what_if|how_it_works|quick_facts|mini_story\"}]}")
+    "\"" + "|".join(TEMPLATE_IDS) + "\"}]}")
 
 
 def pick_ideas(items, ollama, log=print, batch=30):
@@ -339,7 +343,7 @@ def pick_ideas(items, ollama, log=print, batch=30):
                 continue      # the topic is just the trending name (a game, film, person): "Grand Theft Auto VI"
             out.append({"topic": topic, "angle": str(x.get("angle") or "").strip()[:200],
                         "template": x.get("template") if x.get("template") in
-                        ("what_if", "how_it_works", "quick_facts", "mini_story") else "what_if",
+                        TEMPLATE_IDS else "what_if",
                         "source": it["source"], "region": it["region"], "trend": it["text"][:120],
                         "url": it.get("url")})
     return out

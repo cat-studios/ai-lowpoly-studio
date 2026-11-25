@@ -12,6 +12,13 @@ import run_episode as R  # noqa: E402
 
 
 class CleanLines(unittest.TestCase):
+    def test_list_labels_are_said_not_people(self):
+        # the Top 5 / Myth or fact / Guess what formats: "Number 5:" brought in a person called number_5
+        out = llm._clean_lines("Number 5: [cutaway: an owl] Owls turn their heads.\n[closeup] Clue 2: It swims.\n"
+                               "Myth: goldfish forget fast.", main=["Catgirl"])
+        self.assertEqual(out, ["[cutaway: an owl] Number 5: Owls turn their heads.", "[closeup] Clue 2: It swims.",
+                               "Myth: goldfish forget fast."])
+
     def test_her_own_label_goes_others_stay_and_are_brought_in(self):
         out = llm._clean_lines("Catgirl: I declared myself Empress!\n[closeup] Mom?! Hi!\n"
                                "Mom: Honey, your alarm is ringing!\nNarrator: And so it ends.", main=["Catgirl"])

@@ -256,6 +256,10 @@ Create → 1 Idea → **Kind of video** steers the title ideas, the script and t
 - 🔧 **How it works** - she presents a model of one real thing, opens it and shows how its parts work.
 - ⚡ **Quick facts** - a few surprising true facts, each shown with a cutaway, faster cuts.
 - 📖 **Mini story** - a little story with a problem and a twist, a second place and a visitor.
+- 🏆 **Top 5** - a countdown from number 5 to the most amazing number 1, each with a cutaway.
+- 🤔 **Myth or fact?** - three things people believe: "Myth or fact?", then the reveal with the real reason.
+- ⚖️ **This or that?** - two things compared round by round; she picks one and asks for yours.
+- 🔍 **Guess what?** - clues from hard to easy, a moment to guess, then the big reveal.
 
 ### Series
 **📺 Make a series** (next to 🎲 Make a random video): one idea, 1-4 episodes. Each episode gets its own question
