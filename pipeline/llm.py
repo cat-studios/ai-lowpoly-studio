@@ -5,6 +5,7 @@ normal auto-director, so the AI never needs to know the JSON format.
 """
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -33,17 +34,58 @@ def list_models(url=DEFAULT_URL):
     return out
 
 
+_REMOTE_DOWN = {}          # big text server -> when it last failed (it's tried again after REMOTE_RETRY seconds)
+REMOTE_RETRY = 300
+
+
+def _remote_for(url, has_images):
+    """(url, model) of the big text server when Settings -> AI tools sends ALL the AI's writing there
+    (ollama.design_scope "text"), else None. Pictures (vision checks) always stay on the main Ollama."""
+    if has_images:
+        return None
+    try:
+        import settings as S
+        o = S.load_settings()["ollama"]
+    except Exception:
+        return None
+    big = str(o.get("design_url") or "").strip()
+    if not big or o.get("design_scope") != "text" or url.rstrip("/") != str(o.get("url", "")).rstrip("/"):
+        return None
+    if time.time() - _REMOTE_DOWN.get(big, 0) < REMOTE_RETRY:
+        return None
+    return big, (o.get("design_model") or "").strip() or None
+
+
+def _chat_once(url, payload):
+    try:
+        return _req(url, "/api/chat", payload)
+    except urllib.error.HTTPError as exc:      # older Ollama / non-thinking models may reject "think"
+        if exc.code != 400 or "think" not in payload:
+            raise
+        payload = {k: v for k, v in payload.items() if k != "think"}
+        return _req(url, "/api/chat", payload)
+
+
+def _chat(url, payload, has_images=False):
+    """POST /api/chat - on the big text server when it's set up for all writing (falls back to `url` if it can't
+    be reached or doesn't have the model: it is never asked to download one)."""
+    rem = _remote_for(url, has_images)
+    if rem:
+        p = dict(payload, model=rem[1]) if rem[1] else payload
+        try:
+            return _chat_once(rem[0], p)
+        except (OSError, TimeoutError, ValueError) as exc:     # unreachable, no such model, bad answer
+            _REMOTE_DOWN[rem[0]] = time.time()
+            print(f"[ai] big text server {rem[0]} failed ({exc.__class__.__name__}: {str(exc)[:80]}) - "
+                  f"using {url} for the next {REMOTE_RETRY // 60} min")
+    return _chat_once(url, payload)
+
+
 def chat(url, model, system, user, temperature=0.8):
     payload = {"model": model, "stream": False, "think": False,
                "options": {"temperature": float(temperature)},
                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
-    try:
-        r = _req(url, "/api/chat", payload)
-    except urllib.error.HTTPError as exc:      # older Ollama / non-thinking models may reject "think"
-        if exc.code != 400:
-            raise
-        payload.pop("think")
-        r = _req(url, "/api/chat", payload)
+    r = _chat(url, payload)
     text = r.get("message", {}).get("content", "")
     return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
 
@@ -56,13 +98,7 @@ def chat_json(url, model, system, user, temperature=0.9, images=None):
     payload = {"model": model, "stream": False, "think": False, "format": "json",
                "options": {"temperature": float(temperature)},
                "messages": [{"role": "system", "content": system}, msg]}
-    try:
-        r = _req(url, "/api/chat", payload)
-    except urllib.error.HTTPError as exc:
-        if exc.code != 400:
-            raise
-        payload.pop("think")
-        r = _req(url, "/api/chat", payload)
+    r = _chat(url, payload, has_images=bool(images))
     text = re.sub(r"<think>.*?</think>", "", r.get("message", {}).get("content", ""), flags=re.S).strip()
     m = re.search(r"\{.*\}", text, re.S)
     data = json.loads(m.group(0) if m else text)

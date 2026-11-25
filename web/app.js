@@ -1464,8 +1464,9 @@ const S_TABS = {
     ["Ollama (script & title writing)", [
       ["ollama.url", "Server URL", "text"],
       ["ollama.model", "Default model", "ollama"],
-      ["ollama.design_url", "Server that builds props & explainer models", "text", { placeholder: "empty = the server above" }, "Another Ollama (e.g. a bigger computer on your network) used ONLY for designing 3D props and explainer models. If it can't be reached, the server above is used."],
-      ["ollama.design_model", "Model that builds props & explainer models", "text", { placeholder: "empty = the default model" }, "A model that server already has (type its exact name). Bigger models plan 3D objects better."],
+      ["ollama.design_url", "Big model server", "text", { placeholder: "empty = the server above" }, "Another Ollama with bigger models (e.g. a stronger computer on your network). If it can't be reached, the server above is used."],
+      ["ollama.design_model", "Model on the big server", "text", { placeholder: "empty = the default model" }, "A model that server already has - type its exact name. Nothing is ever downloaded there."],
+      ["ollama.design_scope", "Use the big server for", "select", { options: ["3d", "text"], labels: { "3d": "Only building 3D props & explainer models", text: "All the AI's writing too (scripts, titles, sets, cast, translations, captions)" } }, "Picture checks, drawings and voices always run on this PC."],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
       ["sets.look_check", "Check that new sets look like the place", "bool", {}, "The picture model looks at each new set and the AI fixes ones that read as another place (adds a few minutes)."],

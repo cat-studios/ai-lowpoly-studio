@@ -333,7 +333,10 @@ slides, spins, fills, drains, beats or rattles), and each part moves on the word
 kept in the prop library and reused. With ComfyUI on, a closed model shows as a drawn picture of the real thing,
 and turns into the cut-open diagram when she says `open` (or looks at a part). The diagrams are simple shapes in the
 same low-poly look - round things (a volcano, a heart) are cut in half like a cross-section drawing. Settings →
-🤖 AI tools → *Model that builds props & explainer models* can pick a different Ollama model for this.
+🤖 AI tools → *Big model server* can send this to a stronger computer's Ollama (with *Use the big server for* →
+"All the AI's writing too", scripts, titles, sets, translations and captions go there as well). Picture checks,
+drawings and voices always run on this PC, and if the big server is off or lacks the model, your own Ollama and
+model take over.
 
 ### Cutaways
 Show something instead of her while she keeps talking (voice-over):

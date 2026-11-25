@@ -71,7 +71,8 @@ DEFAULTS = {
                "temperature": 0.85,
                "vision_model": "qwen3.5:4b",         # reads pictures (scene from a picture); must support images
                "design_model": "",                   # builds props / explainer models in 3D ("" = "model")
-               "design_url": ""},                    # another Ollama just for that ("" = "url"; unreachable = "url")
+               "design_url": "",                     # another Ollama just for that ("" = "url"; unreachable = "url")
+               "design_scope": "3d"},                # "3d" = only 3D design goes there; "text" = all the AI's writing
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
     "sets": {"use_ollama": True,           # let Ollama design new sets (falls back to pure random)
              "look_check": True,           # the picture model checks new sets (and redesigns ones that don't fit)

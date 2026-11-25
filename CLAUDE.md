@@ -448,8 +448,13 @@ camera.
   📺 Make a series (`openSeriesDialog`).
 - **Design server** (the user's brother's Ollama, `10.1.2.196:11435`, not open yet): `ollama.design_url` +
   `ollama.design_model` (Settings → AI tools, free text: the model must already be on that server - never pull
-  there). Only 3D object design uses it (`propgen.design_call` for `GUIDE` redesigns, explainer anatomy + plan);
-  unreachable → the main Ollama for the rest of the run (`_DESIGN_DOWN`).
+  there). 3D object design always uses it (`propgen.design_call` for `GUIDE` redesigns, explainer anatomy + plan;
+  unreachable → the main Ollama for the rest of the run, `_DESIGN_DOWN`). `ollama.design_scope` "text" (Settings:
+  "Use the big server for: all the AI's writing too") also sends every TEXT chat there: `llm._chat` →
+  `_remote_for(url, has_images)` reroutes calls aimed at the main `ollama.url` with no images to `design_url` +
+  `design_model`; on any failure (unreachable, model missing = 404, bad answer) it falls back to the main url with
+  the caller's own model and skips the big server for `REMOTE_RETRY` 300 s (`_REMOTE_DOWN`). Vision checks,
+  ComfyUI and voices always stay local (the user: "only things using the LLM purely").
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
