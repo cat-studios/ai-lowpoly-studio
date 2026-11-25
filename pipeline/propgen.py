@@ -891,6 +891,9 @@ def _layout_explainer(raw, kind=""):
             bottom = (oc[2] - osz[2] / 2) + osz[2] * zf
             if rel in ("on_top", "top", "above"):
                 bottom = oc[2] + osz[2] / 2
+                # a cone/pyramid ends in a point and a ball curves away: sitting on its very top, the next section
+                # floated above the tip (the volcano's crater) - sink it into the shape instead
+                bottom -= osz[2] * {"cone": 0.35, "pyramid": 0.35, "sphere": 0.15}.get(of.get("shape"), 0.0)
             c = [oc[0], oc[1], bottom + size[2] / 2]
             if rel in ("behind", "back"):
                 c[1] = oc[1] + osz[1] / 2 + size[1] / 2

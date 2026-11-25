@@ -446,7 +446,8 @@ camera.
   `/api/render` - so it gets everything the Create page does, and the renders wait in the render queue. Episodes
   carry `"series": {id, idea, part, of}`; the Videos page shows a 📺 idea part/of pill (`list_videos`). UI: Create →
   📺 Make a series (`openSeriesDialog`).
-- **Design server** (the user's brother's Ollama, `10.1.2.196:11435`, not open yet): `ollama.design_url` +
+- **Design server** (the user's brother's Ollama, `10.1.2.196:11435`, online since 2026-11-25 with ONE model,
+  `qwen3-coder-next:latest` (80B, 52 GB) - use only that; dev's `config/settings.json` points 3D design at it): `ollama.design_url` +
   `ollama.design_model` (Settings → AI tools, free text: the model must already be on that server - never pull
   there). 3D object design always uses it (`propgen.design_call` for `GUIDE` redesigns, explainer anatomy + plan;
   unreachable → the main Ollama for the rest of the run, `_DESIGN_DOWN`). `ollama.design_scope` "text" (Settings:
@@ -455,6 +456,9 @@ camera.
   `design_model`; on any failure (unreachable, model missing = 404, bad answer) it falls back to the main url with
   the caller's own model and skips the big server for `REMOTE_RETRY` 300 s (`_REMOTE_DOWN`). Vision checks,
   ComfyUI and voices always stay local (the user: "only things using the LLM purely").
+  Test (toilet/volcano/heart): 52-89 s each (local 8B: 80-215 s), 5-8 moves (local 0-4), real cone/ball shapes -
+  but still 4/10 in the look check: every designer from 8B to 80B scores 3-4, so the 4B vision judge is now the
+  limit, not the designer. A section `on_top` of a cone/pyramid/sphere sinks into it (the crater floated).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
