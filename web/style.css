@@ -578,3 +578,15 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .cw-set img, .cw-set .cw-noimg { aspect-ratio: 3 / 4; }
 .cw-set .cw-noimg { font-size: 28px; }
 .cw-set b { font-size: 12.5px; }
+
+/* Ideas page: trending topics turned into video ideas */
+.idea-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.idea-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
+  display: flex; flex-direction: column; gap: 6px; animation: mw-deal .35s ease-out backwards; }
+.idea-card h4 { margin: 2px 0 0; font-size: 16px; }
+.idea-card p { margin: 0; }
+.idea-top { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+.idea-trend { font-size: 11.5px; color: var(--accent2); }
+.idea-titles .chip-btn { text-align: left; white-space: normal; }
+.idea-card .btns { margin-top: auto; }
+.cw-trend .chip-btn { white-space: normal; text-align: left; }

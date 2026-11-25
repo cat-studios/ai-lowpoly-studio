@@ -114,6 +114,14 @@ last so walks and pointing use the real sets' own places. Each video is its own 
 On the Videos page, ✏️ Edit → **🪄 Open in Custom Video** opens a video in the popup (on its last step) and keeps
 its file.
 
+### Ideas
+What's trending today - Google Trends in the US, UK and Lithuania, Wikipedia's most-read pages and upcoming
+holidays - turned into family-friendly video ideas by your AI (no real people, brands or film/game franchises),
+plus your own ideas. The list refreshes by itself every 12 hours (or press 🔄). Per idea: ✨ Titles (tap a title to
+make it as a Custom Video), 🪄 Custom Video, 📺 Series, ☆ star, 🙈 hide. Ideas used for a video are marked used, so
+you don't repeat yourself. Trending ideas also show up in Custom Video's first step, among the random video's topic
+cards and in the series popup.
+
 ### Sets
 A gallery of every scene, newest first, with a preview and its walkable places.
 - **How it's made** (also in Custom Video's Scenes step and Settings → AI tools):

@@ -1153,7 +1153,7 @@ class Handler(BaseHTTPRequestHandler):
                     "template": b.get("template") if b.get("template") in templates.TEMPLATES else templates.DEFAULT,
                     "character": str(b.get("character") or ""), "length": str(b.get("length") or "medium"),
                     "tone": str(b.get("tone") or ""), "note": str(b.get("note") or "")[:300],
-                    "model": str(b.get("model") or ""),
+                    "model": str(b.get("model") or ""), "idea_id": str(b.get("idea_id") or "")[:80],
                     "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}"}
             f = ROOT / "build" / "series" / f"{stamp()}-{slug(idea)[:30]}.json"
             f.parent.mkdir(parents=True, exist_ok=True)
@@ -1238,6 +1238,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("episode needs a shots list")
                 EPISODES.mkdir(exist_ok=True)
                 p.write_text(json.dumps(ep, indent=2), encoding="utf-8")
+                if ep.get("idea"):            # made from an idea (Ideas page): it's used now
+                    import ideas
+                    ideas.mark_used(str(ep["idea"]), arg)
                 return self.send_json({"ok": True, "id": arg})
             if method == "DELETE":   # never destroys: moves to episodes/.trash
                 if p.exists():
@@ -1308,6 +1311,9 @@ class Handler(BaseHTTPRequestHandler):
             import imported_web
             return imported_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
 
+        if head == "ideas":          # trending topics -> video ideas (web/ideas_web.py, pipeline/ideas.py)
+            import ideas_web
+            return ideas_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT, jobs=JOBS)
         if head == "anims":          # animations as data (web/anims_web.py, pipeline/animlib.py + animgen.py)
             import anims_web
             return anims_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)

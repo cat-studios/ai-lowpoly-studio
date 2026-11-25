@@ -672,7 +672,8 @@ async function pageCreate() {
     const guest = picks.guest.startsWith("nobody") ? "" : `${picks.guest} shows up and plays a part (bring them in with +name). `;
     const when = /turning into/.test(picks.time) ? `Time: ${picks.time} - change the light along the way with [sunset], [night] or [dawn]. ` : `Time: ${picks.time}. `;
     CS.extra = `Place: ${picks.scene}. ${guest}${when}${picks.note ? "Also: " + picks.note : ""}`.trim();
-    for (const k of ["music", "ambience", "look_preset"]) delete CS.ep[k];
+    for (const k of ["music", "ambience", "look_preset", "idea"]) delete CS.ep[k];
+    if (picks.idea) CS.ep.idea = picks.idea;
     setVal("#ep-music", ""); setVal("#ep-amb", ""); setVal("#ep-look", "");
     status("2/5 Writing the script…");
     // the script is written for the picked place (the set is made after it) - not for whatever set was selected
@@ -706,12 +707,14 @@ async function pageCreate() {
 
 /* ---- "Make a series": one idea -> 1-4 episodes, made and queued to render by a server job (pipeline/series.py),
    so it carries on with the phone locked. */
-async function openSeriesDialog() {
+async function openSeriesDialog(preset = {}) {
   const tpls = META.catalog.templates || [];
+  let ideaId = preset.idea_id || "";
   const v = await openModal({
     title: "📺 Make a series", wide: true,
     body: `<p class="muted small" style="margin-top:0">One idea, a few episodes: each gets its own question as the title, a script that knows the other episodes, its own scene and shots, and is rendered one after another. They appear on the Videos page as they finish.</p>
-      <label>The idea<input type="text" id="se-idea" placeholder="e.g. how the human body works, life in the deep sea, what if cats ruled the world"></label>
+      <label>The idea<input type="text" id="se-idea" value="${esc(preset.idea || "")}" placeholder="e.g. how the human body works, life in the deep sea, what if cats ruled the world"></label>
+      <div class="chips" id="se-trend" style="margin-top:6px"></div>
       <div class="row" style="margin-top:8px">
         <label>Episodes<select id="se-n">${[1, 2, 3, 4].map((n) => `<option ${n === 3 ? "selected" : ""}>${n}</option>`).join("")}</select></label>
         <label style="flex:2">Kind of video<select id="se-tpl">${tpls.map((t) => `<option value="${t.id}">${t.icon} ${esc(t.name)}</option>`).join("")}</select></label>
@@ -720,7 +723,20 @@ async function openSeriesDialog() {
       <label>Anything else? (optional)<input type="text" id="se-note" placeholder="e.g. she's scared of spiders; keep it cosy"></label>`,
     onOpen: (m) => {
       const about = () => { const t = tpls.find((x) => x.id === $("#se-tpl", m).value); $("#se-about", m).textContent = t ? t.about : ""; };
+      if (preset.template) $("#se-tpl", m).value = preset.template;
       $("#se-tpl", m).onchange = about; about();
+      $("#se-idea", m).oninput = () => { ideaId = ""; };
+      api("GET", "/api/ideas/fresh?n=5").then((r) => {             // 🔥 trending ideas to start from
+        const list = r.ideas || [], tb = $("#se-trend", m);
+        if (!tb || !list.length) return;
+        tb.innerHTML = '<span class="muted small">🔥 Trending:</span> ' + list.map((it, k) => `<button class="chip-btn" data-st="${k}" title="${esc(it.angle || "")}">${esc(it.topic)}</button>`).join("");
+        $$("[data-st]", tb).forEach((b) => b.onclick = () => {
+          const it = list[Number(b.dataset.st)];
+          $("#se-idea", m).value = it.topic + (it.angle ? ` - ${it.angle}` : "");
+          $("#se-tpl", m).value = it.template || $("#se-tpl", m).value; about();
+          ideaId = it.id;
+        });
+      }).catch(() => {});
       $("#se-idea", m).focus();
     },
     buttons: [{ label: "Cancel", left: true, value: null },
@@ -728,7 +744,7 @@ async function openSeriesDialog() {
         const idea = $("#se-idea", m).value.trim();
         if (!idea) { toast("Give the series an idea", true); return false; }
         return { idea, count: Number($("#se-n", m).value), template: $("#se-tpl", m).value, length: $("#se-len", m).value,
-          note: $("#se-note", m).value.trim() };
+          note: $("#se-note", m).value.trim(), idea_id: ideaId };
       } }],
   });
   if (!v) return;
@@ -786,6 +802,9 @@ function mwMagic(box, text) {        // the little show between steps (~0.9 s)
 
 async function openMakeWizard() {
   const picks = {};
+  // today's trending ideas join the topic cards (one of each three shown, marked 🔥)
+  const trend = ((await api("GET", "/api/ideas/fresh?n=12").catch(() => ({ ideas: [] }))).ideas || []);
+  const trendCards = trend.map((it) => "🔥 " + it.topic);
   // the kind of video comes first (templates: pacing and content - the look is the same for all)
   const MW_STEPS = [{ key: "kind", q: "What kind of video?", icon: "🎬",
     cards: (META.catalog.templates || []).map((t) => `${t.icon} ${t.name}`) }, ...MW_STEPS_BASE];
@@ -799,7 +818,9 @@ async function openMakeWizard() {
         if (i >= MW_STEPS.length) return lastStep();
         const st = MW_STEPS[i];
         await mwMagic(box, i === 0 ? "Shuffling the ideas…" : ["Mixing the magic…", "Rolling the dice…", "Sprinkling stardust…", "Asking the stars…"][i % 4]);
-        let shown = mwPick(st.cards, 3);
+        const deal = (not = []) => (st.key === "topic" && trendCards.length
+          ? [...mwPick(trendCards, 1, not), ...mwPick(st.cards, 2, not)].sort(() => Math.random() - 0.5) : mwPick(st.cards, 3, not));
+        let shown = deal();
         const draw = () => {
           box.innerHTML = `<div class="mw-step">
             <div class="mw-dots">${MW_STEPS.map((_, k) => `<i class="${k < i ? "done" : k === i ? "on" : ""}"></i>`).join("")}<i class="${i >= MW_STEPS.length ? "on" : ""}"></i></div>
@@ -808,7 +829,7 @@ async function openMakeWizard() {
             <div class="btns" style="justify-content:center"><button id="mw-roll">🎲 Three more</button>
               ${i > 0 ? '<button id="mw-back">← Back</button>' : ""}</div></div>`;
           $$("[data-mw]", box).forEach((b) => b.onclick = () => { picks[st.key] = shown[Number(b.dataset.mw)]; showStep(i + 1); });
-          $("#mw-roll", box).onclick = () => { shown = mwPick(st.cards, 3, shown); draw(); };
+          $("#mw-roll", box).onclick = () => { shown = deal(shown); draw(); };
           if (i > 0) $("#mw-back", box).onclick = () => showStep(i - 1);
         };
         draw();
@@ -824,7 +845,11 @@ async function openMakeWizard() {
             <button class="primary" id="mw-go">✨ Make my video</button></div></div>`;
         $("#mw-note", box).focus();
         $("#mw-back", box).onclick = () => showStep(MW_STEPS.length - 1);
-        $("#mw-go", box).onclick = () => close({ ...picks, note: $("#mw-note", box).value.trim() });
+        $("#mw-go", box).onclick = () => {
+              const t = trend.find((it) => "🔥 " + it.topic === picks.topic);     // a trending card: its idea is used
+              close({ ...picks, topic: t ? t.topic + (t.angle ? ` - ${t.angle}` : "") : picks.topic, idea: t?.id || "",
+                note: $("#mw-note", box).value.trim() });
+            };
       };
       showStep(0);
     },
@@ -897,6 +922,11 @@ async function openCustomWizard() {
     tone: "", places: "auto", note: "", script: "", start: "auto", castAI: true, fresh: false,
     setStyle: META.settings.sets.style || "base" });
   if (!CS.wiz) CS.wiz = fresh();
+  if (CS.wizPreset) {                      // started from the Ideas page
+    Object.assign(CS.wiz, fresh(), { template: CS.wizPreset.template, title: CS.wizPreset.title, topic: CS.wizPreset.topic,
+      idea: CS.wizPreset.idea });
+    CS.wizPreset = null;
+  }
   const W = CS.wiz;
   const tpl = () => tpls.find((t) => t.id === W.template) || tpls[0] || { tone: "funny", lines: [6, 8] };
 
@@ -936,6 +966,8 @@ async function openCustomWizard() {
           box.innerHTML = frame("What's your video about?", `
             <p class="cw-label">Kind of video</p>
             ${cwCards(tpls.map((t) => ({ v: t.id, label: `${t.icon} ${t.name}`, sub: t.about })), W.template, "tpl", "four")}
+            <p class="cw-label">🔥 Trending ideas <span class="muted small">- tap one for titles about it (<a href="#ideas">all ideas</a>)</span></p>
+            <div class="chips cw-trend" id="cw-trend"><span class="muted small">Looking…</span></div>
             <p class="cw-label">Title <span class="muted small">- the question at the top of the video</span></p>
             <input type="text" id="cw-title" class="cw-big" placeholder="What if a catgirl ran a bakery?" value="${esc(W.title)}">
             <div class="cw-row"><input type="text" id="cw-topic" placeholder="Stuck? A topic for ideas (optional): space, cooking…" value="${esc(W.topic)}">
@@ -967,6 +999,19 @@ async function openCustomWizard() {
             $("#cw-chips", box).innerHTML = W.ideas.map((t, k) => `<button class="chip-btn cw-deal" data-idea="${k}" style="--d:${k}">${esc(t)}</button>`).join("");
             bindIdeas();
           }));
+          api("GET", "/api/ideas/fresh?n=6").then((r) => {           // today's trending ideas as cards
+            const tb = $("#cw-trend", box);
+            if (!tb) return;
+            const list = r.ideas || [];
+            tb.innerHTML = list.map((it, k) => `<button class="chip-btn cw-deal ${W.idea === it.id ? "on" : ""}" data-tidea="${k}" style="--d:${k}" title="${esc(it.angle || "")}">${tplOf(it.template).icon || "🔥"} ${esc(it.topic)}</button>`).join("")
+              || '<span class="muted small">None yet - they arrive within a minute (or add your own on the Ideas page).</span>';
+            $$("[data-tidea]", tb).forEach((b) => b.onclick = (ev) => {
+              const it = list[Number(b.dataset.tidea)];
+              sparkle(b, ev);
+              Object.assign(W, { topic: it.topic + (it.angle ? ` - ${it.angle}` : ""), template: it.template || W.template, idea: it.id });
+              STEPS[0]().then(() => $("#cw-ideas", box)?.click());
+            });
+          }).catch(() => { const tb = $("#cw-trend", box); if (tb) tb.innerHTML = ""; });
           $$("[data-star]", box).forEach((b) => b.onclick = () => {
             W.character = b.dataset.star === META.settings.active_character ? "" : b.dataset.star;
             W.co_stars = W.co_stars.filter((c) => c !== b.dataset.star);
@@ -1251,6 +1296,7 @@ async function openCustomWizard() {
             if (W.ambience !== "__default") ep.ambience = W.ambience === "__none" ? "" : W.ambience;
             if (W.cast && Object.keys(W.cast).length) ep.cast = W.cast;
             if (W.translations) ep.translations = W.translations;
+            if (W.idea) ep.idea = W.idea;            // marks the idea used (Ideas page)
             if ((W.scenes || []).some((sc) => String(sc.choice).startsWith("new:"))) ep.set_style = W.setStyle;   // made at render
             return ep;
           };
@@ -1695,6 +1741,99 @@ async function audioSfx(box) {
 }
 
 /* ------------------------------------------------------------------ VIDEOS */
+/* ---- Ideas: trending topics (pipeline/ideas.py) turned into video ideas, plus your own. Never deleted - hidden. */
+const IDEA_SRC = { google: "🔥 Google Trends", wikipedia: "📖 Wikipedia", onthisday: "📅 On this day",
+  calendar: "🎉 Coming up", mine: "✍ Yours" };
+const IDEA_FILTERS = { new: "New", starred: "⭐ Starred", used: "Used", mine: "Yours", hidden: "Hidden", all: "All" };
+let IDEA_FILTER = "new", IDEA_REGION = "";
+const tplOf = (id) => (META.catalog.templates || []).find((t) => t.id === id) || {};
+// start the Custom Video popup from an idea (and maybe one of its titles)
+function customFromIdea(it, title) {
+  CS.wiz = null;
+  CS.wizPreset = { title: title || "", template: it.template || "what_if", topic: it.topic, idea: it.id };
+  CS.openWiz = true;
+  if (location.hash === "#create") pageCreate(); else location.hash = "#create";
+}
+
+async function pageIdeas() {
+  const d = await api("GET", "/api/ideas");
+  const regions = d.regions || {};
+  const keep = (it) => (IDEA_FILTER === "all" || (IDEA_FILTER === "new" && !it.hidden && !it.used.length)
+      || (IDEA_FILTER === "starred" && it.starred) || (IDEA_FILTER === "used" && it.used.length)
+      || (IDEA_FILTER === "mine" && it.source === "mine") || (IDEA_FILTER === "hidden" && it.hidden))
+    && (IDEA_FILTER === "hidden" || IDEA_FILTER === "all" || !it.hidden)
+    && (!IDEA_REGION || it.region === IDEA_REGION || it.source === "mine");
+  app.innerHTML = `
+    <div class="assets-head"><div><h2>💡 Ideas</h2>
+      <p class="muted small">What's trending today - Google Trends in ${esc(Object.values(regions).join(", "))}, Wikipedia's most-read
+        pages and upcoming holidays - turned into family-friendly video ideas by your AI, plus your own. Tap a title to make it
+        a Custom Video. Ideas are never deleted: hide the ones you don't want.</p></div></div>
+    <div class="panel">
+      <div class="row" style="align-items:end">
+        <label style="flex:3">Your own idea<input type="text" id="id-new" placeholder="e.g. why cats knead blankets"></label>
+        <button id="id-add">➕ Add</button>
+        <button id="id-fetch" class="primary">🔄 Get what's trending now</button></div>
+      <p class="muted small" id="id-status" style="margin:8px 0 0">${d.fetching ? "🔄 Getting today's trending ideas (about a minute)…"
+        : d.fetched ? `Last updated ${ago(d.fetched)}.` : "No trending ideas yet."}</p>
+      <div class="inline-job" id="id-job"></div></div>
+    <div class="asset-toolbar">
+      <div class="chips-row">${Object.entries(IDEA_FILTERS).map(([k, v]) => `<button class="chip-btn ${k === IDEA_FILTER ? "on" : ""}" data-if="${k}">${v}</button>`).join("")}</div>
+      <div class="chips-row"><button class="chip-btn ${IDEA_REGION ? "" : "on"}" data-ir="">🌍 Everywhere</button>${Object.entries(regions).map(([k, v]) =>
+        `<button class="chip-btn ${k === IDEA_REGION ? "on" : ""}" data-ir="${k}">${esc(v)}</button>`).join("")}</div>
+      <span class="muted small" id="id-count"></span></div>
+    <div class="idea-grid" id="id-grid"></div>`;
+  const list = d.ideas.filter(keep);
+  $("#id-count").textContent = `${list.length} of ${d.ideas.length}`;
+  const card = (it) => {
+    const t = tplOf(it.template);
+    return `<div class="idea-card" data-idea="${esc(it.id)}">
+      <div class="idea-top"><span>${IDEA_SRC[it.source] || esc(it.source)}${it.region && it.source !== "mine" ? " · " + esc(it.region === "GB" ? "UK" : it.region) : ""}</span>
+        <span title="${esc(t.name || "")}">${t.icon || ""}</span></div>
+      <h4>${it.starred ? "⭐ " : ""}${esc(it.topic)}</h4>
+      ${it.angle ? `<p class="muted small">${esc(it.angle)}</p>` : ""}
+      ${it.trend && it.trend.toLowerCase() !== it.topic.toLowerCase() ? `<p class="idea-trend">trending: ${esc(it.trend)}</p>` : ""}
+      <div class="chips idea-titles">${(it.titles || []).map((x, k) => `<button class="chip-btn" data-title="${k}" title="Make this as a Custom Video">${esc(x)}</button>`).join("")}</div>
+      ${it.used.length ? `<span class="pill ok">used in ${it.used.length} video${it.used.length > 1 ? "s" : ""}</span>` : ""}
+      <div class="btns">
+        <button data-ia="titles">✨ ${(it.titles || []).length ? "New titles" : "Titles"}</button>
+        <button data-ia="custom" title="Custom Video from this idea">🪄</button>
+        <button data-ia="series" title="A series about this idea">📺</button>
+        <button data-ia="star" title="${it.starred ? "Unstar" : "Star"}">${it.starred ? "★" : "☆"}</button>
+        <button data-ia="hide" title="${it.hidden ? "Show again" : "Hide"}">${it.hidden ? "👁" : "🙈"}</button></div></div>`;
+  };
+  $("#id-grid").innerHTML = list.map(card).join("") || `<div class="empty"><div class="empty-ic">💡</div><p>${d.ideas.length
+    ? "Nothing here - try another filter." : d.fetching ? "Getting today's ideas…" : "No ideas yet - press 🔄 Get what's trending now, or add your own."}</p></div>`;
+  $$("[data-if]").forEach((b) => b.onclick = () => { IDEA_FILTER = b.dataset.if; pageIdeas(); });
+  $$("[data-ir]").forEach((b) => b.onclick = () => { IDEA_REGION = b.dataset.ir; pageIdeas(); });
+  $("#id-add").onclick = guard(async () => {
+    const topic = $("#id-new").value.trim();
+    if (!topic) return toast("Write the idea first", true);
+    await api("POST", "/api/ideas", { topic });
+    toast("Idea added"); IDEA_FILTER = "new"; pageIdeas();
+  });
+  $("#id-new").onkeydown = (e) => { if (e.key === "Enter") $("#id-add").click(); };
+  $("#id-fetch").onclick = guard(async (e) => {
+    const job = await api("POST", "/api/ideas/fetch");
+    e.currentTarget.disabled = true;
+    watchJob(job, $("#id-job"), (j) => { toast(j.status === "done" ? "New ideas are in" : "Couldn't get the trends - see the log", j.status !== "done"); if (location.hash === "#ideas") pageIdeas(); });
+  });
+  if (d.fetching) {                         // started by this visit (the ideas were old): look again shortly
+    setTimeout(async () => { if (location.hash !== "#ideas") return; const n = await api("GET", "/api/ideas"); if (!n.fetching) pageIdeas(); else $("#id-status") && ($("#id-status").textContent += " ."); }, 8000);
+  }
+  $$(".idea-card").forEach((c) => {
+    const it = d.ideas.find((x) => x.id === c.dataset.idea);
+    $$("[data-title]", c).forEach((b) => b.onclick = (ev) => { sparkle(b, ev); customFromIdea(it, it.titles[Number(b.dataset.title)]); });
+    $("[data-ia=titles]", c).onclick = guard(async (e) => busy(e.currentTarget, "✨ Thinking…", async () => {
+      await api("POST", `/api/ideas/${encodeURIComponent(it.id)}/titles`, { model: CS.model });
+      pageIdeas();
+    }));
+    $("[data-ia=custom]", c).onclick = () => customFromIdea(it, "");
+    $("[data-ia=series]", c).onclick = guard(() => openSeriesDialog({ idea: it.topic + (it.angle ? ` - ${it.angle}` : ""), template: it.template, idea_id: it.id }));
+    $("[data-ia=star]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { starred: !it.starred }); pageIdeas(); });
+    $("[data-ia=hide]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { hidden: !it.hidden }); pageIdeas(); });
+  });
+}
+
 async function pageVideos() {
   const vids = await api("GET", "/api/videos");
   app.innerHTML = `<h2>Videos</h2>${vids.length ? `<div class="cards">${vids.map((v) => `
@@ -2517,7 +2656,7 @@ function editFx(f) {
 }
 
 /* ------------------------------------------------------------------ router */
-const PAGES = { create: pageCreate, sets: pageSets, assets: () => pageAssets(), audio: pageAudio, videos: pageVideos, characters: pageCharacters, settings: pageSettings };
+const PAGES = { create: pageCreate, ideas: pageIdeas, sets: pageSets, assets: () => pageAssets(), audio: pageAudio, videos: pageVideos, characters: pageCharacters, settings: pageSettings };
 async function route() {
   const page = (location.hash || "#create").slice(1);
   $$("nav a").forEach((a) => a.classList.toggle("on", a.dataset.page === (page === "audio" ? "assets" : page)));

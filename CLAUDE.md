@@ -468,6 +468,26 @@ camera.
   `" qwen3-coder-next:latest"` typed in, his server answered 404 (no such model) and the log said "not reachable"
   (`propgen.design_call` now says which).
 
+## Ideas: trending topics -> video titles (2026-11-25, the user's idea)
+- `pipeline/ideas.py`: `gather()` = Google Trends daily RSS for `REGIONS` US/GB/LT (the user chose all three),
+  Wikipedia most-read (en + lt) and featured/"on this day" (Wikimedia feed API), and `CALENDAR` (holidays and
+  seasons in the next 45 days, offline). Reddit refuses requests without an account (403 on JSON and RSS) - not
+  used. Generic User-Agent, nothing about the user is sent. `BLOCK` words (tragedies, politics, crime, weapons,
+  betting...) drop items before the AI; `pick_ideas` (Ollama, `PICK`) keeps family-friendly ones as {topic, angle,
+  template}, in English, never a named person/brand/film/game franchise (original content), and a topic that's just
+  the trending proper name ("Grand Theft Auto VI") is dropped. DB `assets/ideas/ideas.json` (gitignored): ideas are
+  only hidden/starred, `used` = episode ids (`mark_used` when an episode with `"idea"` is saved). Stale after 12 h:
+  the Ideas page / `fresh` cards start a fetch job (kind `ideas`, other lane) by themselves.
+- `web/ideas_web.py`: `GET /api/ideas`, `GET /api/ideas/fresh?n=`, `POST /api/ideas/fetch`, `POST /api/ideas` (own),
+  `PUT /api/ideas/<id>` (starred/hidden), `POST /api/ideas/<id>/titles` (`llm.generate_titles` with the idea as
+  theme + its template's title starts).
+- UI: 💡 Ideas page (`pageIdeas`: filters New/Starred/Used/Yours/Hidden/All, regions, add your own, 🔄 fetch,
+  per card ✨ Titles / 🪄 Custom Video / 📺 Series / ☆ / 🙈; a title chip -> `customFromIdea` -> `CS.wizPreset` ->
+  the Custom Video popup with title, kind and `idea`). Custom Video's Idea step has a 🔥 trending row (tap = topic +
+  kind + ✨ Give me ideas); the random video's topic step deals one 🔥 trending card of three (its idea is marked
+  used); the series popup shows trending chips and passes `idea_id` (`series.py` puts it on every episode).
+  First dev test: 134 trending items -> 22 ideas in ~35 s (moon phases, why blood is red, solstice, lemurs...).
+
 ## Whales and invisible people (2026-11-25, 6 videos rendered in production)
 - Invisible people: the Quaternius "Posed Background Characters" FBX materials import with Principled Alpha 0
   (HASHED) - cast people / crowds / cutaways rendered as only a blob shadow, and their Assets pictures were blank

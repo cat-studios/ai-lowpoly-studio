@@ -71,7 +71,9 @@ def main(spec_path):
                                                    "scene_policy": "reuse", "template": tpl_id})
         ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],
               "template": tpl_id, "series": {"id": sid, "idea": idea, "part": i, "of": len(titles)},
-              "set_style": "base"}          # a series' new places are always hand-built bases (set style A)
+              "set_style": "base"}
+        if spec.get("idea_id"):
+            ep["idea"] = spec["idea_id"]          # started from the Ideas page: marked used when saved          # a series' new places are always hand-built bases (set style A)
         if spec.get("character"):
             ep["character"] = spec["character"]
         if d.get("cast"):

@@ -12,6 +12,7 @@ assets/sfx/custom/*
 assets/sfx/custom_slots.json
 assets/fx_previews/*
 assets/fx_overrides.json
+assets/ideas/*
 sets/*
 !sets/_cafe.png
 !sets/_park.png
