@@ -26,7 +26,25 @@ function toast(msg, error = false) {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => (t.hidden = true), error ? 6000 : 2500);
 }
-const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
+// the page's own errors go to the server log ("PAGE ERROR"), with the button pressed just before - so a bug like
+// "e.currentTarget is null" is seen in logs/server-*.log without anyone having to report it
+let LAST_ACTION = "";
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("button, a, [data-tab], .chip-btn, .mw-card");
+  if (b) LAST_ACTION = (b.textContent || b.title || b.id || "").replace(/\s+/g, " ").trim().slice(0, 60);
+}, true);
+function reportError(e) {
+  try {
+    fetch("/api/client-error", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: String((e && e.message) || e), stack: (e && e.stack) || "",
+        page: location.hash.slice(1), action: LAST_ACTION }) }).catch(() => {});
+  } catch { /* never let reporting break the page */ }
+}
+window.addEventListener("error", (ev) => reportError(ev.error || ev.message));
+window.addEventListener("unhandledrejection", (ev) => reportError(ev.reason));
+// a code bug (not a message from the server like "write the idea first") is also reported
+const isBug = (e) => e instanceof TypeError || e instanceof ReferenceError || e instanceof RangeError || e instanceof SyntaxError;
+const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { if (isBug(e)) reportError(e); toast(e.message, true); } };
 async function busy(btn, label, fn) {
   const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = label;
   try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = old; }

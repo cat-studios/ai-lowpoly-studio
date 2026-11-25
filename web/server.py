@@ -1311,6 +1311,14 @@ class Handler(BaseHTTPRequestHandler):
             import imported_web
             return imported_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
 
+        if head == "client-error" and method == "POST":   # the web page's own errors (app.js reportError)
+            b = self.body_json() or {}
+            msg = " ".join(str(b.get("message") or "?").split())[:300]
+            stack = "\n".join(str(b.get("stack") or "").splitlines()[:6])[:1200]
+            logs.event(f"PAGE ERROR on #{str(b.get('page') or '')[:30]}: {msg}"
+                       + (f" (after: {str(b.get('action') or '')[:80]})" if b.get("action") else "")
+                       + (f"\n{stack}" if stack else ""))
+            return self.send_json({"ok": True})
         if head == "ideas":          # trending topics -> video ideas (web/ideas_web.py, pipeline/ideas.py)
             import ideas_web
             return ideas_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT, jobs=JOBS)
