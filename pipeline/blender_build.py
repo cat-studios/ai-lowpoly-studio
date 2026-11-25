@@ -76,10 +76,8 @@ def mat(color, unlit=False):
     if key in _MATS:
         return _MATS[key]
     m = bpy.data.materials.new(f"mat{len(_MATS)}")
-    try:
+    if m.node_tree is None:     # Blender < 5: nodes are off by default (5.x always has them; use_nodes goes in 6.0)
         m.use_nodes = True
-    except Exception:
-        pass
     N, L = m.node_tree.nodes, m.node_tree.links
     N.clear()
     out = N.new("ShaderNodeOutputMaterial")
@@ -171,10 +169,8 @@ def checker(name, x0, x1, y0, y1, size, c1, c2, z=0.0):
 def setup_world(ambient="#ffffff", ambient_strength=0.35):
     w = bpy.data.worlds.new("World")
     scene.world = w
-    try:
+    if w.node_tree is None:     # Blender < 5: nodes are off by default (5.x always has them; use_nodes goes in 6.0)
         w.use_nodes = True
-    except Exception:
-        pass
     N, L = w.node_tree.nodes, w.node_tree.links
     N.clear()
     out = N.new("ShaderNodeOutputWorld")
@@ -1755,6 +1751,7 @@ CAMS = {
     "macro":    ((0.05, -0.8, 1.6),          "head", 85),     # eye close-up (the reference's eye shots)
     "tiny":     ((0.0, -11.0, 1.6),          "body", 35),     # a small figure in a big scene
     "silhouette": ((0.6, 3.0, 1.1),          "head", 35),     # low, from behind: she reads as a dark shape
+    "lead":     ((0.5, 3.0, 1.55),           "head", 30),     # ahead of her walk, looking back (turned below)
 }
 def _blockers(fr):
     """(x, y, radius, is_cast) of what can stand in a camera's way at frame fr: floor props and the cast."""
@@ -1795,7 +1792,7 @@ def _clear_view(views, off):
     for da in (0.45, -0.45, 0.9, -0.9, 1.3, -1.3):
         o = Vector((off.x * math.cos(da) - off.y * math.sin(da), off.x * math.sin(da) + off.y * math.cos(da), off.z))
         if clear(o):
-            turned.append((o.y > 0.3, abs(da), o))     # stay on the camera's side of her: behind shows her back
+            turned.append(((o.y > 0.3) != (off.y > 0.3), abs(da), o))   # stay on the camera's side of her (a lead camera: ahead of her)
     return min(turned, key=lambda x: x[:2])[2] if turned else off
 
 
@@ -1835,6 +1832,21 @@ for si, shot in enumerate(SHOTS):
                 break
         off = best_off or Vector((off.x * math.cos(a0) - off.y * math.sin(a0),
                                   off.x * math.sin(a0) + off.y * math.cos(a0), off.z))
+    if name == "lead":
+        # the camera goes ahead of her along the walk and looks back, so a walk away from the usual camera shows
+        # her face (the side/back cameras showed her three-quarters from behind)
+        d = loc_of[f1] - loc_of[f0]
+        d.z = 0.0
+        if d.length > 0.5:
+            d.normalize()
+            side = Vector((d.y, -d.x, 0.0))
+            off = Vector((d.x * off.y + side.x * off.x, d.y * off.y + side.y * off.x, off.z))
+    if name == "side" and shot.get("action") == "point" and shot.get("at") is not None:
+        # pointing at something behind her is filmed from the side (autodirect) - from the side the thing is on,
+        # or her body hides the arm that points
+        tgt = point_target(shot["at"], loc_of[f0])
+        if tgt is not None and (1.0 if tgt.x - loc_of[f0].x > 0 else -1.0) * off.x < 0:   # dead behind = her right (a_point)
+            off = Vector((-off.x, off.y, off.z))
     center = (loc_of[f0] + loc_of[f1]) / 2
     if shot.get("move", "static") == "static" and (loc_of[f1] - loc_of[f0]).length > 0.8:
         # she walks during a still shot: set the camera up from the end of the walk nearest to it, so walking
@@ -1898,7 +1910,7 @@ for si, shot in enumerate(SHOTS):
         center.z = 0.0
         off = Vector((0.3 * dist, -dist, max(0.22, 0.55 * h)))      # small things: a low, macro-ish angle
         aim_obj = cut["target"]
-        lens = 32 if name in ("wide", "medium", "side", "high", "low", "back") else lens
+        lens = 32 if name in ("wide", "medium", "side", "high", "low", "back", "lead") else lens
     if not cut and not both and OBST:
         # furniture between the camera and the speaker (the post office counter filled half a side shot): swing the
         # camera round her to the nearest clear angle

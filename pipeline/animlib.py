@@ -47,6 +47,12 @@ ARM = {
     "palm_up_out":     (-0.5, 0.55, 0.9, 1.3),      # forearm out, palm up (shrug, "who knows?", presenting)
     "hand_on_hip":     (0.35, 0.55, -0.9, 1.7),     # hand on the hip (sassy, impatient, proud)
     "behind_back":     (0.45, 0.1, 0.0, 0.6),       # arm behind her back (shy, innocent, hiding something)
+    # both arms (use "both"), each picked from rendered variants (2026-11-25):
+    "hands_on_head":   (-0.45, 1.9, 1.7, 2.4),      # hands behind/on the head, elbows out (relaxed, "oh no", stunned)
+    "praying_hands":   (-0.75, 0.15, -0.5, 2.0),    # hands together under the chin (please, pleading, hoping)
+    "arms_crossed":    (-1.0, 0.15, -1.3, 1.9),     # forearms crossed tight over the chest (grumpy, "no", stubborn)
+    "cover_ears":      (-0.15, 1.0, 1.0, 2.6),      # hands over the ears (too loud, "la la la", not listening)
+    "hug_self":        (-0.95, 0.55, -1.0, 2.1),    # hands to the other shoulders (cold, scared, cosy, shy)
 }
 HEAD = {   # added to whatever the head is doing (nod > 0 = down; turn > 0 = to her left)
     "": {}, "head_down": {"nod": 0.45}, "head_back": {"nod": -0.35}, "nod_small": {"nod": 0.15},

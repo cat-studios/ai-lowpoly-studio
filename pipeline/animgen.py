@@ -26,7 +26,8 @@ import animlib  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 BLENDER = os.environ.get("BLENDER", r"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe")
 PASS = 6                                        # vision score (1-10) that counts as "looks right"
-ROOMY = {"palm_up_out", "point_side", "wave_up", "arm_up_high", "arm_forward", "reach_forward", "hand_by_face"}
+ROOMY = {"palm_up_out", "point_side", "wave_up", "arm_up_high", "arm_forward", "reach_forward", "hand_by_face",
+         "hands_on_head"}
 
 GUIDE = (
     "You animate a small low-poly anime character for a short video. You build an animation ONLY from these "
@@ -36,7 +37,10 @@ GUIDE = (
     "with an open hand, reach_forward = arm straight out in front, point_side = pointing out to her side, wave_up = "
     "forearm up beside the head, arm_up_high = fist up high, hand_by_face = hand up beside her face, fist_up = fist "
     "raised in front, across_body = forearm across the tummy, palm_up_out = forearm out with the palm up, "
-    "hand_on_hip = hand on the hip, behind_back = arm behind her back. R = her right arm, L = her left arm, both = "
+    "hand_on_hip = hand on the hip, behind_back = arm behind her back. Two-arm poses (use them with both): "
+    "hands_on_head = hands behind the head, elbows out, praying_hands = hands together under the chin, "
+    "arms_crossed = forearms crossed over the chest, cover_ears = hands over her ears, hug_self = hugging "
+    "herself, hands on the other shoulders. R = her right arm, L = her left arm, both = "
     "both arms. Head/body poses are added on top; leave them out when not needed.\n"
     "Reply with JSON only, in this format:\n"
     '{"name": "...", "description": "...", "length": seconds, "loop": true or false, '

@@ -210,6 +210,15 @@ brackets at the start of a line.
 ```
 Cameras, actions, expressions and sounds from the tables below can all go in the brackets.
 
+The AI script writer reads its own script back like an editor before you see it: it fixes made-up facts, clumsy
+English, lines that don't follow on and weak endings, and leaves your directions alone. Titles it suggests come
+best first.
+
+The automatic director keeps her walking to a minimum (a walk now and then, never two close together) and moves
+the camera instead: every few shots a new angle that circles, pushes in or pulls back. When she walks away from
+the camera, a camera ahead of her films her face; when she points at something behind her, the shot is from the
+side so you see the arm and the thing.
+
 ### Make a random video
 **🎲 Make a random video** on the Create page opens a little game: after a magic shuffle it deals three cards for
 where it happens, then three topics, a vibe, who drops in, the time of day and the length (🎲 Three more deals new
@@ -223,6 +232,11 @@ not, the AI rebuilds it once, and if that still fails it becomes a drawn picture
 rather than showing shapes that don't look like the thing.
 
 ## Sets the studio makes
+New sets are filled so the wide shot isn't an empty room: after the layout, more of the set's own small things
+(chairs, plants, crates, the AI's props...) are added where the camera looks, until it shows about 9 things
+inside or 11 outside. Rooms also get see-through front and right walls: invisible from the usual camera, but a
+camera that turns round inside the room sees a wall instead of the open edge.
+
 A new set from an idea is checked before it's finished: the picture model looks at a quick preview and scores how
 well it shows the place. If it doesn't (a "haunted library" that looks like a classroom), the AI adds what's
 missing and removes what doesn't belong, and tries again (up to three times; the best try is kept). This can make
@@ -231,7 +245,8 @@ Both checks (sets and props) can be turned off in Settings → 🤖 AI tools whe
 
 ## Your own animations
 An animation can be a small file in `assets/anims/<name>.json` that strings together ready-made poses
-(`pipeline/animlib.py` lists them: hand_to_chin, hand_at_mouth, palm_up_out, wave_up, hand_on_hip...). Its name
+(`pipeline/animlib.py` lists them: hand_to_chin, hand_at_mouth, palm_up_out, wave_up, hand_on_hip, and for both
+arms hands_on_head, praying_hands, arms_crossed, cover_ears, hug_self...). Its name
 then works like any action: `[shrug] Who knows?`. Example:
 ```
 {"name": "shrug", "description": "Shrugs - who knows?", "length": 1.4,
@@ -286,6 +301,9 @@ Mom: You forgot your lunch again.
   `hold` (she holds it). Add `from_left` / `from_right` / `from_back` / `from_top`. Things can't talk.
 - No `+` in a hand-written script? Tick **🎭 Let the AI add other people & things** before *Direct shots*. Each
   shot also has a **🎭 Others in this shot** field (`mom enter, car crash_in`).
+- **Crowds**: `[+crowd enter]`, `+audience`, `+soldiers`, `[cutaway: a herd of cows]` bring in a group made from your
+  imported models - posed people (cheering, walking, running... picked from the words) or several of the animal or
+  thing it names. With nothing to build it from (an "army of cats" without a cat model) the group is left out.
 
 ### Cutaways
 Show something instead of her while she keeps talking (voice-over):
@@ -393,8 +411,9 @@ runs in its own Python 3.11 environment (`tools/voice-venv`: chatterbox-tts, CUD
 
 Rendered at 216×384, 30 fps, then post-processed: limited colour depth, chunky nearest-neighbour upscale, soft blur,
 red/blue fringing, lifted blacks and muted colour, faint scanlines, grain and a vignette. Captions are drawn at the
-low resolution (so they're pixelated with the picture), two words at a time in cycling colours; the title is two
-lines at the top, white then yellow.
+low resolution (so they're pixelated with the picture), two words at a time in cycling colours, each pair shown
+when she actually says it (the voice engines report when every word is spoken); the title is two lines at the top,
+white then yellow.
 
 Presets: N64 Haze (default), Clean Retro, VHS Tape, PS1 Crunch, Game Boy, Dreamy Pastel, Spooky Night - globally
 (Settings) or per episode. Every value can be changed in Settings, and an episode can override any of them:

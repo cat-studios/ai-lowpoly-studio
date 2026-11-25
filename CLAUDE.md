@@ -70,8 +70,6 @@ Open items:
   job queue under load (they build without errors in Blender no-render checks).
 - Sets made before 2026-11-24 can contain stacked props (a theme's tables at (0, 0.3)); older sets name imported
   props' walk-to places `imp_table` (new sets: `table`).
-- Blender 5.3 prints DeprecationWarnings for `World.use_nodes` / `Material.use_nodes` (removed in Blender 6.0) -
-  harmless now, replace before a Blender 6 upgrade.
 - Cast warning "no free spot ... moved to (x, y), clearance N m" = `spot()` found nothing beside her and
   `_roomiest()` picked a place instead (expected in crowded sets); the message lists why each spot was refused.
 - Scene jobs can run while a video renders: Blender and ComfyUI can fight for the 12 GB GPU, and regenerating a set
@@ -331,8 +329,56 @@ and no bookshelves, 4/10 each, 12 min). Military parade ground: 4/10 (a park) �
   the fallback); `run_episode.resolve_animations` makes/reuses them before Blender and moves `needs_room`
   animations (arms out) out of close cameras. The script writer is told it may write `[do:<verb>]`.
 - Assets → Animations tab (`web/anims_web.py`: `GET /api/anims`, `POST /api/anims/make` job, `DELETE` → .trash,
-  pictures at `/animimg/`). Ideas: more poses (both hands on head, hands together/praying, arms crossed tight, hug
-  self, cover ears) - each must be checked in a render (scratch tool: temporary ARM entries + check_render).
+  pictures at `/animimg/`). Two-arm poses added 2026-11-25 (use with `both`): hands_on_head, praying_hands,
+  arms_crossed, cover_ears, hug_self - each picked from rendered variants (scratch tool: temporary ARM entries +
+  `animgen.check_render`, 2-3 candidates per pose). Note: `arm` > 0 does NOT swing the arm behind her - this rig's
+  arm only goes out sideways/forward and the elbow only bends forward (no thumb-over-the-shoulder pose).
+
+## Third round (2026-11-25): fuller sets, crowds, less walking, word-timed captions
+- **Fuller sets** (`setgen.fill_view`, after all props are placed): counts the things the wide shot sees
+  (`in_view`: |x| < 0.36·(y+6), `view_count` ignores rugs/fences/hills/wall pictures) and copies the set's own
+  small things (`DRESSING` words or kinds it already has 2+ of; never `ONE_OFF` doors/flags/counters, never
+  `INDOOR_BIG`) into the `showcase` / new `view` zone (the whole camera cone, keeping the spot just behind her open)
+  until `FILL_IN` 9 / `FILL_OUT` 11. Indoor props without a zone favour `showcase` (the left wall and most of a
+  14x12 room's floor are outside the wide shot). Fixed: `showcase` put props behind a small room's back wall
+  (y up to 4.8 in a 6 m deep room). Existing sets went from 4-7 to 7-11 things in view (offline simulation).
+- **Dollhouse walls** (`blender_sets.dollhouse_walls`): indoor rooms also get a front (camera side) and right wall
+  with back faces culled and no shadow - invisible from outside, a wall from inside (9 m tall: a lead camera
+  looking back saw sky over a 5 m wall).
+- **Lead camera** (`CAMS["lead"]`, catalog "lead"): ahead of her walk, looking back, turned along the walk's
+  direction in the camera loop. The director uses it for walks away from the usual camera (was `side`, which
+  still showed her three-quarters from behind). `_clear_view` keeps a camera on its own side of her.
+- **Pointing behind her**: no arm pose reads as "back there" from the front (tried a thumb over the shoulder, a
+  straight arm up-and-back, turning side-on - all read as sideways/waving or hid the arm). The director gives a
+  point at something behind her (`at` more behind than beside) the `side` camera, and Blender puts the side camera
+  on the target's side (else her body hides the pointing arm; dead behind = her right, matching `a_point`).
+- **Less walking**: `walk_every` 3 → 8 and never within `WALK_GAP` 5 shots of another walk; new `move_every` 3 =
+  a "camera beat" (`CAMERA_BEATS`: side+orbit, low+push_in, high+pull_out...) on static shots; `high` added to
+  `CAM_CYCLE`; the script writer is told to walk at most once or twice (change camera, action, place instead).
+- **Crowds** (`imported.crowd_def`, `is_group`, `GROUP_WORDS`): "crowd", "audience", "soldiers", "herd of cows",
+  "army of dinosaurs" = several imported models in two loose rows (`{"crowd": [defs], "offsets": [[x, y, turn]]}`,
+  built by `p_custom`). The group's noun comes from the NAME or "of X" in the description (not every word: "people
+  at the beach"); a thing (cow, Trex) is repeated (3 when big); else People-category models (hair-only models
+  skipped, one per name in the preferred format), posed by the words (`CROWD_POSES`: cheering → waving, marching →
+  walking, running, scared → covering eyes); sitting models only with seat words. One scale per pack from its
+  standing people (1.72 m). A named non-person noun with no model ("feline army", no cat) = None (nothing on
+  screen rather than people or boxes). Used by `resolve_cast` (before actors), `propgen.imported_def` (set props
+  like "marching_soldier_group"), `add_cast_plan` (groups are kept when a crowd can be built), cutaways.
+- **Word-timed captions and beat cuts**: Edge TTS is asked for `WordBoundary` events (edge-tts 7 defaults to
+  sentences), the local voice keeps Whisper's word times for the take it keeps (`word_timestamps=True`); both are
+  saved as `<wav>.words.json` next to the cached take (times from the first word: the start silence is cut).
+  `run_episode.word_starts(text, wav, total)` matches them to the line's words (difflib, by spelling; gaps filled by
+  word length) → shot `word_t`; captions show each group from its first word to the next group's; a beat group's
+  cuts land where each beat's first word is said. Edge lines cached before this have no word times and are redone
+  once (quick); local-voice lines keep the old even spread until re-voiced (🎙 fresh voice).
+- **Script editor pass** (`llm.polish_script`, on by default in `generate_script(polish=True)`): lists problems
+  (made-up facts, broken English, lines that don't follow, repeated jokes, a weak ending) then rewrites only the
+  spoken words - each line keeps its own `[directions]` / `Name:` (the model's copies are dropped), a line that loses
+  a `+name` or grows past 22 words keeps the original, wrong line count = the script as it was. Asking it to
+  "change as little as needed" changed nothing. Titles: `rank_titles` scores them (curiosity, clarity, real
+  question) and fixes small grammar slips, best first. Label junk the model copies into brackets (`[cameras:
+  macro]`, `[action: shrug]`) is stripped.
+- Blender 6: `use_nodes` is only set when a new material/world has no node tree (5.x always has one).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

@@ -72,20 +72,25 @@ def main():
                 temperature=float(job.get("temperature", 0.8)),
             ).cpu()
             if asr is None:
-                best = (1.0, wav, "")
+                best = (1.0, wav, "", [])
                 break
             tmp = job["out"] + ".take.wav"
             torchaudio.save(tmp, wav, model.sr)
-            segs, _ = asr.transcribe(tmp, language="en", beam_size=1)
+            segs, _ = asr.transcribe(tmp, language="en", beam_size=1, word_timestamps=True)
+            segs = list(segs)
             heard = " ".join(s.text for s in segs).strip()
+            # when each word is said (captions and beat cuts follow the voice - run_episode.word_starts)
+            words = [[w.word.strip(), round(w.start, 3), round(w.end, 3)] for s in segs for w in (s.words or [])]
             os.remove(tmp)
             sc = score(job["text"], heard)
             if best is None or sc > best[0]:
-                best = (sc, wav, heard)
+                best = (sc, wav, heard, words)
             if sc >= GOOD_ENOUGH:
                 break
-        sc, wav, heard = best
+        sc, wav, heard, words = best
         torchaudio.save(job["out"], wav, model.sr)
+        if words:
+            Path(job["out"] + ".words.json").write_text(json.dumps(words), encoding="utf-8")
         flag = "" if sc >= GOOD_ENOUGH else "  <-- CHECK THIS LINE"
         print(f"[voice] {i + 1}/{len(jobs)} match {sc:.0%} after {attempt + 1} take(s): "
               f"{job['text'][:45]!r} heard {heard[:45]!r}{flag}", flush=True)

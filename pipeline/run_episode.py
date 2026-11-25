@@ -74,9 +74,23 @@ def _tts_edge(text, raw, voice):
     """Free Microsoft neural voices (needs internet). List voices: python -m edge_tts --list-voices"""
     import asyncio
     import edge_tts
-    comm = edge_tts.Communicate(text, voice.get("name", DEFAULT_VOICE["name"]),
-                                rate=voice.get("rate", "+0%"), pitch=voice.get("pitch", "+0Hz"))
-    asyncio.run(comm.save(str(raw)))
+    kw = dict(rate=voice.get("rate", "+0%"), pitch=voice.get("pitch", "+0Hz"))
+    try:                                   # edge-tts 7 sends sentence boundaries unless asked for words
+        comm = edge_tts.Communicate(text, voice.get("name", DEFAULT_VOICE["name"]), boundary="WordBoundary", **kw)
+    except TypeError:                      # older edge-tts: words are the default
+        comm = edge_tts.Communicate(text, voice.get("name", DEFAULT_VOICE["name"]), **kw)
+    words = []
+
+    async def run():
+        with open(raw, "wb") as f:
+            async for ch in comm.stream():
+                if ch["type"] == "audio":
+                    f.write(ch["data"])
+                elif ch["type"] == "WordBoundary":      # offsets in 100 ns units
+                    words.append([ch["text"], ch["offset"] / 1e7, (ch["offset"] + ch["duration"]) / 1e7])
+    asyncio.run(run())
+    if words:                              # when each word is said: captions and beat cuts follow the voice
+        Path(str(raw) + ".words.json").write_text(json.dumps(words), encoding="utf-8")
 
 
 def _tts_elevenlabs(text, raw, voice):
@@ -128,6 +142,9 @@ def _local_jobs(items):
         sys.exit("Local voice generation failed.")
     for (_, raw, _), job in zip(items, jobs):
         Path(job["out"]).replace(raw)
+        w = Path(job["out"] + ".words.json")             # Whisper's word times for the take that was kept
+        if w.exists():
+            w.replace(str(raw) + ".words.json")
 
 
 def _tts_local(text, raw, voice):
@@ -195,7 +212,8 @@ def tts(text, out_wav, voice, ffmpeg, cache_dir):
     cache_dir.mkdir(parents=True, exist_ok=True)
     key = _cache_key(text, voice)
     cached = cache_dir / f"{key}.wav"
-    if FRESH or not cached.exists():
+    stale = engine == "edge" and cached.exists() and not cached.with_suffix(".words.json").exists()
+    if FRESH or not cached.exists() or stale:     # Edge lines cached before word times existed: quick to redo
         raw = cache_dir / f"{key}.raw"
         try:
             if not raw.exists() or (FRESH and engine != "local"):   # local raws were just prefetched
@@ -214,9 +232,68 @@ def tts(text, out_wav, voice, ffmpeg, cache_dir):
                         "loudnorm=I=-14:TP=-1.5,aresample=44100",
                         "-ac", "1", str(part)], check=True)
         part.replace(cached)
+        words_raw = Path(str(raw) + ".words.json")
+        words_out = cached.with_suffix(".words.json")
+        words_out.unlink(missing_ok=True)
+        if words_raw.exists():
+            try:      # the start's silence was cut off: times count from the first word
+                ws = json.loads(words_raw.read_text(encoding="utf-8"))
+                t0 = min(w[1] for w in ws) if ws else 0.0
+                words_out.write_text(json.dumps([[w[0], round(max(0.0, w[1] - t0), 3), round(max(0.0, w[2] - t0), 3)]
+                                                 for w in ws]), encoding="utf-8")
+            except Exception:
+                pass
+            words_raw.unlink(missing_ok=True)
         raw.unlink(missing_ok=True)
     shutil.copyfile(cached, out_wav)
+    out_words = Path(out_wav).with_suffix(".words.json")
+    if cached.with_suffix(".words.json").exists():
+        shutil.copyfile(cached.with_suffix(".words.json"), out_words)
+    else:
+        out_words.unlink(missing_ok=True)
     return wav_seconds(out_wav)
+
+
+def _norm_word(w):
+    return re.sub(r"[^a-z0-9]+", "", w.lower())
+
+
+def word_starts(text, wav, total):
+    """When each word of `text` starts in `wav` (seconds), from the voice engine's word times (Edge word
+    boundaries, Whisper for the local voice), or None. Words the engine heard differently are matched by
+    spelling; the rest are placed between their neighbours. Spreading the words by length over the whole take
+    ran ahead of / behind her speech wherever she paused or talked fast."""
+    f = Path(wav).with_suffix(".words.json")
+    words = text.split()
+    if not words or not f.exists():
+        return None
+    try:
+        timed = [w for w in json.loads(f.read_text(encoding="utf-8")) if _norm_word(str(w[0]))]
+    except Exception:
+        return None
+    if not timed:
+        return None
+    from difflib import SequenceMatcher
+    a, b = [_norm_word(w) for w in words], [_norm_word(str(w[0])) for w in timed]
+    starts = [None] * len(words)
+    for blk in SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        for k in range(blk.size):
+            starts[blk.a + k] = float(timed[blk.b + k][1])
+    if sum(s is not None for s in starts) < max(1, len(words) // 2):
+        return None                        # too different to trust
+    starts[0] = 0.0 if starts[0] is None else starts[0]
+    known = [i for i, s in enumerate(starts) if s is not None]
+    end_t = max(total, max(s for s in starts if s is not None) + 0.2)
+    for i in range(len(words)):            # fill gaps between known words, by word length
+        if starts[i] is None:
+            lo = max(k for k in known if k < i)
+            hi = next((k for k in known if k > i), None)
+            t_hi, n_hi = (starts[hi], hi) if hi is not None else (end_t, len(words))
+            wsum = sum(len(words[k]) + 2 for k in range(lo, n_hi)) or 1
+            starts[i] = starts[lo] + (t_hi - starts[lo]) * sum(len(words[k]) + 2 for k in range(lo, i)) / wsum
+    for i in range(1, len(starts)):        # never backwards
+        starts[i] = max(starts[i], starts[i - 1])
+    return [round(s, 3) for s in starts]
 
 
 VOICE_POOL = ["en-US-GuyNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural", "en-US-AndrewNeural",
@@ -388,11 +465,18 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
         grp = max(1, int(cap.get("group", 1) or 1))
         weights = [len(w) + 2 for w in words]
         total_w = sum(weights) or 1
+        wt = shot.get("word_t")
+        if not isinstance(wt, list) or len(wt) != len(words):
+            wt = None                  # no word times from the voice: spread the words by length
         t = start
         for g0 in range(0, len(words), grp):
             chunk = range(g0, min(len(words), g0 + grp))
             dur = shot["talk"] * sum(weights[k] for k in chunk) / total_w
             last = chunk[-1] == len(words) - 1
+            if wt:                     # shown as the first word is said, until the next group's first word
+                t = start + wt[g0]
+                dur = (wt[chunk[-1] + 1] if not last else shot["talk"]) - wt[g0]
+                dur = max(0.12, dur)
             end = min(shot_end, t + dur + (0.35 if last else 0))
             parts = []
             for k in chunk:
@@ -613,7 +697,7 @@ def drop_weak_cutaways(ep, log=print):
         for e in [e for e in s.get("events") or [] if e.get("cutaway")]:
             info = cast.get(e.get("who")) or {}
             d = info.get("def") or {}
-            if info.get("type") == "person" or info.get("prop") or d.get("model") or d.get("sprite")                     or d.get("checked") is not False:
+            if info.get("type") == "person" or info.get("prop") or d.get("model") or d.get("crowd") or d.get("sprite")                     or d.get("checked") is not False:
                 continue
             s["events"].remove(e)
             s.pop("cutaway", None)
@@ -683,6 +767,18 @@ def resolve_cast(ep, cfg, log=print):
                 s["events"] = [e for e in s["events"] if e.get("who") != who]
     for who, info in list(cast.items()):
         info = dict(info) if isinstance(info, dict) else {}
+        if not info.get("def") and not info.get("actor") and not info.get("generated"):
+            try:                                     # "crowd", "audience", "herd of cows": imported models in a group
+                import imported
+                crowd = imported.crowd_def(who, info.get("looks") or "", setting) if imported.is_group(who) else None
+            except Exception as exc:
+                crowd = None
+                log(f"  cast: no crowd for {who} ({exc.__class__.__name__})")
+            if crowd:
+                info["type"], info["def"] = "thing", crowd
+                log(f"  cast: {who} (a crowd of {len(crowd['crowd'])}: {', '.join(sorted({m['name'] for m in crowd['crowd']}))})")
+                cast[who] = info
+                continue
         explicit = "type" in info                    # the video editor / script can force person or thing
         info.setdefault("type", autodirect.cast_kind(who))
         if info["type"] == "thing" and re.search(r"\bhumans?\b", str(info.get("looks") or ""), re.I):
@@ -1106,8 +1202,26 @@ def main():
                         ROOT / "build" / "tts_cache")
             wavs.append((idx[0], wav))
         weights = [sum(len(w) + 2 for w in ep["shots"][j].get("line", "").split()) or 1 for j in idx]
-        for j, wt in zip(idx, weights):
-            shares[j] = total * wt / sum(weights)
+        marks = None if args.no_tts else word_starts(text, wav, total)
+        if marks:
+            # each beat starts when its first word is said, so the cut lands on the voice
+            k, firsts = 0, []
+            for j in idx:
+                firsts.append(k)
+                k += len(ep["shots"][j].get("line", "").split())
+            b0 = [0.0] + [marks[min(k, len(marks) - 1)] - 0.05 for k in firsts[1:]]
+            b1 = b0[1:] + [total]
+            for n_, j in enumerate(idx):
+                shares[j] = max(0.25, b1[n_] - b0[n_])
+                nw = len(ep["shots"][j].get("line", "").split())
+                ep["shots"][j]["word_t"] = [round(max(0.0, m - b0[n_]), 3) for m in marks[firsts[n_]:firsts[n_] + nw]]
+            scale = total / sum(shares[j] for j in idx)    # the 0.25 s floor can't make the line longer
+            for j in idx:
+                shares[j] *= scale
+        else:
+            for j, wt in zip(idx, weights):
+                shares[j] = total * wt / sum(weights)
+                ep["shots"][j].pop("word_t", None)
         group_total[g] = total
         print(f"  beats {idx[0]}-{idx[-1]}: one line, {total:.1f}s in {len(idx)} beats")
     for i, shot in enumerate(ep["shots"]):
@@ -1136,6 +1250,11 @@ def main():
                 talk = tts(shot["line"], wav, voice_for(ep, cfg, shot), ffmpeg,
                            ROOT / "build" / "tts_cache")
                 wavs.append((i, wav))
+                marks = word_starts(shot["line"], wav, talk)
+                if marks:
+                    shot["word_t"] = marks
+                else:
+                    shot.pop("word_t", None)
             print(f"  shot {i}: line {talk:.1f}s")
             report(0.10 + 0.18 * (i + 1) / max(1, len(ep["shots"])), f"Voice line {i + 1}/{len(ep['shots'])}")
         shot["talk"] = round(talk, 3)

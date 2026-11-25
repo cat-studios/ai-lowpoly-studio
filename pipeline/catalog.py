@@ -63,6 +63,7 @@ CAMERAS = {
     "high": "From above",
     "dramatic": "Tight, off-centre",
     "back": "Over the shoulder from behind",
+    "lead": "Ahead of her as she walks, looking back at her face",
     "macro": "Close-up on the eyes",
     "tiny": "Tiny figure in a big scene",
     "silhouette": "Low, from behind (a dark shape)",

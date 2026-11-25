@@ -708,6 +708,132 @@ def kind_category(kind):
     return None
 
 
+# ----------------------------------------------------------------------------- crowds
+# "a crowd", "an army of cats", "the audience": several imported models in a loose group instead of one made-up
+# shape (four boxes for "a feline army marching"). People come from the People category (the Posed Background
+# Humans pack), picked by what the crowd does; anything else ("herd of cows") is that thing's model, repeated.
+GROUP_WORDS = set("army armies crowd crowds team teams group groups squad troops audience everyone everybody people "
+                  "herd flock swarm gang class family families fans spectators onlookers mob horde pack band "
+                  "choir parade line queue villagers tourists shoppers customers students kids children "
+                  "soldiers guards".split())
+PEOPLE_GROUPS = set("crowd audience everyone everybody people team squad troops gang class family fans spectators "
+                    "onlookers mob horde band choir parade line queue villagers tourists shoppers customers "
+                    "students kids children soldiers guards army".split())
+CROWD_POSES = [      # words in the name/description -> pose words in the model names, best first
+    (("cheer", "cheering", "audience", "fans", "spectators", "concert", "stadium", "party", "celebrate", "applause",
+      "clap"), ("cheering", "waving", "standing")),
+    (("march", "marching", "army", "soldiers", "troops", "parade", "walking", "walk", "queue", "line", "shoppers",
+      "tourists"), ("walking", "standing")),
+    (("run", "running", "chase", "chasing", "flee", "fleeing", "stampede", "rush", "mob", "horde"),
+     ("running", "walking")),
+    (("scared", "scary", "horror", "afraid", "shock", "shocked"), ("coveringeyes", "lookingup", "standing")),
+    (("look", "looking", "watch", "watching", "stare", "staring", "sky", "stars"), ("lookingup", "standing")),
+]
+SEAT_WORDS = set("sitting seated sit bench benches stands bleachers stadium theater theatre cinema seats".split())
+CROWD_SKIP = {"hairstyle", "hair", "head", "bust"}          # parts of people, not people
+ANIMAL_ALIASES = {"feline": "cat", "felines": "cat", "kitties": "cat", "kittens": "cat", "canine": "dog",
+                  "puppies": "dog", "doggos": "dog", "cattle": "cow", "birds": "bird", "fishes": "fish"}
+
+
+POSE_WORDS = set("marching running cheering walking waving sitting standing angry happy scared tiny giant big small "
+                 "little huge loud cheerful busy".split())
+PERSON_NOUNS = set("person persons man men woman women boy boys girl girls human humans soldier kid kids child "
+                   "children student students fan fans shopper shoppers tourist tourists villager villagers "
+                   "guard guards customer customers".split())
+
+
+def is_group(name):
+    """Is this cast name a group of things/people ("feline_army", "crowd")?"""
+    return bool(set(re.split(r"[_\s]+", str(name).lower())) & GROUP_WORDS)
+
+
+def _one_per_name(models):
+    """One copy of each model name, in the preferred format (the pack has OBJ, FBX and BLEND of each)."""
+    best = {}
+    for pack, m in models:
+        k = (pack["id"], m["name"].lower())
+        rank = FORMAT_PREF.index(m["format"]) if m.get("format") in FORMAT_PREF else 9
+        if k not in best or rank < best[k][0]:
+            best[k] = (rank, pack, m)
+    return [(p, m) for _, p, m in best.values()]
+
+
+def crowd_def(name, looks="", setting="", n=None, seed=0):
+    """A cast/prop definition for a group: {"crowd": [member defs], "offsets": [[x, y, turn]...], ...}, or None
+    when there's nothing to build it from. Members stand in two loose rows facing the camera side (-y)."""
+    import random
+    text = f"{name} {looks}".lower().replace("_", " ")
+    ws = set(re.findall(r"[a-z]+", text))
+    rng = random.Random(f"{name}|{seed}")
+    # what the group is made of: the name's own words ("feline_army", "cow_herd"), or what follows "of" in the
+    # description ("a herd of cows") - not every word of it ("people at the beach" isn't a group of beaches)
+    src = re.findall(r"[a-z]+", str(name).lower().replace("_", " ")) + \
+        re.findall(r"\bof\s+(?:the\s+|many\s+|angry\s+|happy\s+)?([a-z]+)", str(looks).lower())
+    noun = [ANIMAL_ALIASES.get(w, w) for w in src if w not in GROUP_WORDS and w not in NOISE and len(w) > 2
+            and w not in POSE_WORDS and w not in PERSON_NOUNS and w not in SEAT_WORDS]
+    cats = category_map()
+    members = []
+    thing = None
+    if noun:
+        for w in noun:                                         # "army of cats", "herd of cows", "feline army"
+            d = match(w, looks, setting)
+            if d and cats.get(d["model"]["id"]) != "People":
+                thing = d
+                break
+    named = noun
+    if thing:
+        big = float(thing.get("width") or 1.0)          # three dinosaurs fill a set; six cats don't
+        members = [dict(thing) for _ in range(n or (3 if big > 2.5 else 4 if big > 1.2 else rng.randint(4, 6)))]
+    elif named:
+        return None                                      # "an army of cats" with no cat model: not people
+    else:
+        seats = bool(ws & SEAT_WORDS)                    # sitting models sit on thin air unless there are seats
+        people = _one_per_name([(p, m) for p in packs() for m in p.get("models", [])
+                                if m.get("status") == "ok" and cats.get(m["id"]) == "People"
+                                and not words(m["name"]) & CROWD_SKIP
+                                and (seats or "sitting" not in m["name"].lower())])
+        if not people:
+            return None
+        want = next((poses for trig, poses in CROWD_POSES if ws & set(trig)), ("standing", "waving", "lookingup"))
+
+        def pose_rank(pm):
+            nm = pm[1]["name"].lower().replace(" ", "")
+            return next((i for i, p in enumerate(want) if p in nm), len(want))
+        people.sort(key=lambda pm: (pose_rank(pm), rng.random()))
+        best = [pm for pm in people if pose_rank(pm) < len(want)] or people
+        k = n or rng.randint(5, 7)
+        pick = (best * k)[:k] if len(best) < k else best[:max(k, 1)]
+        # sitting models are short and the files use any units: one scale for the whole pack, from its standing
+        # people (1.72 m), so a sitting person is sitting-height, not a giant
+        for pack, m in pick:
+            stand = [x.get("height") for x in pack.get("models", []) if x.get("height") and
+                     "standing" in x["name"].lower() and not words(x["name"]) & CROWD_SKIP]
+            ref = sorted(stand)[len(stand) // 2] if stand else max(0.01, float(m.get("height") or 1.7))
+            d = match_model(pack, m, m["name"], looks)
+            h = float(m.get("height") or ref) * 1.72 / ref
+            d.update(height=round(h, 3), width=round(max(0.45, d["width"] * h / max(d["height"], 0.01)), 3),
+                     needs_height=False)
+            d.pop("needs_height", None)
+            members.append(d)
+    if not members:
+        return None
+    # two loose rows, the back row shifted half a gap so heads don't hide each other
+    gap = max(0.75, max(m["width"] for m in members) * 1.05)
+    offsets, row_n = [], (len(members) + 1) // 2
+    for i, m in enumerate(members):
+        row, col = (0, i) if i < row_n else (1, i - row_n)
+        cnt = row_n if row == 0 else len(members) - row_n
+        x = (col - (cnt - 1) / 2) * gap + (gap / 2 if row else 0.0) + rng.uniform(-0.12, 0.12)
+        y = row * gap * 0.9 + rng.uniform(-0.1, 0.1)
+        offsets.append([round(x, 2), round(y, 2), round(rng.uniform(-0.35, 0.35), 2)])
+    span_x = max(abs(o[0]) for o in offsets) + gap / 2
+    return {"kind": re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_"), "looks": looks, "by": "imported",
+            "source": "imported", "name": f"crowd of {members[0]['name']}", "pack": members[0].get("pack", ""),
+            "crowd": members, "offsets": offsets, "parts": [],
+            "height": round(max(m["height"] for m in members), 3), "width": round(span_x * 2, 2),
+            "radius": round(max(span_x, gap), 2), "place": "near"}
+
+
 def _setting_cats(setting):
     ws = set(re.findall(r"[a-z]+", str(setting or "").lower()))
     return {c for wl, cats in SETTING_CATS if ws & set(wl.split()) for c in cats}, bool(ws & INDOOR_WORDS)
@@ -787,6 +913,8 @@ TYPICAL_HEIGHT = [
     ({"couch"}, 0.85), ({"bookshelf"}, 1.8), ({"shelf"}, 1.6), ({"wardrobe"}, 2.0), ({"lamp"}, 1.5),
     ({"door"}, 2.1), ({"fridge"}, 1.8), ({"tree"}, 5.0), ({"bush"}, 1.0), ({"rock"}, 0.8), ({"flower"}, 0.4),
     ({"crate"}, 0.6), ({"barrel"}, 0.9), ({"plant"}, 0.9),
+    ({"male"}, 1.78), ({"man"}, 1.78), ({"female"}, 1.66), ({"woman"}, 1.66), ({"person"}, 1.72),
+    ({"human"}, 1.72), ({"soldier"}, 1.78), ({"child"}, 1.2), ({"kid"}, 1.2),
 ]
 
 

@@ -46,7 +46,11 @@ SCARED = re.compile(r"\b(help|scary|scared|ghosts?|no no|monsters?)\b|\brun(!|\s
 # ("run" alone isn't fear: "I run the place", "run by a cat" got the scared pose)
 CAPS = re.compile(r"\b[A-Z]{3,}\b")
 
-CAM_CYCLE = ["closeup", "medium", "side", "dramatic", "low", "macro", "closeup", "medium", "tiny", "dramatic"]
+CAM_CYCLE = ["closeup", "medium", "side", "dramatic", "low", "macro", "high", "closeup", "medium", "tiny", "dramatic"]
+# a "camera beat" (move_every): instead of her walking about, the camera does something - a new angle that moves
+WALK_GAP = 5          # an automatic walk never comes within this many shots of another walk
+CAMERA_BEATS = [("side", "orbit"), ("low", "push_in"), ("high", "pull_out"), ("wide", "orbit"),
+                ("dramatic", "push_in"), ("side", "pull_out")]
 
 
 def mood_of(text):
@@ -308,7 +312,16 @@ def add_cast_plan(result, plan, skip=()):
         if not who or not isinstance(info, dict) or flat(who) in skip:
             continue
         if set(who.split("_")) & GROUP_WORDS:
-            continue                         # "feline_army", "crowd": a group isn't one thing on screen
+            # "crowd", "audience": a group of the user's imported people (or animals) - only when it can be built;
+            # a made-up shape for "feline_army" was four boxes
+            try:
+                import imported
+                ok = imported.crowd_def(who, str(info.get("looks") or "")) is not None
+            except Exception:
+                ok = False
+            if not ok:
+                continue
+            info = dict(info, type="thing")
         cur = cast.get(who) or {}
         if not cur.get("looks") or cur.get("looks") == who.replace("_", " "):
             cur["looks"] = str(info.get("looks") or who.replace("_", " "))[:120]
@@ -579,8 +592,10 @@ def _pick_dest(marks, pos, visits):
 
 
 def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse", speakers=None, beat_words=0,
-           beat_sets=None, walk_every=0, wipe_every=0):
-    """walk_every: every Nth beat she walks, with the camera following her (0 = never).
+           beat_sets=None, walk_every=0, wipe_every=0, move_every=0):
+    """walk_every: every Nth beat she walks, with the camera following her (0 = never), never within WALK_GAP shots
+    of another walk. move_every: every Nth beat the camera moves instead (orbit / push in / pull out from a new
+    angle) - she walked about too much when every 3rd beat was a walk.
     wipe_every: a blurred foreground wipe at every Nth cut (0 = never)."""
     """speakers: {lower-case name or id: character id} for the main characters in this video. A line that
     starts with one of their names ("Ethan: ...") is said by them; other lines are said by the episode's character."""
@@ -671,10 +686,17 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             if cam is None or cam == prev_cam:
                 cam = next(c for c in CAM_CYCLE[i % len(CAM_CYCLE):] + CAM_CYCLE if c != prev_cam)
             shot.update(action=action, camera=cam, move=move, expression=expr)
+            walked = any(s.get("action") in catalog.MOVE_ANIMS for s in shots[-WALK_GAP:])
             if walk_every and i % walk_every == walk_every - 1 and action in ("idle", "wave", "nod") \
-                    and "action" not in d and len(text.split()) > 2 \
+                    and "action" not in d and len(text.split()) > 2 and not walked \
                     and d.get("camera") not in CLOSE_CAMS:   # not on a short "Nya!", nor in a close shot asked for
                 shot.update(action="walk_to", camera="medium", move="follow")     # a tracking shot as she walks
+            elif move_every and i % move_every == move_every - 1 and move == "static" \
+                    and "camera" not in d and "move" not in d:
+                cb = CAMERA_BEATS[(i // move_every) % len(CAMERA_BEATS)]
+                if cb[0] == prev_cam:
+                    cb = CAMERA_BEATS[(i // move_every + 1) % len(CAMERA_BEATS)]
+                shot.update(camera=cb[0], move=cb[1])
         shot.update(d)
         if shot.get("action") in catalog.MOVE_ANIMS and shot.get("camera") in CLOSE_CAMS and "camera" not in d:
             shot.update(camera="medium", move="follow")      # a walk gets a tracking shot, not an eye close-up
@@ -724,8 +746,9 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             shot.setdefault("to", _pick_dest(marks, pos, visits))
             a_, b_ = _xy(sets, cur_set, pos), _xy(sets, cur_set, shot["to"]) if isinstance(shot["to"], str) else None
             if a_ and b_ and b_[1] - a_[1] > 1.0 and abs(b_[1] - a_[1]) > abs(b_[0] - a_[0]) and "camera" not in d:
-                # walking away from the camera: from the front that's her back for the whole line
-                shot.update(camera="side", move="follow")
+                # walking away from the camera: from the front that's her back for the whole line - a camera
+                # ahead of her looking back shows her face (side still showed her three-quarters from behind)
+                shot.update(camera="lead", move="follow")
             pos = shot["to"]
             visits[pos] = visits.get(pos, 0) + 1
         elif shot.get("action") == "point":
@@ -737,6 +760,13 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             at = shot.get("at") or shot.pop("to", None) or (named[0] if named else None) or near
             if at:
                 shot["at"] = at
+                a_ = _xy(sets, cur_set, pos)
+                b_ = at if isinstance(at, (list, tuple)) else _xy(sets, cur_set, at)
+                if a_ and b_ and b_[1] - a_[1] > 1.0 and abs(b_[0] - a_[0]) < b_[1] - a_[1] \
+                        and "camera" not in d:
+                    # it's behind her: from the front no arm pose reads as "back there" (her arm only swings out
+                    # sideways), from the side the arm reaching back and the thing itself are both in frame
+                    shot.update(camera="side", move="static")
         else:
             shot.pop("to", None)
         for who in re.findall(r"\+([a-z0-9_]+)", text, re.I):    # "Hi there, +tiny_dragon!" (outside the brackets)

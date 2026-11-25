@@ -356,7 +356,7 @@ def _clean_lines(text, keep=()):
 
 
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
-                    others=None):
+                    others=None, polish=True):
     """others: the other main characters in the video, [{"name", "about"}] - they get some lines too."""
     others = [o for o in (others or []) if isinstance(o, dict) and o.get("name")]
     cams = ", ".join(catalog.CAMERAS)
@@ -376,7 +376,9 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         f"cameras: {cams}\nactions: {anims}\nexpressions: {exprs}\n"
         "An action that is NOT in that list can be written as do: and one word - [do:salute], [do:yawn], [do:flex] - "
         "and it will be animated for you; use that only for clear body actions.\n"
-        f"places to walk to (with walk_to/run_to/sneak_to): {marks}\n"
+        f"places to walk to (with walk_to/run_to/sneak_to): {marks} - walk at most once or twice in the whole "
+        "script, only when the story needs her somewhere else; for variety change the camera, her action or "
+        "expression, bring something on screen or change the place instead of walking about\n"
         f"sound effects (optional, at most one per line, only when it fits): {sfx_names}\n"
         "When another person or a thing actually shows up in the scene, bring it on screen with '+name verb' in "
         "the brackets (ONE lowercase word or words_joined_by_underscores, e.g. +mail_van, never two separate "
@@ -412,6 +414,9 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
     alias = {a.lower(): o["name"] for o in others for a in (o.get("aliases") or []) + [o["name"]]}
     out = []
     for line in _clean_lines(text, keep=list(alias)):
+        # "[cameras: macro, happy]", "[action: shrug]": the prompt's list labels copied into the brackets (the
+        # director would try to animate "cameras: macro")
+        line = re.sub(r"(?<=[\[,])\s*(?:cameras?|actions?|expressions?|moods?|emotions?)\s*:\s*", " ", line, flags=re.I)
         m = re.match(r"^(\[[^\]]*\]\s*)?([^:\[\]]{1,31}):\s+", line)     # "Ethan: ..." -> the co-star's own name
         if m and m.group(2).strip().lower() in alias:
             line = (m.group(1) or "") + alias[m.group(2).strip().lower()] + ": " + line[m.end():]
@@ -419,6 +424,56 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
     out = out[: int(lines) + 2 + len(others) * 2]
     if not out:
         raise RuntimeError("The model returned no usable lines - try again or pick another model.")
+    if polish:
+        out = polish_script(url, model, title, out, tone)
+    return out
+
+
+_LINE_HEAD = re.compile(r"^\s*((?:\[[^\]]*\]\s*)?(?:[A-Za-z][\w ]{0,30}:\s+)?)(.*)$")
+
+
+def polish_script(url, model, title, lines, tone="funny", temperature=0.4):
+    """An editor's second pass over a script: correct, natural English, each line following from the last, the
+    title's question really answered (a true fact, said simply), no joke used twice, a punchline that lands at the
+    end, max 14 words a line. Only the spoken words change: every line keeps its own [directions] and "Name:" (the
+    model is shown them but its copies are ignored), and the line count stays the same. Any problem -> the script
+    as it was."""
+    if not lines:
+        return lines
+    heads, texts = [], []
+    for ln in lines:
+        m = _LINE_HEAD.match(ln)
+        heads.append(m.group(1) if m else "")
+        texts.append((m.group(2) if m else ln).strip())
+    system = ("You are the script editor for short, funny, family-friendly animated Reels where a character answers "
+              "a curious question. First list what is wrong with the script, then rewrite the spoken lines to fix "
+              "it. Check: wrong or made-up facts (the title's question must get a real, true answer, said simply - "
+              "a joke can exaggerate, but the answer itself is true); broken or unnatural English and made-up words; "
+              "lines that don't follow from the one before; a joke or idea used twice; an ending that doesn't land "
+              "(the last line is a punchline); more than 14 words in a line; swearing. Keep the same number of "
+              "lines in the same order, each line keeping its job (who speaks, names and +name words exactly). "
+              "Reply with JSON only: "
+              '{"problems": ["..."], "lines": ["...", "..."]}')
+    user = (f"Title: {title}\nTone: {tone}\nLines (the part in front of each line is the stage direction - "
+            "don't write it in your answer):\n" + "\n".join(f"{i + 1}. {h}{t}" for i, (h, t) in
+                                                           enumerate(zip(heads, texts))))
+    try:
+        r = chat_json(url, model, system, user, temperature)
+        new = r.get("lines")
+    except Exception:
+        return lines
+    if not (isinstance(new, list) and len(new) == len(lines) and all(isinstance(x, str) and x.strip() for x in new)):
+        return lines
+    out = []
+    for h, old, nw in zip(heads, texts, new):
+        nw = re.sub(r"^\s*\d+[.)]\s*", "", nw.strip().strip('"'))
+        m = _LINE_HEAD.match(nw)                   # the editor copied the direction/name anyway: drop its copy
+        if m and m.group(1).strip():
+            nw = m.group(2).strip()
+        lost = set(re.findall(r"\+[a-z0-9_]+", old)) - set(re.findall(r"\+[a-z0-9_]+", nw))
+        if not nw or len(nw.split()) > 22 or lost or "[" in nw:
+            nw = old                               # too long, or it dropped someone's entrance: keep the original
+        out.append(h + nw)
     return out
 
 
@@ -481,7 +536,33 @@ def generate_titles(url, model, character, theme="", count=8, temperature=1.0):
         t = clean_title(t)
         if 8 < len(t) < 90 and t.lower() not in (x.lower() for x in out):
             out.append(t)
-    return out[: int(count)]
+    return rank_titles(url, model, out[: int(count)])
+
+
+def rank_titles(url, model, titles):
+    """The titles best first: a second look scores each one (makes you curious, clear, correct English, a real
+    question with a real answer). A title with broken grammar is fixed when the fix is small. Any problem -> as
+    they were."""
+    if len(titles) < 2:
+        return titles
+    system = ("You judge titles for short educational-but-funny Reels. For each title give a score from 1 to 10: "
+              "how much it makes people curious, how clear and short it is, and whether it is a real question with "
+              "a real answer. Fix its English if it is wrong (keep the meaning). Reply with JSON only: "
+              '{"titles": [{"title": "the title (fixed if needed)", "score": 1-10}, ...]} - same order, same number.')
+    try:
+        r = chat_json(url, model, system, "Titles:\n" + "\n".join(titles), 0.2).get("titles")
+        if not (isinstance(r, list) and len(r) == len(titles)):
+            return titles
+        scored = []
+        for i, (orig, x) in enumerate(zip(titles, r)):
+            t = clean_title(str(x.get("title") or orig)) if isinstance(x, dict) else orig
+            if not (8 < len(t) < 90) or abs(len(t) - len(orig)) > 25:
+                t = orig                           # a rewrite, not a fix: keep the original
+            sc = float(x.get("score") or 0) if isinstance(x, dict) else 0.0
+            scored.append((-sc, i, t))
+        return [t for _, _, t in sorted(scored)]
+    except Exception:
+        return titles
 
 
 

@@ -35,10 +35,8 @@ def image_mat(path, lit=False, fog=True):
     lit=False: glowing (screens, posters). fog=False for the far sky backdrop."""
     img = bpy.data.images.load(path, check_existing=True)
     m = bpy.data.materials.new("tex_" + img.name)
-    try:
+    if m.node_tree is None:     # Blender < 5: nodes are off by default (5.x always has them; use_nodes goes in 6.0)
         m.use_nodes = True
-    except Exception:
-        pass
     N, L = m.node_tree.nodes, m.node_tree.links
     N.clear()
     out = N.new("ShaderNodeOutputMaterial")
@@ -523,10 +521,8 @@ def sprite_mat(path):
     """Cut-out sprite: pixel-sharp texture, hard alpha edge, lit like the set and fogged."""
     img = bpy.data.images.load(str(path), check_existing=True)
     m = bpy.data.materials.new("spr_" + img.name)
-    try:
+    if m.node_tree is None:     # Blender < 5: nodes are off by default (5.x always has them; use_nodes goes in 6.0)
         m.use_nodes = True
-    except Exception:
-        pass
     try:
         m.blend_method = "CLIP"
     except Exception:
@@ -601,6 +597,12 @@ def p_model(r, p, d):
 def p_custom(r, p, d):
     """An AI-designed prop (propgen): its drawn sprite if it has one, else a list of primitive parts.
     Each copy of a shape prop gets a slight colour/size wobble. Real imported models come first."""
+    if d.get("crowd"):                           # a group (imported.crowd_def): each member at its offset
+        for i, (md, off) in enumerate(zip(d["crowd"], d.get("offsets") or [])):
+            sub = H.empty(f"{p['kind']}_m{i}", r, (off[0], off[1], 0.0))
+            sub.rotation_euler = (0.0, 0.0, off[2] if len(off) > 2 else 0.0)
+            p_custom(sub, {"kind": f"{p['kind']}_m{i}"}, md)
+        return None
     if d.get("model"):
         return p_model(r, p, d)
     # priority: generated 3D parts, then the 2D picture - a picture is only used when there are no parts
@@ -742,6 +744,34 @@ def walls(pal):
     P("cube", "trim_left", (-hw, 0, 0.6), (0.05, hd + 0.2, 0.6), trim, None)
     for w in (wb, wl):
         texture_world_uv(w, "walls", size=2.5)
+    dollhouse_walls(hw, hd, shade(wall, 0.9))
+
+
+def dollhouse_walls(hw, hd, colour):
+    """The front (camera side) and right walls of a room, seen only from inside: a camera that looks back
+    toward the usual camera side (the lead camera on a walk) sees a wall, a camera outside the room looks
+    straight through it (back faces culled, no shadows)."""
+    y0 = -hd - 1.0                                          # where the floor ends
+    for name, verts in (("wall_front", [(-hw, y0, 0), (hw, y0, 0), (hw, y0, 9), (-hw, y0, 9)]),
+                        ("wall_right", [(hw, y0, 0), (hw, hd, 0), (hw, hd, 9), (hw, y0, 9)])):
+        me = bpy.data.meshes.new(name)
+        me.from_pydata(verts, [], [(0, 3, 2, 1)])             # facing into the room
+        me.update()
+        me.materials.append(H.mat(colour))
+        o = bpy.data.objects.new(name, me)
+        H.scene.collection.objects.link(o)
+        texture_world_uv(o, "walls", size=2.5)
+        m = o.data.materials[0].copy()                        # its own copy: the culling is for this wall only
+        m.use_backface_culling = True
+        try:
+            m.use_backface_culling_shadow = True
+        except Exception:
+            pass
+        o.data.materials[0] = m
+        try:
+            o.visible_shadow = False
+        except Exception:
+            pass
 
 
 def ground_outdoor(kind, pal):
@@ -781,7 +811,7 @@ def make_thing(name, kind, d, helpers):
     if RNG is None:
         RNG = random.Random(7)
     root = H.empty(f"cast_{name}", None, (0, 0, 0))
-    if d and (d.get("parts") or d.get("model")):
+    if d and (d.get("parts") or d.get("model") or d.get("crowd")):
         p_custom(root, {"kind": name}, d)
     elif kind in PROP_BUILDERS:
         PROP_BUILDERS[kind](root, {"kind": kind, "pos": [0, 0], "scale": 1.0})

@@ -543,6 +543,11 @@ def imported_def(kind, looks="", setting="", log=print):
     """A real imported model (assets/imported) for `kind`, checked BEFORE anything is generated. None if no match."""
     try:
         import imported
+        if imported.is_group(kind):            # "marching_soldier_group", "crowd": several models, not one
+            d = imported.crowd_def(kind, looks, setting)
+            if d:
+                log(f"[props] '{kind}' is a crowd of {len(d['crowd'])} imported models ({d['name']})")
+            return d
         d = imported.match(kind, looks, setting)
     except Exception as exc:
         log(f"[props] imported models unavailable ({exc.__class__.__name__}: {str(exc)[:80]})")

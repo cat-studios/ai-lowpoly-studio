@@ -32,7 +32,8 @@ scene.render.image_settings.color_mode = "RGBA"
 scene.render.film_transparent = True
 world = scene.world or bpy.data.worlds.new("preview_world")
 scene.world = world
-world.use_nodes = True
+if world.node_tree is None:     # Blender < 5 (use_nodes goes in 6.0)
+    world.use_nodes = True
 bg = world.node_tree.nodes.get("Background")
 if bg is not None:
     bg.inputs[0].default_value = (0.85, 0.85, 0.88, 1.0)

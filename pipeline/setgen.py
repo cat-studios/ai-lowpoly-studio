@@ -264,10 +264,20 @@ def _place_zone(rng, kind, zone, placed, indoor):
         elif zone == "showcase":   # in shot: beside / behind the stage, facing the camera
             side = rng.choice([-1, 1])      # the wide camera sees about |x| < 0.36 * (y + 6) (9:16, 28 mm)
             y = rng.uniform(1.5, 4.8) if indoor else rng.uniform(2.5, 7.5)
+            if indoor:                      # a small room's back wall is at y = 3: stay inside it
+                y = min(y, hd - r - 0.3)
             x = side * rng.uniform(0.4, 0.9) * 0.36 * (y + 6)
             if indoor:
                 x = max(-hw + r + 0.2, min(hw - r - 0.2, x))
             rot = rng.uniform(-0.5, 0.5)
+        elif zone == "view":       # anywhere the wide shot sees, behind the stage too (fill_view)
+            y = rng.uniform(0.5, hd - r - 0.3) if indoor else rng.uniform(1.0, 12.0)
+            x = rng.uniform(-0.95, 0.95) * 0.36 * (y + 6)
+            if indoor:
+                x = max(-hw + r + 0.2, min(hw - r - 0.2, x))
+            if abs(x) < 1.1 + r and y < 3.8:   # keep the space just behind her open (the "back" mark)
+                continue
+            rot = rng.uniform(-0.6, 0.6)
         elif zone == "scatter":
             lim = (hw - 1, hd - 1) if indoor else (7, 7)
             x, y = rng.uniform(-lim[0], lim[0]), rng.uniform(-lim[1] + 1, lim[1])
@@ -308,6 +318,66 @@ def _place_zone(rng, kind, zone, placed, indoor):
             return {"kind": kind, "pos": [round(x, 2), round(y, 2)], "rot": round(rot, 3), "z": z,
                     "scale": round(s * CUSTOM_S.get(kind, 1.0), 2)}
     return None
+
+
+NOT_DRESSING = {"liquid", "hill", "rug", "fence", "water", "building"} | WALL_PROPS
+
+
+def in_view(x, y, margin=0.0):
+    """Is a floor spot inside the 9:16 wide shot (camera 6 m in front of the stage, 28 mm)?"""
+    return y > -1.5 and abs(x) < 0.36 * (y + 6) + margin
+
+
+def view_count(placed):
+    """How many real things (not rugs, fences, hills, wall pictures) the wide shot sees."""
+    return sum(1 for p in placed if p["kind"] not in NOT_DRESSING and in_view(*p["pos"][:2]))
+
+
+FILL_IN, FILL_OUT = 9, 11        # things the wide shot should see; sets had 4-7 (a big empty room round her)
+# things a place has several of - copied to fill the view. One-off things (a barn door, a flagpole, the AI's
+# signature prop) are only copied when the set already has two or more of them.
+DRESSING = re.compile(r"(chair|stool|seat|bench|plant|flower|pot|vase|crate|box|barrel|sack|bag|basket|bale|book|"
+                      r"stack|pile|lamp|lantern|candle|rock|stone|bush|shrub|tree|pine|palm|mushroom|cactus|table|"
+                      r"desk|shelf|cart|cone|bin|bucket|jar|bottle|cushion|pillow|toy|ball|sign|post|log|stump|"
+                      r"fern|grass|reed|coral|shell|crystal|gumdrop|lollipop|tombstone|grave|statue|pillar|column)s?$")
+
+
+ONE_OFF = re.compile(r"(door|gate|portal|entrance|arch|flag|banner|altar|throne|counter|stage|sign_?board)")
+
+
+def fill_view(rng, placed, indoor, log=print, target=None):
+    """Fuller sets: add more of the set's own things (never new kinds - they'd break the theme) where the wide
+    shot sees them, until it shows `target` things. Big furniture is left alone (one sofa is enough); small things
+    (chairs, plants, crates, the AI's props) are copied, the least-copied first. Returns how many were added."""
+    target = target or (FILL_IN if indoor else FILL_OUT)
+    have = view_count(placed)
+    if have >= target:
+        return 0
+    counts = {}
+    for p in placed:
+        if p["kind"] not in NOT_DRESSING and p["kind"].removeprefix("imp_") not in INDOOR_BIG and not p.get("z") \
+                and 0 < _radius(p["kind"]) <= (1.2 if indoor else 2.0):
+            counts[p["kind"]] = counts.get(p["kind"], 0) + 1
+    counts = {k: n for k, n in counts.items() if (n >= 2 or DRESSING.search(k.removeprefix("imp_")))
+              and not ONE_OFF.search(k)}
+    if not counts:
+        return 0
+    added, fails = 0, 0
+    while have + added < target and fails < 24:
+        kind = min(counts, key=lambda k: (counts[k] + rng.random() * 0.9))
+        if counts[kind] >= 6:
+            break
+        q = _place(rng, kind, rng.choice(["showcase", "view"]), placed, indoor)
+        if q and in_view(*q["pos"]):
+            placed.append(q)
+            counts[kind] += 1
+            added += 1
+        else:
+            fails += 1
+            counts[kind] += 0.5                 # no room for this one: try the others first
+    if added:
+        log(f"[set] filled the view: +{added} ({have} -> {have + added} things in the wide shot)")
+    return added
 
 
 def _mark_near(prop):
@@ -623,9 +693,9 @@ def zone_for(kind, place, indoor, rng, n=1):
         return place                                   # a theme's exact zone: keep it (a poster stays on the wall)
     if kind in INDOOR_BIG and indoor:
         return rng.choice(["wall_back", "wall_back", "wall_left"])
-    if indoor:
-        return {"wall": rng.choice(["wall_back", "wall_left"]), "corner": "corner", "far": "wall_back"}.get(
-            place, rng.choice(["scatter", "corner", "scatter"]))
+    if indoor:     # the left wall and most of the floor are outside the wide shot: favour where it looks
+        return {"wall": rng.choice(["wall_back", "wall_back", "wall_left"]), "corner": "corner",
+                "far": "wall_back"}.get(place, rng.choice(["showcase", "scatter", "showcase", "corner"]))
     if place == "far" or (kind in OUT_FAR and n >= 6):
         return "far"
     if place == "scatter":
@@ -968,6 +1038,7 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
         fit = place_on_surfaces(rng, k, min(n, 4), placed)
         if fit < min(n, 4):
             add(k, "scatter", min(n, 4) - fit)
+    fill_view(rng, placed, indoor, log)
     if indoor:
         for wp in (plan.get("wall_pictures") or []):
             if isinstance(wp, dict) and wp.get("kind") in WALL_HANGS:

@@ -1125,7 +1125,8 @@ class Handler(BaseHTTPRequestHandler):
                                     speakers=speakers, beat_words=int(b.get("beat_words", 4) or 0),
                                     beat_sets=[x for x in (b.get("beat_sets") or [])
                                                if x in catalog.all_sets() or str(x).startswith("new:")] or None,
-                                    walk_every=3 if int(b.get("beat_words", 4) or 0) else 0,
+                                    walk_every=8 if int(b.get("beat_words", 4) or 0) else 0,
+                                    move_every=3 if int(b.get("beat_words", 4) or 0) else 0,
                                     wipe_every=4 if int(b.get("beat_words", 4) or 0) else 0)
             res["set"] = b.get("set", "cafe")
             res["co_stars"] = co
