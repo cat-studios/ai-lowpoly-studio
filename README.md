@@ -219,10 +219,23 @@ the camera instead: every few shots a new angle that circles, pushes in or pulls
 the camera, a camera ahead of her films her face; when she points at something behind her, the shot is from the
 side so you see the arm and the thing.
 
+### Kinds of video (templates)
+Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):
+- 💭 **What if…** - the classic: she imagines something silly and acts it out.
+- 🔧 **How it works** - she presents a model of one real thing, opens it and shows how its parts work.
+- ⚡ **Quick facts** - a few surprising true facts, each shown with a cutaway, faster cuts.
+- 📖 **Mini story** - a little story with a problem and a twist, a second place and a visitor.
+
+### Series
+**📺 Make a series** (next to 🎲 Make a random video): one idea, 1-4 episodes. Each episode gets its own question
+as the title, a script that knows what the others cover (and ends with a hook to the next), its own scene and
+shots, and is rendered - one after another, in the background, so you can lock your phone. They show up on the
+Videos page with a 📺 tag (the idea and the part number).
+
 ### Make a random video
 **🎲 Make a random video** on the Create page opens a little game: after a magic shuffle it deals three cards for
 where it happens, then three topics, a vibe, who drops in, the time of day and the length (🎲 Three more deals new
-cards, ← Back goes back). Last comes an optional note you can type. Then the studio writes the title and script,
+cards, ← Back goes back). Last comes an optional note you can type (the first cards pick the kind of video). Then the studio writes the title and script,
 builds a new scene for your place, directs it and renders the video.
 
 ## Props the studio makes

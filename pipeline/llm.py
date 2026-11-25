@@ -344,6 +344,7 @@ def _clean_lines(text, keep=()):
     text = re.sub(r"(?<=[.!?\"'])\s+(?=\[)", "\n", text)
     for raw in text.splitlines():
         s = raw.strip().strip('"').strip()
+        s = re.sub(r'"\s*,?\s*$', "", s).strip()     # a line the model wrapped like JSON: ... nya!",
         s = re.sub(r"^\*{1,2}([^*:]{1,30})(?:\*{1,2}:|:\*{1,2})\s*", r"\1: ", s)   # **Name:** / **Name**: -> Name:
         s = re.sub(r"^(\d+[.)]|[-*•]|line\s*\d+:)\s*", "", s, flags=re.I)   # numbering / bullets
         m = re.match(r"^([A-Z][\w ]{0,20}):\s+", s) if not s.startswith("[") else None
@@ -522,7 +523,7 @@ def clean_title(t):
     return t[:1].upper() + t[1:]
 
 
-def generate_titles(url, model, character, theme="", count=8, temperature=1.0):
+def generate_titles(url, model, character, theme="", count=8, temperature=1.0, starts=None, hint=""):
     """Curiosity titles like the reference channel: plain questions about the world ("What if every ant
     vanished?", "How heavy is a cloud?"). The character presents them, so she isn't in the title, and there's no
     "nya", cat words or emoji."""
@@ -531,8 +532,10 @@ def generate_titles(url, model, character, theme="", count=8, temperature=1.0):
               "plain-English question that makes people want to know the answer, for example:\n"
               "What if every ant on Earth vanished?\nHow heavy is a cloud?\nWhy is the sky blue?\n"
               "What does the inside of a volcano look like?\nHow can a plane stay in the air?\n"
-              f"Start each title with one of: {', '.join(TITLE_STARTS)} (mix them, don't only use 'What if').\n"
-              "Rules: under 10 words; no character names, no cat sounds or cat words (no 'nya', 'meow', 'purr', "
+              f"Start each title with one of: {', '.join(starts or TITLE_STARTS)} (mix them"
+              + (", don't only use 'What if').\n" if not starts else ").\n")
+              + (f"Each title is about {hint}.\n" if hint else "")
+              + "Rules: under 10 words; no character names, no cat sounds or cat words (no 'nya', 'meow', 'purr', "
               "'catgirl'), no emoji, no hashtags, no quotes, no numbering. Output ONLY the titles, one per line.")
     user = ((f"Topic: {theme}\n" if theme else "Any topic - surprise me with things people wonder about.\n")
             + f"Give {int(count)} different titles.")
@@ -542,6 +545,30 @@ def generate_titles(url, model, character, theme="", count=8, temperature=1.0):
         if 8 < len(t) < 90 and t.lower() not in (x.lower() for x in out):
             out.append(t)
     return rank_titles(url, model, out[: int(count)])
+
+
+def series_titles(url, model, idea, count=3, starts=None, hint="", temperature=0.9):
+    """Episode titles for a series about one idea: each a curious question of its own, together telling the idea
+    from different angles (no "Part 1" - each video must stand alone), in a good watching order."""
+    count = max(1, min(4, int(count)))
+    system = ("You plan a short series of educational-but-funny Reels about ONE idea. Each episode answers its own "
+              "curious question about the idea, from a different angle, so each video stands alone but together "
+              "they cover the idea; order them so the first one hooks people. "
+              f"Start each title with one of: {', '.join(starts or TITLE_STARTS)}. "
+              + (f"Each title is about {hint}. " if hint else "")
+              + "Rules: under 10 words; no character names, no cat words, no emoji, no numbering, no 'Part 1'. "
+              'Reply with JSON only: {"titles": ["...", "..."]}')
+    # a few extra, then the best ones by rank_titles (it scores "a real question with a real answer" - the first
+    # try gave "How does your skin know when you're full?")
+    r = chat_json(url, model, system, f"Idea: {idea}\nNumber of episodes: {count + 3}", temperature)
+    out = []
+    for t in (r.get("titles") or []):
+        t = clean_title(str(t))
+        if 8 < len(t) < 90 and t.lower() not in (x.lower() for x in out):
+            out.append(t)
+    if not out:
+        raise RuntimeError("The model returned no episode titles - try again")
+    return rank_titles(url, model, out)[:count]
 
 
 def rank_titles(url, model, titles):

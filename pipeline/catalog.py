@@ -192,7 +192,9 @@ def all_sets():
 
 def as_dict():
     """JSON-friendly catalog for the web app."""
+    import templates
     return {
+        "templates": templates.as_list(),     # kinds of video (pacing/content - never the look)
         "anims": {k: {"description": d, "moves": m} for k, (d, m) in ANIMS.items()},
         "expressions": EXPRESSIONS,
         "cameras": CAMERAS,

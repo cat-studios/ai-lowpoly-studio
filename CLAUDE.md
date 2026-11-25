@@ -428,6 +428,29 @@ camera.
   `bisect_plane` + `holes_fill`, the cut capped in a darker colour): the back half stays, the front half is the
   cover - a cross-section. Box sections stay hollow boxes. Parts carry `"half": "back"|"front"` through `clean()`.
 
+## Templates and series (2026-11-25, step 2 of the explainer plan)
+- **Templates** (`pipeline/templates.py`: `TEMPLATES`, `get`, `pacing`, `as_list`; in `catalog.as_dict()["templates"]`)
+  = the KIND of video, never the look: `what_if` (default, the classic), `how_it_works` (`[show:]` explainer
+  objects, no walks), `quick_facts` (3-5 true facts each with a `[cutaway:]`, faster cuts: beat_words 3,
+  move_every 2, wipe_every 3), `mini_story` (`[@ place]` + `+name`, a twist). Each has title starts + a hint
+  (`llm.generate_titles(starts=, hint=)`), extra writer rules + a default tone and line range, and director
+  pacing (`beat_words/walk_every/move_every/wipe_every` for `autodirect.direct`). Server: `/api/ai/titles`,
+  `/api/ai/script`, `/api/autodirect` take `template`; the episode keeps `"template"`. UI: Create → 1 Idea →
+  "Kind of video" (`CS.ep.template`, sets tone + lines), and the random-video popup's first card step (`kind`;
+  `MW_STEPS` is built per open from `MW_STEPS_BASE`).
+- **Series** (`pipeline/series.py`, job kind `series` in the `other` lane, `POST /api/series {idea, count 1-4,
+  template, length short|medium|long, note, character, model}` writes a spec to `build/series/` and runs it): the
+  job plans the episode titles (`llm.series_titles`: one question each, different angles, no "Part 1"), then for
+  each episode calls the studio's OWN API on localhost - `/api/ai/script` (set "auto", the other titles in the
+  notes so they don't repeat, a hook to the next one), `/api/autodirect` (AI cast + scenes), `PUT /api/episodes`,
+  `/api/render` - so it gets everything the Create page does, and the renders wait in the render queue. Episodes
+  carry `"series": {id, idea, part, of}`; the Videos page shows a 📺 idea part/of pill (`list_videos`). UI: Create →
+  📺 Make a series (`openSeriesDialog`).
+- **Design server** (the user's brother's Ollama, `10.1.2.196:11435`, not open yet): `ollama.design_url` +
+  `ollama.design_model` (Settings → AI tools, free text: the model must already be on that server - never pull
+  there). Only 3D object design uses it (`propgen.design_call` for `GUIDE` redesigns, explainer anatomy + plan);
+  unreachable → the main Ollama for the rest of the run (`_DESIGN_DOWN`).
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

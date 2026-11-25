@@ -305,6 +305,10 @@ def _stage_for_events(shot, d):
         shot["camera"] = "medium"     # only these cameras pull back to show the arrival beside her (a side shot lost the dog)
 
 
+# words the script writer uses for "the object on stage" in [show: ...] (copied from the prompt's example)
+SHOW_PLACEHOLDERS = {"thing", "it", "model", "object", "this", "that", "part"}
+
+
 GROUP_WORDS = set("army armies crowd crowds team group squad troops audience everyone everybody people herd "
                   "flock swarm gang class family".split())
 ARRIVALS = ("enter", "crash_in", "appear", "fall", "fly_by", "run_to", "walk_to")
@@ -680,10 +684,12 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                 shown = None
             elif ws:
                 who = re.sub(r"[^a-z0-9_]+", "", ws[0])[:24]
+                if shown and who in SHOW_PLACEHOLDERS:
+                    who = shown["who"]             # "[show: thing part]" / "[show: it open]": the one on stage
                 is_open = any(w in ("open", "inside", "opened", "cut", "cutaway", "cross_section") for w in ws[1:])
                 part = next((re.sub(r"[^a-z0-9_]+", "", w) for w in ws[1:]
-                             if w not in ("open", "inside", "opened", "cut", "cutaway", "cross_section", "closed")),
-                            None)
+                             if w not in ("open", "inside", "opened", "cut", "cutaway", "cross_section", "closed")
+                             and w not in SHOW_PLACEHOLDERS), None)     # "[show: eye model]": not a part
                 if who and (not shown or shown["who"] != who):
                     if shown:
                         shot_events_pre.append({"who": shown["who"], "do": "vanish"})

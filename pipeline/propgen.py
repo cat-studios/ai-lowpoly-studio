@@ -48,8 +48,27 @@ GUIDE = (
 
 
 def design_model(ollama):
-    """The model that plans 3D objects (Settings -> AI tools; a bigger one, e.g. qwen3:14b, places parts better)."""
+    """The model that plans 3D objects (Settings -> AI tools; a bigger one places parts better)."""
     return (ollama or {}).get("design_model") or (ollama or {}).get("model")
+
+
+_DESIGN_DOWN = []          # the separate design server didn't answer once: use the main Ollama for the rest of the run
+
+
+def design_call(fn, ollama, *args, **kw):
+    """llm.chat / llm.chat_json for 3D design: on Settings -> AI tools' design server ("design_url", e.g. a bigger
+    machine on the network) with its design model, else the main Ollama. If the design server can't be reached,
+    the main Ollama + main model take over (a render never stops because that machine is off). Only 3D object
+    design goes to the design server - scripts, titles, sets and pictures stay on the main one."""
+    url = (ollama or {}).get("design_url") or ""
+    if url and not _DESIGN_DOWN:
+        try:
+            return fn(url, design_model(ollama), *args, **kw)
+        except (OSError, TimeoutError) as exc:      # connection refused / unreachable / timed out
+            _DESIGN_DOWN.append(str(exc))
+            print(f"[props] design server {url} not reachable ({exc.__class__.__name__}) - using the main Ollama")
+    model = (ollama or {}).get("design_model") if not url else None
+    return fn(ollama["url"], model or ollama["model"], *args, **kw)
 
 
 def slug(name):
@@ -626,7 +645,7 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
                 + (f"It is part of this place: {setting}\n" if setting else ""))
         for attempt in range(2):
             try:
-                d = clean(llm.chat_json(ollama["url"], design_model(ollama), GUIDE, user, temperature=0.7), kind, looks)
+                d = clean(design_call(llm.chat_json, ollama, GUIDE, user, temperature=0.7), kind, looks)
             except Exception as exc:
                 log(f"[props] Ollama failed on '{kind}' ({exc.__class__.__name__}: {str(exc)[:80]})")
                 d = None
@@ -745,7 +764,7 @@ def look_checked(d, kind, looks, setting, ollama, log=print):
                 + f"Your last design was checked and did NOT look like it: {problem or 'not recognisable'}. "
                   "Build it again so it clearly reads as this object.")
         try:
-            nd = clean(llm.chat_json(ollama["url"], design_model(ollama), GUIDE, user, temperature=0.6), kind, looks)
+            nd = clean(design_call(llm.chat_json, ollama, GUIDE, user, temperature=0.6), kind, looks)
         except Exception:
             nd = None
         if not nd or len(nd["parts"]) < 2:
@@ -1042,7 +1061,7 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
     # think first: the real object's anatomy in plain words (sections, real sizes, how they sit, what's inside and
     # what moves) - asked straight for the plan, the model stacked every part on one spot or made a flat slab
     try:
-        anatomy = llm.chat(ollama["url"], design_model(ollama),
+        anatomy = design_call(llm.chat, ollama,
                            "You describe how real objects are built, for someone making a simple cut-away model. "
                            "In under 120 words: the 1 to 4 main sections (each with its real width, depth and "
                            "height in metres and where it sits against the others), what is inside each, and which "
@@ -1057,7 +1076,7 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
     best = None
     for attempt in (1, 2):
         try:
-            d = _explainer_clean(llm.chat_json(ollama["url"], design_model(ollama), EXPLAIN_GUIDE, user, temperature=0.5),
+            d = _explainer_clean(design_call(llm.chat_json, ollama, EXPLAIN_GUIDE, user, temperature=0.5),
                                  kind, looks)
         except Exception as exc:
             log(f"[props] explainer design failed ({exc.__class__.__name__})")

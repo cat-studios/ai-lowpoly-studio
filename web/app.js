@@ -289,6 +289,7 @@ async function pageCreate() {
     <div class="step-h"><h3><span class="make-roll">🎲</span> Make a whole video</h3></div>
     <p class="muted small" style="margin:0 0 8px">Pick a place, a topic, a vibe, a guest and a time from random cards (or re-roll), add a note if you like - the studio does the rest and renders it.</p>
     <div class="btns"><button id="make-all" class="primary">🎲 Make a random video</button>
+      <button id="make-series" title="One idea, 1-4 episodes - each written, directed and rendered">📺 Make a series</button>
       <span id="make-status" class="muted small"></span></div>
     <div class="make-bar"><i id="make-fill"></i></div>
     <div class="inline-job" id="make-job"></div>
@@ -305,6 +306,8 @@ async function pageCreate() {
           <button id="t-ideas">✨ Title ideas (AI)</button></div>
         <div class="chips" id="t-chips">${CS.titles.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
         <div class="row" style="margin-top:10px">
+          <label>Kind of video<select id="ep-tpl" title="Steers the title ideas, the script and the pacing - the look stays the same">${(META.catalog.templates || []).map((t) =>
+            `<option value="${t.id}" ${t.id === (CS.ep.template || "what_if") ? "selected" : ""}>${t.icon} ${esc(t.name)}</option>`).join("")}</select></label>
           <label>Character<select id="ep-char"><option value="">Active (${esc(META.settings.active_character)})</option>${options(META.characters, typeof CS.ep.character === "string" ? CS.ep.character : "")}</select></label></div>
         <div style="margin-top:10px"><span class="muted small">Other main characters in this video - they talk and react too. A line that starts with their name (“${esc(titleCase(META.characters.find((c) => c !== (CS.ep.character || META.settings.active_character)) || "name"))}: …”) is theirs.</span>
           <div class="chips" id="ep-co">${META.characters.filter((c) => c !== (CS.ep.character || META.settings.active_character)).map((c) =>
@@ -469,6 +472,13 @@ async function pageCreate() {
   $("#ep-beats").onchange = (e) => { CS.beats = e.target.checked; };
   $("#ep-capstyle").onchange = (e) => { CS.ep.captions = { ...(CS.ep.captions || {}), ...CAP_STYLES[e.target.value].caps }; syncJson(); };
   $("#ep-title").oninput = (e) => { CS.ep.title = e.target.value; syncJson(); };
+  $("#ep-tpl").onchange = (e) => {                  // the kind of video: its own tone, length and pacing
+    CS.ep.template = e.target.value;
+    const t = (META.catalog.templates || []).find((x) => x.id === CS.ep.template);
+    if (t) { CS.tone = t.tone; CS.lines = t.lines[0]; const tn = $("#ai-tone"); if (tn) tn.value = t.tone; const ln = $("#ai-lines"); if (ln) ln.value = CS.lines; }
+    toast(`${t?.icon || ""} ${t?.name || ""}: ${t?.about || ""}`);
+    syncJson();
+  };
   $("#ep-char").onchange = (e) => { if (e.target.value) CS.ep.character = e.target.value; else delete CS.ep.character;
     // the episode's own character can't also be a co-star
     CS.ep.co_stars = (CS.ep.co_stars || []).filter((c) => c !== (CS.ep.character || META.settings.active_character));
@@ -507,7 +517,7 @@ async function pageCreate() {
   const bindChips = () => $$("#t-chips .chip").forEach((c) => c.onclick = () => { CS.ep.title = c.textContent; $("#ep-title").value = c.textContent; syncJson(); });
   bindChips();
   $("#t-ideas").onclick = guard(async (e) => busy(e.currentTarget, "✨ Thinking…", async () => {
-    const r = await api("POST", "/api/ai/titles", { theme: $("#t-theme").value, character: $("#ep-char").value, model: CS.model });
+    const r = await api("POST", "/api/ai/titles", { theme: $("#t-theme").value, character: $("#ep-char").value, model: CS.model, template: CS.ep.template || "" });
     CS.titles = r.titles;
     $("#t-chips").innerHTML = r.titles.map((t) => `<span class="chip" title="Use this title">${esc(t)}</span>`).join("");
     bindChips();
@@ -544,7 +554,7 @@ async function pageCreate() {
     if (!CS.ep.title.trim()) throw new Error("Give the episode a title first (or use ✨ Title ideas)");
     const t0 = Date.now();
     const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: CS.ep.set, scene_policy: $("#scene-policy")?.value || "reuse", character: $("#ep-char").value,
-      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [] });
+      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template || "" });
     $("#script").value = r.script; CS.scriptDraft = r.script;
     if (r.set && r.set !== CS.ep.set) { CS.ep.set = r.set; refreshScene(); toast(`Set: ${META.catalog.sets[r.set]?.name || "new - " + r.set.slice(4)}`); }
     $("#ai-status").textContent = `${r.lines.length} lines from ${r.model} in ${((Date.now() - t0) / 1000).toFixed(1)}s`;
@@ -561,7 +571,7 @@ async function pageCreate() {
     const r = await api("POST", "/api/autodirect", { script, set: CS.ep.set, start: CS.ep.start, cast: CS.ep.cast || {}, co_stars: CS.ep.co_stars || [], beat_words: CS.beats === false ? 0 : 4,
       beat_sets: (CS.places.length + CS.newPlaces.length) > 1 ? [...CS.places, ...CS.newPlaces.map((p) => "new:" + p)] : [],
       cast_ai: castAI, character: $("#ep-char")?.value, scene_ai: $("#scene-ai")?.checked, title: CS.ep.title,
-      scene_policy: $("#scene-policy")?.value || "reuse" });
+      scene_policy: $("#scene-policy")?.value || "reuse", template: CS.ep.template || "" });
     CS.ep.shots = r.shots; CS.ep.start = r.start; CS.ep.script = script;
     if (r.set && r.set !== CS.ep.set) CS.ep.set = r.set;
     if (r.cast && Object.keys(r.cast).length) CS.ep.cast = r.cast; else delete CS.ep.cast;
@@ -607,6 +617,7 @@ async function pageCreate() {
   // one button: a random idea, a random new scene, the script and the shots (rendering stays a separate step)
   const waitJob = (job, box) => new Promise((resolve, reject) => watchJob(job, box, (j) =>
     (j.status === "done" && j.result?.set ? resolve(j) : reject(new Error("the scene could not be made - see the log")))));
+  $("#make-series").onclick = guard(() => openSeriesDialog());
   $("#make-all").onclick = guard(async (e) => {
     const btnEl = e.currentTarget;
     const picks = await openMakeWizard();        // the cards: place, topic, vibe, guest, time, length + a note
@@ -624,7 +635,10 @@ async function pageCreate() {
     };
     const pick = (a) => a[Math.floor(Math.random() * a.length)];
     status("1/5 Thinking up an idea…");
-    const tr = await api("POST", "/api/ai/titles", { theme: picks.topic, character: $("#ep-char").value, model: CS.model });
+    const kind = (META.catalog.templates || []).find((t) => `${t.icon} ${t.name}` === picks.kind);
+    CS.ep.template = kind?.id || "what_if";
+    if ($("#ep-tpl")) $("#ep-tpl").value = CS.ep.template;
+    const tr = await api("POST", "/api/ai/titles", { theme: picks.topic, character: $("#ep-char").value, model: CS.model, template: CS.ep.template });
     if (!tr.titles?.length) throw new Error("No idea came back - try again");
     CS.ep.title = pick(tr.titles);
     $("#ep-title").value = CS.ep.title;
@@ -643,7 +657,7 @@ async function pageCreate() {
     status("2/5 Writing the script…");
     // the script is written for the picked place (the set is made after it) - not for whatever set was selected
     const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: "new:" + picks.scene, scene_policy: "reuse", character: $("#ep-char").value,
-      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [] });
+      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template });
     $("#script").value = r.script; CS.scriptDraft = r.script;
     // the scene comes from the title and the script, not the other way round
     status("3/5 Making a scene that fits the script (a few minutes)…");
@@ -666,9 +680,42 @@ async function pageCreate() {
   });
 }
 
+/* ---- "Make a series": one idea -> 1-4 episodes, made and queued to render by a server job (pipeline/series.py),
+   so it carries on with the phone locked. */
+async function openSeriesDialog() {
+  const tpls = META.catalog.templates || [];
+  const v = await openModal({
+    title: "📺 Make a series", wide: true,
+    body: `<p class="muted small" style="margin-top:0">One idea, a few episodes: each gets its own question as the title, a script that knows the other episodes, its own scene and shots, and is rendered one after another. They appear on the Videos page as they finish.</p>
+      <label>The idea<input type="text" id="se-idea" placeholder="e.g. how the human body works, life in the deep sea, what if cats ruled the world"></label>
+      <div class="row" style="margin-top:8px">
+        <label>Episodes<select id="se-n">${[1, 2, 3, 4].map((n) => `<option ${n === 3 ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+        <label style="flex:2">Kind of video<select id="se-tpl">${tpls.map((t) => `<option value="${t.id}">${t.icon} ${esc(t.name)}</option>`).join("")}</select></label>
+        <label>Length<select id="se-len"><option value="short">Short (~20 s)</option><option value="medium" selected>Medium (~40 s)</option><option value="long">Long (~1 min)</option></select></label></div>
+      <p class="muted small" id="se-about"></p>
+      <label>Anything else? (optional)<input type="text" id="se-note" placeholder="e.g. she's scared of spiders; keep it cosy"></label>`,
+    onOpen: (m) => {
+      const about = () => { const t = tpls.find((x) => x.id === $("#se-tpl", m).value); $("#se-about", m).textContent = t ? t.about : ""; };
+      $("#se-tpl", m).onchange = about; about();
+      $("#se-idea", m).focus();
+    },
+    buttons: [{ label: "Cancel", left: true, value: null },
+      { label: "📺 Make the series", primary: true, onClick: (m) => {
+        const idea = $("#se-idea", m).value.trim();
+        if (!idea) { toast("Give the series an idea", true); return false; }
+        return { idea, count: Number($("#se-n", m).value), template: $("#se-tpl", m).value, length: $("#se-len", m).value,
+          note: $("#se-note", m).value.trim() };
+      } }],
+  });
+  if (!v) return;
+  const job = await api("POST", "/api/series", { ...v, character: $("#ep-char")?.value || "", model: CS.model });
+  toast(`Series started: ${v.count} episode${v.count > 1 ? "s" : ""} - follow it in the queue (top right)`);
+  watchJob(job, $("#make-job"), (j) => toast(j.status === "done" ? "Series planned - the episodes are rendering one by one" : "The series failed - see the log", j.status !== "done"));
+}
+
 /* ---- "Make a whole video" wizard: a little magic show between steps, three random cards per step (re-roll for three
    more), then an optional note. The picks steer the title, the scene, the script and the light. */
-const MW_STEPS = [
+const MW_STEPS_BASE = [
   { key: "scene", q: "Where does it happen?", icon: "📍", cards: [
     "a cozy cafe", "a haunted library", "a candy factory", "a busy train station", "a tropical beach", "a snowy mountain cabin",
     "a space station", "a giant kitchen", "a neon arcade", "a misty forest", "an underwater city", "a rooftop at night",
@@ -715,6 +762,9 @@ function mwMagic(box, text) {        // the little show between steps (~0.9 s)
 
 async function openMakeWizard() {
   const picks = {};
+  // the kind of video comes first (templates: pacing and content - the look is the same for all)
+  const MW_STEPS = [{ key: "kind", q: "What kind of video?", icon: "🎬",
+    cards: (META.catalog.templates || []).map((t) => `${t.icon} ${t.name}`) }, ...MW_STEPS_BASE];
   return openModal({
     title: "🎲 Make a whole video", wide: true,
     body: `<div id="mw-box" class="mw-box"></div>`,
@@ -1182,7 +1232,7 @@ async function pageVideos() {
   const vids = await api("GET", "/api/videos");
   app.innerHTML = `<h2>Videos</h2>${vids.length ? `<div class="cards">${vids.map((v) => `
     <div class="card"><video src="${esc(v.url)}" controls preload="none" playsinline></video>
-      <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${esc(v.title || v.name)}</div>
+      <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${v.series ? `<span class="pill" title="Series: ${esc(v.series.idea || "")}">📺 ${esc(String(v.series.idea || "").slice(0, 24))} ${v.series.part}/${v.series.of}</span> ` : ""}${esc(v.title || v.name)}</div>
       <div class="muted small">${ago(v.updated)} · ${(v.size / 1048576).toFixed(1)} MB</div>
       <div class="btns"><a class="btn" href="${esc(v.url)}" download>⬇ Download</a>
         ${v.episode ? `<button data-redit="${esc(v.episode)}" class="primary">✏️ Edit</button>` : ""}
@@ -1414,7 +1464,8 @@ const S_TABS = {
     ["Ollama (script & title writing)", [
       ["ollama.url", "Server URL", "text"],
       ["ollama.model", "Default model", "ollama"],
-      ["ollama.design_model", "Model that builds props & explainer models", "ollama", {}, "A bigger model (e.g. qwen3:14b) plans 3D objects better. Empty = the default model."],
+      ["ollama.design_url", "Server that builds props & explainer models", "text", { placeholder: "empty = the server above" }, "Another Ollama (e.g. a bigger computer on your network) used ONLY for designing 3D props and explainer models. If it can't be reached, the server above is used."],
+      ["ollama.design_model", "Model that builds props & explainer models", "text", { placeholder: "empty = the default model" }, "A model that server already has (type its exact name). Bigger models plan 3D objects better."],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
       ["sets.look_check", "Check that new sets look like the place", "bool", {}, "The picture model looks at each new set and the AI fixes ones that read as another place (adds a few minutes)."],

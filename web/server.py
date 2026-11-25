@@ -37,6 +37,7 @@ import fonts  # noqa: E402
 import logs  # noqa: E402
 import llm  # noqa: E402
 import settings as S  # noqa: E402
+import templates  # noqa: E402
 import setgen  # noqa: E402
 import sfx as sfxlib  # noqa: E402
 
@@ -197,13 +198,15 @@ def list_videos():
     for v in sorted(OUTPUT.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
         sheet = v.with_name(v.stem + "_shots.png")
         ep = by_slug.get(v.stem)
-        title = ""
+        title, series = "", None
         if ep:
             try:
-                title = json.loads((EPISODES / f"{ep}.json").read_text(encoding="utf-8-sig")).get("title", "")
+                e = json.loads((EPISODES / f"{ep}.json").read_text(encoding="utf-8-sig"))
+                title, series = e.get("title", ""), e.get("series")
             except Exception:
                 pass
         out.append({"key": v.stem, "name": v.stem, "title": title, "episode": ep, "url": f"/media/{v.name}",
+                    "series": series if isinstance(series, dict) else None,
                     "sheet": f"/media/{sheet.name}" if sheet.exists() else None,
                     "size": v.stat().st_size, "updated": v.stat().st_mtime})
     return out
@@ -881,14 +884,18 @@ class Handler(BaseHTTPRequestHandler):
                     prof = S.load_character(cid)
                     others.append({"name": prof.get("name") or cid, "about": prof.get("about", ""),
                                    "aliases": S.speaker_names(prof)})
+                tpl = templates.get(b.get("template"))     # the kind of video: its own rules for the writer
+                extra = " ".join(x for x in (tpl["script"], b.get("extra", "")) if x)
                 lines = llm.generate_script(o["url"], model, b.get("title") or "an ordinary day", char,
                                             {"name": s["name"], "description": s["description"],
                                              "marks": list(s["marks"])},
-                                            lines=int(b.get("lines", 6)), tone=b.get("tone", "funny"),
-                                            extra=b.get("extra", ""), temperature=o["temperature"], others=others)
+                                            lines=int(b.get("lines", 6)), tone=b.get("tone") or tpl["tone"],
+                                            extra=extra, temperature=o["temperature"], others=others)
                 return self.send_json({"lines": lines, "script": "\n".join(lines), "model": model, "set": chosen})
             if arg == "titles":
-                titles = llm.generate_titles(o["url"], model, char, b.get("theme", ""), int(b.get("count", 8)))
+                tpl = templates.get(b.get("template")) if b.get("template") else None
+                titles = llm.generate_titles(o["url"], model, char, b.get("theme", ""), int(b.get("count", 8)),
+                                             starts=tpl and tpl["title_starts"], hint=tpl["title_hint"] if tpl else "")
                 return self.send_json({"titles": titles, "model": model})
 
         # ---- sets
@@ -1108,6 +1115,24 @@ class Handler(BaseHTTPRequestHandler):
                     old.replace(sfxlib.CUSTOM / ".trash" / f"{stamp()}-{old.name}")
                 return self.send_json(sfxlib.list_library())
 
+        if head == "series" and method == "POST":      # one idea -> 1-4 episodes, each queued to render
+            b = self.body_json()
+            idea = str(b.get("idea") or "").strip()[:200]
+            if not idea:
+                raise ValueError("give the series an idea")
+            spec = {"idea": idea, "count": max(1, min(4, int(b.get("count") or 3))),
+                    "template": b.get("template") if b.get("template") in templates.TEMPLATES else templates.DEFAULT,
+                    "character": str(b.get("character") or ""), "length": str(b.get("length") or "medium"),
+                    "tone": str(b.get("tone") or ""), "note": str(b.get("note") or "")[:300],
+                    "model": str(b.get("model") or ""),
+                    "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}"}
+            f = ROOT / "build" / "series" / f"{stamp()}-{slug(idea)[:30]}.json"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(spec), encoding="utf-8")
+            cmd = [sys.executable, "-u", str(PIPE / "series.py"), str(f)]
+            return self.send_json(submit(Job("series", f"Series: {idea[:40]} ({spec['count']} episodes)",
+                                             cmd)).to_dict())
+
         if head == "autodirect" and method == "POST":
             b = self.body_json()
             policy = "new" if b.get("scene_policy") == "new" else "reuse"
@@ -1121,13 +1146,12 @@ class Handler(BaseHTTPRequestHandler):
                         speakers.setdefault(nm.lower(), cid)
                 except Exception:
                     pass
+            pace = templates.pacing(b.get("template"), beats_on=bool(int(b.get("beat_words", 4) or 0)))
             res = autodirect.direct(b.get("script", ""), b.get("set", "cafe"), b.get("start"), b.get("cast"), policy,
-                                    speakers=speakers, beat_words=int(b.get("beat_words", 4) or 0),
+                                    speakers=speakers,
                                     beat_sets=[x for x in (b.get("beat_sets") or [])
                                                if x in catalog.all_sets() or str(x).startswith("new:")] or None,
-                                    walk_every=8 if int(b.get("beat_words", 4) or 0) else 0,
-                                    move_every=3 if int(b.get("beat_words", 4) or 0) else 0,
-                                    wipe_every=4 if int(b.get("beat_words", 4) or 0) else 0)
+                                    **pace)
             res["set"] = b.get("set", "cafe")
             res["co_stars"] = co
             if b.get("scene_ai") and res["shots"]:      # let Ollama spot scene changes + weather/effects
