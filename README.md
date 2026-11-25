@@ -6,8 +6,8 @@ directing, voice, 3D animation, cameras, render, filter, captions, music and sou
 
 From idea to video:
 
-1. **Idea** - write a title yourself or get ✨ title ideas from Ollama. Or press 🎲 **Make a whole video** for a
-   random idea, a new scene, a script and shots in one go.
+1. **Idea** - 🪄 **Custom Video** walks you through it step by step (title, look, sound, captions, script, scenes,
+   shots); 🎲 **Make a Random Video** does it all from a few fun cards.
 2. **Script** - write it by hand, or have Ollama write it from the title, your character's "about" text and the set.
 3. **Directing** - each line becomes one or more shots with a camera, action, expression and sound effect. Override
    any line with `[closeup, angry, boom]`-style directions.
@@ -90,25 +90,29 @@ and everything else runs in its own lane.
 ## The pages
 
 ### Create
-1. **Idea** - title, ✨ title ideas, and which character stars.
-2. **Scene & style** - the set (or **✨ Auto from the title**, which picks a fitting place, reuses one of your sets
-   or makes a new one), where she starts, look preset, music and ambience.
-   - **Other main characters** - tick more of your characters to put them in the video too. A line starting with
-     their name (`Ethan: hi there`) is theirs; they talk with their own voice and the others react. They wait beside
-     her where she'll be when they first speak. 🤖 AI write gives them lines of their own too.
-   - **Change place every line** - pick two or more sets (and/or type new places) to rotate through.
-   - **Cut to a new shot every few words** (on by default) - long lines are split into short shots so the camera
-     cuts every 2-3 seconds, with the odd walk and a blurred wipe, like the reference videos.
-3. **Script** - ✍ write or 🤖 AI write, then **Direct shots**. Tweak each shot (camera, move, action, expression,
-   sound, scene, effects, **light**, cutaway, others in the shot, **who says it**), then **Save & render**. With other
-   main characters a shot also has **The others while this is said** (they listen, or wave, laugh, nod...) and
-   **Everyone in the frame** (a wider shot of all of them). *Re-apply look only*
-   re-runs the filter and captions without re-rendering 3D (only while the shots are the same as in the last
-   render - after adding or removing shots, render in full).
+Three big buttons:
+- **🎲 Make a Random Video** - pick fun cards (kind of video, place, topic, vibe, guest, time, length); the studio
+  writes, builds and renders it all.
+- **📺 Make a Series** - one idea, 1-4 episodes, each made and rendered for you.
+- **🪄 Custom Video** - a step-by-step popup with everything in your hands. Tap the cards; every step can be
+  changed later (tap a step at the top, or a pill on the last step). Closing it keeps your picks.
+  1. **💡 Idea** - kind of video, the title (or ✨ Give me ideas), who stars and who else is in it.
+  2. **🎨 Look** - the retro filter and the language it's voiced and captioned in.
+  3. **🎵 Sound** - music (▶ to listen) and the sound of the place.
+  4. **💬 Captions** - how the words appear, and quick cuts or one shot per line.
+  5. **✍️ Script** - length, places (one place / a little journey / let the AI decide), vibe and a note, then
+     ✨ Write my script - or write it yourself. Edit anything. `[@ a place]` marks where the story moves.
+  6. **🗺 Scenes** - every place the script needs, in order. Pick one of your sets for each, or **Make a new one**
+     (🪄 Make it now, a few minutes, or leave it to be made when the video renders).
+  7. **🎬 Shots** - the script directed in those sets: change any camera or action, or open **🔧 Fine-tune every
+     detail** (lines, moves, places, sounds, effects, light, cutaways, who says it, others in the shot, the cast).
+  8. **🚀 Render** - everything at a glance, record the voice again if you like, check the translation, then
+     **▶ Render my video!** (or save it without rendering).
 
-Each video is its own new episode (named from the title); *Start over* clears the page. Your script stays exactly as
-you typed it (with its `[directions]`) when you switch pages or direct again, and the episode remembers it. If you
-change the set after directing, the app offers to direct the shots again for the new set.
+The scenes come after the script on purpose: the script decides where the story goes, and the shots are directed
+last so walks and pointing use the real sets' own places. Each video is its own new episode (named from the title).
+On the Videos page, ✏️ Edit → **🪄 Open in Custom Video** opens a video in the popup (on its last step) and keeps
+its file.
 
 ### Sets
 A gallery of every scene, newest first, with a preview and its walkable places.

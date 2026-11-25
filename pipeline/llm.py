@@ -393,8 +393,9 @@ def _clean_lines(text, keep=()):
 
 
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
-                    others=None, polish=True):
-    """others: the other main characters in the video, [{"name", "about"}] - they get some lines too."""
+                    others=None, polish=True, scenes="auto"):
+    """others: the other main characters in the video, [{"name", "about"}] - they get some lines too.
+    scenes: "stay" (one place), "move" (the story travels: 1-3 [@ place] changes) or "auto" (only when it moves)."""
     others = [o for o in (others or []) if isinstance(o, dict) and o.get("name")]
     cams = ", ".join(catalog.CAMERAS)
     anims = ", ".join(k for k in catalog.ANIMS if k not in ("sit", "fall", "float", "turn"))   # no floor-sitting
@@ -433,6 +434,9 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         "[show: thing part] to look closely at one part (e.g. [show: toilet flap]), and [show: off] when you're "
         "done with it. Name each part and say what it does in plain words (\"the chain lifts the flap\") - the "
         "model's parts move on those words.\n"
+        "Changing place: when the story moves somewhere else, start that line with [@ place] - a short "
+        "description of the new place, e.g. [@ on the moon] or [@ a busy train station] - it lasts until the next "
+        "[@ ...]. Never write [@ ...] for the place the video starts in.\n"
         "Example line: [closeup, angry] Fine. I'll do it myself!\n"
         "Example line: [wide, surprised, boom] And then the oven exploded!\n"
         "Example line: [+mom enter, scared] Mom?! You weren't supposed to be home yet!\n"
@@ -449,6 +453,9 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         + "Put every line on its own line.\n"
         + f"Location: {set_info.get('name', '')} - {set_info.get('description', '')}\n"
         f"Tone: {tone}. Number of lines: {int(lines)}.\n"
+        + {"stay": "Keep the whole video in this one location - no [@ ...] scene changes.\n",
+           "move": "The story travels: move to 1 to 3 other places along the way, each marked with [@ place].\n"}
+          .get(scenes, "Only use [@ place] if the story really goes somewhere else.\n")
         + (f"Extra notes: {extra}\n" if extra else "")
         + "Write the script now."
     )

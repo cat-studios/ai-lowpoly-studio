@@ -463,6 +463,26 @@ camera.
   but still 4/10 in the look check: every designer from 8B to 80B scores 3-4, so the 4B vision judge is now the
   limit, not the designer. A section `on_top` of a cone/pyramid/sphere sinks into it (the crater floated).
 
+## Create page = three buttons + the Custom Video popup (2026-11-25, the user's mock-up)
+- The page shows only 🎲 Make a Random Video, 📺 Make a Series and 🪄 Custom Video (`.hero-btn`, star bursts from
+  `sparkle()`), the progress (`#make-status`, `#job`) and the finished video (`#result`). The old step-by-step page
+  is still in the DOM but always `hidden` (`#full-ed`): the random flow (`#make-all`) and the save/render buttons
+  work through its fields. The user wants everything in the popup - don't bring the old page back as a toggle.
+- `openCustomWizard()` (state in `CS.wiz`, kept when the popup closes; `cwFromEpisode(ep, id)` fills it from a saved
+  video for the Videos page's ✏️ → "🪄 Open in Custom Video", which keeps the file via `editId`): steps `CW_STEPS`
+  idea → look & language → music & ambience → captions → script → scenes → shots → summary. The user asked for
+  script before scenes; shots come after scenes (their choice was open, Claude's call) so walks/pointing use the real
+  sets' marks. Cards = `cwCards()` (`.cw-card`, `.on` = picked), the step trail jumps back to any visited step.
+- Script: `/api/ai/script` takes `scenes` = `stay|move|auto` → `llm.generate_script(scenes=)`; the writer is now told
+  about `[@ place]` (before, only `find_scenes` at directing added scene changes).
+- Scenes: `POST /api/scenes/plan {script, set, title}` → `autodirect.plan_scenes` (the start - "auto" asks
+  `auto_set` - and every `[@ place]` line with up to 3 fitting sets). Picks are written back into the script as
+  `[@ <set id>]` / `[@ new:<place>]` (`match_set` passes `new:` through unchanged); "Make it now" runs
+  `/api/sets/generate`. Shots: `/api/autodirect` with `scene_ai: false` (the scenes are already decided); the
+  🔧 Fine-tune panel reuses `drawShots`/`drawCast` on a temporary episode sharing `W.shots`. Unchanged inputs
+  (`cwKey`) keep the shots and any hand edits.
+- `.mw-card` animations use fill-mode `backwards` (`both` held `transform: none` and killed the hover lift).
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

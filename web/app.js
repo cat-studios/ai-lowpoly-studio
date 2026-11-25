@@ -285,16 +285,25 @@ async function pageCreate() {
   if (!cat.sets[CS.ep.set] && CS.ep.set !== "auto" && !String(CS.ep.set).startsWith("new:")) CS.ep.set = setsList[0]?.id || "cafe";
   const presets = Object.keys(META.presets);
   app.innerHTML = `
-  <section class="panel">
-    <div class="step-h"><h3><span class="make-roll">🎲</span> Make a whole video</h3></div>
-    <p class="muted small" style="margin:0 0 8px">Pick a place, a topic, a vibe, a guest and a time from random cards (or re-roll), add a note if you like - the studio does the rest and renders it.</p>
-    <div class="btns"><button id="make-all" class="primary">🎲 Make a random video</button>
-      <button id="make-series" title="One idea, 1-4 episodes - each written, directed and rendered">📺 Make a series</button>
-      <span id="make-status" class="muted small"></span></div>
+  <section class="panel create-hero">
+    <h2 class="hero-title">✨ What shall we make today?</h2>
+    <div class="hero-btns">
+      <button id="make-all" class="hero-btn" style="--d:0"><span class="hb-ico make-roll">🎲</span><b>Make a Random Video</b>
+        <small>Pick fun cards - the studio writes, builds and renders it all</small></button>
+      <button id="make-series" class="hero-btn" style="--d:1"><span class="hb-ico">📺</span><b>Make a Series</b>
+        <small>One idea, 1-4 episodes, each made and rendered for you</small></button>
+      <button id="make-custom" class="hero-btn hb-custom" style="--d:2"><span class="hb-ico">🪄</span><b>Custom Video</b>
+        <small>Step by step: your idea, your look, your script, your scenes</small></button>
+    </div>
+    <div class="hero-foot"><span id="make-status" class="muted small"></span></div>
     <div class="make-bar"><i id="make-fill"></i></div>
     <div class="inline-job" id="make-job"></div>
+    <div id="job"></div>
+    <div id="result" class="hero-result"></div>
   </section>
-  <div class="grid2">
+  <!-- the old step-by-step page: never shown any more (Custom Video's popup has all of it), but the random-video
+       flow and the save / render buttons still work through these fields -->
+  <div class="grid2" id="full-ed" hidden>
     <div>
       <section class="panel">
         <div class="step-h"><span class="stepno">1</span><h3>Idea</h3>
@@ -425,9 +434,8 @@ async function pageCreate() {
           <button id="render" class="primary">▶ Save &amp; render</button>
           <button id="relook" title="Re-apply look/captions to the last render without re-rendering 3D">Re-apply look only</button>
         </div>
-        <div id="job" style="margin-top:10px"></div>
+        <p class="muted small" style="margin:8px 0 0">The progress and the finished video show at the top of the page.</p>
       </div>
-      <div class="panel"><h3>Result</h3><div id="result" class="muted">Render to see the video here.</div></div>
     </div>
   </div>`;
 
@@ -618,6 +626,16 @@ async function pageCreate() {
   const waitJob = (job, box) => new Promise((resolve, reject) => watchJob(job, box, (j) =>
     (j.status === "done" && j.result?.set ? resolve(j) : reject(new Error("the scene could not be made - see the log")))));
   $("#make-series").onclick = guard(() => openSeriesDialog());
+  // the step-by-step popup fills the episode in, then the (hidden) page's own save / render buttons run
+  $("#make-custom").onclick = guard(async () => {
+    const r = await openCustomWizard();
+    if (!r) return;
+    await pageCreate();
+    $("#fresh").checked = !!r.fresh;
+    $(r.how === "render" ? "#render" : "#save").click();
+  });
+  $$(".hero-btn").forEach((b) => b.addEventListener("click", (ev) => sparkle(b, ev)));
+  if (CS.openWiz) { CS.openWiz = false; $("#make-custom").click(); }     // "Open in Custom Video" from the Videos page
   $("#make-all").onclick = guard(async (e) => {
     const btnEl = e.currentTarget;
     const picks = await openMakeWizard();        // the cards: place, topic, vibe, guest, time, length + a note
@@ -807,10 +825,444 @@ async function openMakeWizard() {
   });
 }
 
+// a little burst of stars where a button was pressed
+const SPARKS = ["✨", "⭐", "💫", "🌟"];
+function sparkle(el, ev) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const r = el.getBoundingClientRect();
+  const x = ev?.clientX || r.left + r.width / 2, y = ev?.clientY || r.top + r.height / 2;
+  for (let i = 0; i < 9; i++) {
+    const s = document.createElement("span"), a = Math.random() * Math.PI * 2, d = 30 + Math.random() * 45;
+    s.className = "spark"; s.textContent = SPARKS[i % SPARKS.length];
+    s.style.left = x + "px"; s.style.top = y + "px";
+    s.style.setProperty("--dx", Math.cos(a) * d + "px"); s.style.setProperty("--dy", Math.sin(a) * d + "px");
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 750);
+  }
+}
+
+/* ---- "Custom video": the whole Create page as a step-by-step popup, in the same card style as the random one.
+   Order: idea → look & language → music & ambience → captions → script → scenes → shots → summary & render.
+   The script comes before the scenes on purpose: it says where the story goes ([@ place]), the Scenes step
+   reuses or makes those sets, and the shots are directed last, in the real sets (walks to their own places).
+   The picks live in CS.wiz, so closing the popup and opening it again carries on where you were. */
+const CW_STEPS = [
+  { icon: "💡", name: "Idea" }, { icon: "🎨", name: "Look" }, { icon: "🎵", name: "Sound" }, { icon: "💬", name: "Captions" },
+  { icon: "✍️", name: "Script" }, { icon: "🗺", name: "Scenes" }, { icon: "🎬", name: "Shots" }, { icon: "🚀", name: "Render" },
+];
+const CW_LEN = { short: ["⚡ Short", "about 20 seconds", 4, 5], medium: ["🎬 Medium", "about 40 seconds", 6, 8],
+  long: ["🍿 Long", "about a minute", 10, 13] };
+const CW_PLACES = { stay: ["📍 One place", "the whole video happens in one spot"],
+  move: ["🗺 A little journey", "the story travels to 1-3 new places"], auto: ["🤖 Let the AI decide", "it moves only if the story needs it"] };
+const CW_MOVE = new Set(["walk_to", "run_to", "sneak_to"]);
+
+// what the shots were directed from - unchanged = the shots (and your edits to them) are kept
+const cwKey = (W) => JSON.stringify([W.directScript, W.set, W.beats, W.template, W.castAI, W.co_stars, W.character]);
+// an existing video opened from the Videos page: every step filled in, starting on the last one; it keeps its file
+function cwFromEpisode(ep, id) {
+  const caps = ep.captions || {};
+  const W = { step: 7, max: 7, editId: id, template: ep.template || "what_if", title: ep.title || "", topic: "", ideas: [],
+    character: typeof ep.character === "string" ? ep.character : "", co_stars: (ep.co_stars || []).map((c) => (typeof c === "string" ? c : c.id)),
+    look: ep.look_preset || "", language: ep.language || "",
+    music: ep.music === undefined ? "__default" : (ep.music || "__none"),
+    ambience: ep.ambience === undefined ? "__default" : (ep.ambience || "__none"),
+    cap: Number(caps.group) === 1 ? ((caps.cycle || []).length ? "one-colour" : "one-white") : "two-colour",
+    beats: ep.shots.some((s) => s.beat_group != null), length: "medium", tone: "", places: "auto", note: "",
+    script: ep.script || ep.shots.map((s) => s.line || "").join("\n"), start: ep.set, castAI: true, fresh: false,
+    set: ep.set, shots: ep.shots, cast: ep.cast || {}, translations: ep.translations, scenes: null };
+  W.directScript = W.script;
+  W.shotsFor = cwKey(W);
+  return W;
+}
+
+function cwCards(list, cur, attr, cls = "") {   // list: [{v, label, sub, html}] -> tappable cards, the current one lit
+  return `<div class="mw-cards cw-cards ${cls}">${list.map((c, k) => `<button class="mw-card cw-card ${String(c.v) === String(cur) ? "on" : ""}"
+    data-${attr}="${esc(c.v)}" style="--d:${k}">${c.html || ""}<b>${esc(c.label)}</b>${c.sub ? `<small>${esc(c.sub)}</small>` : ""}</button>`).join("")}</div>`;
+}
+
+async function openCustomWizard() {
+  const cat = META.catalog, tpls = cat.templates || [];
+  const [music, sets] = await Promise.all([api("GET", "/api/music").catch(() => []), api("GET", "/api/sets").catch(() => setsCache)]);
+  setsCache = sets;
+  const setInfo = (id) => sets.find((s) => s.id === id) || { id, name: cat.sets[id]?.name || id };
+  const fresh = () => ({ step: 0, max: 0, template: "what_if", title: "", topic: "", ideas: [], character: "", co_stars: [],
+    look: "", language: "", music: "__default", ambience: "__default", cap: capStyleOf(), beats: true, length: "medium",
+    tone: "", places: "auto", note: "", script: "", start: "auto", castAI: true, fresh: false });
+  if (!CS.wiz) CS.wiz = fresh();
+  const W = CS.wiz;
+  const tpl = () => tpls.find((t) => t.id === W.template) || tpls[0] || { tone: "funny", lines: [6, 8] };
+
+  return openModal({
+    title: "🪄 Make your own video", wide: true,
+    body: `<div id="cw-box" class="mw-box cw-box"></div>`,
+    buttons: [{ label: "Close (your picks are kept)", left: true, value: null }],
+    onOpen: (m, close) => {
+      const box = $("#cw-box", m);
+      const frame = (q, inner, next = "Next →") => `<div class="mw-step cw-step">
+        <div class="cw-trail">${CW_STEPS.map((s, k) => `<button class="cw-crumb ${k < W.step ? "done" : k === W.step ? "on" : ""}" data-goto="${k}"
+          ${k > W.max ? "disabled" : ""} title="${esc(s.name)}"><span>${k < W.step ? "🐾" : s.icon}</span><em>${esc(s.name)}</em></button>`).join("")}</div>
+        <h3><span class="cw-hi">${CW_STEPS[W.step].icon}</span> ${q}</h3>${inner}
+        <div class="btns cw-nav">${W.step > 0 ? '<button id="cw-back">← Back</button>' : ""}
+          ${next ? `<button class="primary" id="cw-next">${next}</button>` : ""}</div></div>`;
+      const go = async (k) => { W.step = k; W.max = Math.max(W.max, k); m.querySelector(".modal-body").scrollTop = 0; await STEPS[k](); };
+      const wire = (onNext) => {
+        $$("[data-goto]", box).forEach((b) => b.onclick = () => go(Number(b.dataset.goto)));
+        if ($("#cw-back", box)) $("#cw-back", box).onclick = () => go(W.step - 1);
+        if ($("#cw-next", box)) $("#cw-next", box).onclick = guard(async (ev) => {
+          const btn = ev.currentTarget;          // gone from the event after the first await
+          if (onNext && (await onNext()) === false) return;
+          sparkle(btn, ev);
+          await go(W.step + 1);
+        });
+        $$(".cw-card, .chip-btn", box).forEach((b) => b.addEventListener("click", (ev) => sparkle(b, ev)));
+      };
+      const pick = (attr, fn) => $$(`[data-${attr}]`, box).forEach((b) => b.onclick = () => {
+        $$(`[data-${attr}]`, box).forEach((x) => x.classList.toggle("on", x === b));
+        fn(b.dataset[attr.replace(/-(\w)/g, (_, c) => c.toUpperCase())], b);
+      });
+
+      const STEPS = [
+        // 1 - the idea: kind of video, title (or ideas), who's in it
+        async () => {
+          const others = META.characters.filter((c) => c !== (W.character || META.settings.active_character));
+          box.innerHTML = frame("What's your video about?", `
+            <p class="cw-label">Kind of video</p>
+            ${cwCards(tpls.map((t) => ({ v: t.id, label: `${t.icon} ${t.name}`, sub: t.about })), W.template, "tpl", "four")}
+            <p class="cw-label">Title <span class="muted small">- the question at the top of the video</span></p>
+            <input type="text" id="cw-title" class="cw-big" placeholder="What if a catgirl ran a bakery?" value="${esc(W.title)}">
+            <div class="cw-row"><input type="text" id="cw-topic" placeholder="Stuck? A topic for ideas (optional): space, cooking…" value="${esc(W.topic)}">
+              <button id="cw-ideas">✨ Give me ideas</button></div>
+            <div class="chips cw-ideas" id="cw-chips">${W.ideas.map((t, k) => `<button class="chip-btn" data-idea="${k}" style="--d:${k}">${esc(t)}</button>`).join("")}</div>
+            ${META.characters.length > 1 ? `<p class="cw-label">Starring</p><div class="chips">${META.characters.map((c) =>
+              `<button class="chip-btn ${c === (W.character || META.settings.active_character) ? "on" : ""}" data-star="${esc(c)}">${esc(titleCase(c))}</button>`).join("")}</div>
+              ${others.length ? `<p class="cw-label">Also in it <span class="muted small">- they talk too</span></p><div class="chips">${others.map((c) =>
+              `<button class="chip-btn ${W.co_stars.includes(c) ? "on" : ""}" data-co="${esc(c)}">${esc(titleCase(c))}</button>`).join("")}</div>` : ""}` : ""}
+            ${W.max > 0 || W.title ? '<p style="text-align:right;margin:10px 0 0"><button id="cw-reset" class="ghost small-btn">↺ Start over</button></p>' : ""}`);
+          if ($("#cw-reset", box)) $("#cw-reset", box).onclick = guard(async () => {
+            if (!(await uiConfirm("Clear every pick and start a new video?", { title: "Start over", ok: "↺ Start over" }))) return;
+            Object.assign(W, fresh()); W.scenes = W.shots = null; STEPS[0]();
+          });
+          wire(() => {
+            W.title = $("#cw-title", box).value.trim();
+            if (!W.title) { toast("Give your video a title - or press ✨ Give me ideas", true); $("#cw-title", box).focus(); return false; }
+          });
+          $("#cw-title", box).oninput = (e) => { W.title = e.target.value; };
+          $("#cw-topic", box).oninput = (e) => { W.topic = e.target.value; };
+          pick("tpl", (v) => { W.template = v; W.tone = ""; });
+          const bindIdeas = () => $$("[data-idea]", box).forEach((b) => b.onclick = (ev) => {
+            W.title = W.ideas[Number(b.dataset.idea)]; $("#cw-title", box).value = W.title; sparkle(b, ev);
+          });
+          bindIdeas();
+          $("#cw-ideas", box).onclick = guard(async (e) => busy(e.currentTarget, "✨ Thinking…", async () => {
+            const r = await api("POST", "/api/ai/titles", { theme: W.topic, character: W.character, model: CS.model, template: W.template });
+            W.ideas = r.titles || [];
+            $("#cw-chips", box).innerHTML = W.ideas.map((t, k) => `<button class="chip-btn cw-deal" data-idea="${k}" style="--d:${k}">${esc(t)}</button>`).join("");
+            bindIdeas();
+          }));
+          $$("[data-star]", box).forEach((b) => b.onclick = () => {
+            W.character = b.dataset.star === META.settings.active_character ? "" : b.dataset.star;
+            W.co_stars = W.co_stars.filter((c) => c !== b.dataset.star);
+            STEPS[0]();
+          });
+          $$("[data-co]", box).forEach((b) => b.onclick = () => {
+            const c = b.dataset.co;
+            W.co_stars = W.co_stars.includes(c) ? W.co_stars.filter((x) => x !== c) : [...W.co_stars, c];
+            b.classList.toggle("on", W.co_stars.includes(c));
+          });
+          if (!W.title) $("#cw-title", box).focus();
+        },
+        // 2 - look (the filter on top) and the language it's spoken in
+        async () => {
+          const langs = cat.languages || {};
+          box.innerHTML = frame("How should it look?", `
+            <p class="cw-label">Look <span class="muted small">- the retro filter over the whole video</span></p>
+            ${cwCards([{ v: "", label: "⭐ My usual look", sub: META.settings.look_preset || "from Settings" },
+              ...Object.keys(META.presets).map((p) => ({ v: p, label: "🎞 " + p }))], W.look, "look", "four")}
+            <p class="cw-label">Language <span class="muted small">- write in English, the video is voiced and captioned in this</span></p>
+            ${cwCards([{ v: "", label: "🌐 My usual", sub: langName(META.settings.language) },
+              ...Object.entries(langs).map(([k, v]) => ({ v: k, label: v }))], W.language, "lang", "four")}`);
+          wire();
+          pick("look", (v) => { W.look = v; });
+          pick("lang", (v) => { W.language = v; });
+        },
+        // 3 - music and the background sound of the place
+        async () => {
+          const amb = Object.keys(META.sfx).filter((k) => META.sfx[k].kind === "ambience");
+          const dm = META.settings.audio.default_music;
+          box.innerHTML = frame("What does it sound like?", `
+            <p class="cw-label">Music <span class="muted small">- quiet, under her voice</span></p>
+            ${cwCards([{ v: "__default", label: "⭐ My usual", sub: dm ? dm.split("/").pop() : "no music" }, { v: "__none", label: "🔇 No music" },
+              ...music.map((t) => ({ v: t.path, label: "🎵 " + t.name.replace(/\.\w+$/, "").replace(/[-_]+/g, " "),
+                html: `<span class="cw-play" data-play="${esc(t.url)}" title="Listen">▶</span>` }))], W.music, "music", "four")}
+            <p class="cw-label">Ambience <span class="muted small">- the sound of the place (birds, rain, a busy cafe…)</span></p>
+            ${cwCards([{ v: "__default", label: "⭐ My usual", sub: META.settings.sfx.ambience || "off" }, { v: "auto", label: "🗺 Match each scene" },
+              { v: "__none", label: "🔇 None" }, ...amb.map((k) => ({ v: k, label: "🌿 " + META.sfx[k].label.replace("Ambience: ", "") }))], W.ambience, "amb", "four")}
+            <audio id="cw-audio" hidden></audio>`);
+          wire(() => { $("#cw-audio", box).pause(); });
+          pick("music", (v) => { W.music = v; });
+          pick("amb", (v) => { W.ambience = v; });
+          $$("[data-play]", box).forEach((p) => p.onclick = (ev) => {
+            ev.stopPropagation();
+            const a = $("#cw-audio", box);
+            if (!a.paused && a.dataset.src === p.dataset.play) { a.pause(); p.textContent = "▶"; return; }
+            $$("[data-play]", box).forEach((x) => { x.textContent = "▶"; });
+            a.src = p.dataset.play; a.dataset.src = p.dataset.play; a.play().catch(() => {}); p.textContent = "⏸";
+          });
+        },
+        // 4 - captions, shown as they'll look
+        async () => {
+          const demo = (k) => { const s = CAP_STYLES[k].caps, words = ["WHAT", "IF", "CATS"];
+            return `<span class="cw-capdemo">${words.slice(0, s.group === 1 ? 1 : 2).map((w, i) =>
+              `<span style="color:${(s.cycle || [])[i] || "#fff"};${s.outline ? "text-shadow:0 0 2px #000,0 0 2px #000,0 0 3px #000" : ""}">${w}</span>`).join(" ")}</span>`; };
+          box.innerHTML = frame("How do the words appear?", `
+            <p class="cw-label">Caption style</p>
+            ${cwCards(Object.entries(CAP_STYLES).map(([k, v]) => ({ v: k, label: v.label, html: demo(k) })), W.cap, "cap")}
+            <p class="cw-label">Pace</p>
+            ${cwCards([{ v: "1", label: "⚡ Quick cuts", sub: "a new camera angle every few words (like most Reels)" },
+              { v: "0", label: "🎥 One shot per line", sub: "calmer, longer shots" }], W.beats ? "1" : "0", "beats")}`);
+          wire();
+          pick("cap", (v) => { W.cap = v; });
+          pick("beats", (v) => { W.beats = v === "1"; });
+        },
+        // 5 - the script: written by the AI (and editable) or typed by you; it also says where the story goes
+        async () => {
+          const t = tpl(), tone = W.tone || t.tone || "funny";
+          box.innerHTML = frame("Let's write the script", `
+            <div class="cw-two">
+              <div><p class="cw-label">Length</p>${cwCards(Object.entries(CW_LEN).map(([k, v]) => ({ v: k, label: v[0], sub: v[1] })), W.length, "len", "three")}</div>
+              <div><p class="cw-label">Places</p>${cwCards(Object.entries(CW_PLACES).map(([k, v]) => ({ v: k, label: v[0], sub: v[1] })), W.places, "places", "three")}</div></div>
+            <p class="cw-label">Vibe</p>
+            <div class="chips">${[tone, ...TONES.filter((x) => x !== tone)].slice(0, 12).map((x) => `<button class="chip-btn ${x === tone ? "on" : ""}" data-tone="${esc(x)}">${esc(x)}</button>`).join("")}</div>
+            <p class="cw-label">Anything the AI should know? <span class="muted small">(optional)</span></p>
+            <input type="text" id="cw-note" placeholder="e.g. she's afraid of cucumbers; end with a twist" value="${esc(W.note)}">
+            <div class="btns" style="justify-content:center;margin:12px 0 4px"><button id="cw-write" class="cw-magic-btn">✨ Write my script</button></div>
+            <div id="cw-script-wrap" ${W.script ? "" : "hidden"}>
+              <p class="cw-label">Your script <span class="muted small">- one line per moment. Change anything you like.
+                <code>[brackets]</code> are directions, <code>[@ a place]</code> moves the story somewhere new.</span></p>
+              <textarea id="cw-script" rows="9">${esc(W.script)}</textarea>
+              <details class="cw-more"><summary>📖 Words you can use in [brackets]</summary><div class="help-box">
+                <b>Camera:</b> ${Object.keys(cat.cameras).map((c) => `<code>${c}</code>`).join(" ")}<br>
+                <b>Move:</b> ${Object.keys(cat.moves).map((c) => `<code>${c}</code>`).join(" ")}<br>
+                <b>Action:</b> ${Object.keys(cat.anims).map((c) => `<code>${c}</code>`).join(" ")} - or any verb as <code>do:salute</code><br>
+                <b>Expression:</b> ${cat.expressions.map((c) => `<code>${c}</code>`).join(" ")}<br>
+                <b>Light</b> (from this line on): ${Object.keys(cat.lights || {}).map((c) => `<code>${c}</code>`).join(" ")}<br>
+                <b>Who says it:</b> start the line with a name - <code>Mom: Lunch!</code> for someone brought in with <code>+mom</code>.<br>
+                <b>New place:</b> <code>[@ on the moon]</code> - lasts until the next <code>@</code>. You choose the set for it in the next step.<br>
+                <b>Cutaway</b> (show something while she talks): <code>[cutaway: a plane flying past]</code><br>
+                <b>Show a model of something:</b> <code>[show: volcano]</code> <code>[show: volcano open]</code> <code>[show: off]</code><br>
+                <b>Effects:</b> ${Object.keys(cat.particles || {}).map((c) => `<code>${c}</code>`).join(" ")}<br>
+                <b>Others in the scene:</b> <code>[+mom enter]</code> <code>[+car crash_in from_left]</code> - verbs:
+                  ${Object.keys(cat.cast_verbs || {}).map((c) => `<code>${c}</code>`).join(" ")}</div></details></div>
+            <p class="muted small" id="cw-own" ${W.script ? "hidden" : ""}><a href="#" id="cw-self">…or write it yourself</a></p>`, "Next: the scenes →");
+          const showBox = () => { $("#cw-script-wrap", box).hidden = false; $("#cw-own", box).hidden = true; };
+          wire(() => {
+            W.script = $("#cw-script", box).value.trim();
+            if (!W.script) { toast("Write the script first - ✨ Write my script does it for you", true); return false; }
+          });
+          pick("len", (v) => { W.length = v; });
+          pick("places", (v) => { W.places = v; });
+          pick("tone", (v) => { W.tone = v; });
+          $("#cw-note", box).oninput = (e) => { W.note = e.target.value; };
+          $("#cw-script", box).oninput = (e) => { W.script = e.target.value; };
+          $("#cw-self", box).onclick = (e) => { e.preventDefault(); showBox(); $("#cw-script", box).focus(); };
+          $("#cw-write", box).onclick = guard(async (e) => {
+            const btn = e.currentTarget;
+            if (W.script.trim() && !(await uiConfirm("Write a new script? The one in the box is replaced.", { title: "New script", ok: "✨ Write a new one" }))) return;
+            sparkle(btn, e);
+            await busy(btn,"🪄 Writing… (about half a minute)", async () => {
+              const [lo, hi] = CW_LEN[W.length].slice(2);
+              const r = await api("POST", "/api/ai/script", { title: W.title, set: "auto", scene_policy: "reuse", character: W.character,
+                model: CS.model, lines: lo + Math.floor(Math.random() * (hi - lo + 1)), tone: W.tone || tpl().tone, extra: W.note,
+                co_stars: W.co_stars, template: W.template, scenes: W.places });
+              W.script = r.script; W.start = r.set || "auto";
+              $("#cw-script", box).value = W.script; showBox();
+              $("#cw-script", box).classList.add("cw-deal");
+            });
+          });
+        },
+        // 6 - scenes: every place the script needs, matched to your sets or made new
+        async () => {
+          if (!W.scenes || W.scenesFor !== W.script) {
+            await mwMagic(box, "Finding the places in your script…");
+            const r = await api("POST", "/api/scenes/plan", { script: W.script, set: W.start || "auto", title: W.title });
+            W.scenes = r.scenes.map((s) => ({ ...s, choice: s.pick, idea: s.place }));
+            W.scenesFor = W.script;
+          }
+          W.making = W.making || {};
+          const card = (sc, i, id) => {
+            const s = setInfo(id);
+            return `<button class="mw-card cw-card cw-set ${sc.choice === id ? "on" : ""}" data-scene="${i}" data-set="${esc(id)}">
+              ${s.preview ? `<img src="${esc(s.preview)}" alt="" loading="lazy">` : '<span class="cw-noimg">🏞</span>'}<b>${esc(s.name)}</b></button>`;
+          };
+          box.innerHTML = frame(W.scenes.length > 1 ? `Your story has ${W.scenes.length} places` : "Where does it happen?", `
+            <p class="muted small" style="margin-top:-6px">Pick one of your sets for each place, or make a brand-new one.</p>
+            ${W.scenes.map((sc, i) => {
+              const isNew = String(sc.choice).startsWith("new:"), line = (W.script.split("\n")[sc.line] || "").replace(/\[[^\]]*\]\s*/g, "");
+              return `<div class="cw-scene" style="--d:${i}">
+                <div class="cw-scene-h"><b>${i === 0 ? "🎬 It starts in" : `➡ Then, scene ${i + 1}`}</b> <span>“${esc(sc.place)}”</span>
+                  ${i > 0 && line ? `<em class="muted small">at “${esc(line.slice(0, 60))}${line.length > 60 ? "…" : ""}”</em>` : ""}</div>
+                <div class="cw-sets">${sc.options.map((id) => card(sc, i, id)).join("")}
+                  <button class="mw-card cw-card cw-set cw-newset ${isNew ? "on" : ""}" data-scene="${i}" data-set="new"><span class="cw-noimg">✨</span><b>Make a new one</b></button></div>
+                <div class="cw-row"><select data-other="${i}"><option value="">📚 …or pick any of my sets</option>${options(sets.map((s) => s.id), "", Object.fromEntries(sets.map((s) => [s.id, s.name])))}</select></div>
+                ${isNew ? `<div class="cw-new"><label>Describe the new place<input type="text" data-idea-of="${i}" value="${esc(sc.idea)}"></label>
+                  <div class="cw-row"><button data-make="${i}" ${W.making[i] ? "disabled" : ""}>${W.making[i] ? "🪄 Making it…" : "🪄 Make it now (a few minutes)"}</button>
+                    <span class="muted small">or leave it - it's made when the video renders</span></div>
+                  <div class="inline-job" id="cw-job${i}"></div></div>` : ""}</div>`;
+            }).join("")}`, "Next: direct the shots →");
+          wire(() => {
+            if (Object.values(W.making).some(Boolean)) { toast("A new set is still being made - wait for it to finish (or pick another set)", true); return false; }
+            // the script now names the exact sets: "[@ on the moon]" -> "[@ moon_base_1234]" / "[@ new:on the moon]"
+            const lines = W.script.split("\n");
+            for (const sc of W.scenes.slice(1)) {
+              lines[sc.line] = lines[sc.line].replace(/^(\s*\[[^\]]*?)@\s*[^,\]]+/, (_, h) => `${h}@ ${sc.choice}`);
+            }
+            W.directScript = lines.join("\n");
+            W.set = W.scenes[0].choice;
+          });
+          $$("[data-set]", box).forEach((b) => b.onclick = () => {
+            const sc = W.scenes[Number(b.dataset.scene)];
+            sc.choice = b.dataset.set === "new" ? "new:" + (sc.idea || sc.place) : b.dataset.set;
+            STEPS[5]();
+          });
+          $$("[data-other]", box).forEach((s) => s.onchange = () => {
+            if (!s.value) return;
+            const sc = W.scenes[Number(s.dataset.other)];
+            if (!sc.options.includes(s.value)) sc.options = [s.value, ...sc.options].slice(0, 3);
+            sc.choice = s.value; STEPS[5]();
+          });
+          $$("[data-idea-of]", box).forEach((inp) => inp.oninput = () => {
+            const sc = W.scenes[Number(inp.dataset.ideaOf)];
+            sc.idea = inp.value; sc.choice = "new:" + (inp.value.trim() || sc.place);
+          });
+          $$("[data-make]", box).forEach((b) => b.onclick = guard(async () => {
+            const i = Number(b.dataset.make), sc = W.scenes[i];
+            W.making[i] = true; b.disabled = true; b.textContent = "🪄 Making it…";
+            const job = await api("POST", "/api/sets/generate", { idea: `${sc.idea || sc.place}. ${W.title}`.slice(0, 300), where: "", light: "" });
+            watchJob(job, $(`#cw-job${i}`, box), guard(async (j) => {
+              W.making[i] = false;
+              if (j.status !== "done" || !j.result?.set) { toast("The set couldn't be made - see the log", true); if (W.step === 5) STEPS[5](); return; }
+              await refreshMeta();
+              const fresh = await api("GET", "/api/sets");
+              sets.splice(0, sets.length, ...fresh); setsCache = sets;
+              sc.options = [j.result.set, ...sc.options.filter((x) => x !== j.result.set)].slice(0, 3);
+              sc.choice = j.result.set;
+              toast(`✨ New set ready: ${setInfo(j.result.set).name}`);
+              if (W.step === 5) STEPS[5]();
+            }));
+          }));
+        },
+        // 7 - the shots, directed in the chosen sets; camera and action can be changed per shot
+        async () => {
+          const key = cwKey(W);
+          if (!W.shots || W.shotsFor !== key) {
+            await mwMagic(box, "Directing your shots…");
+            const r = await api("POST", "/api/autodirect", { script: W.directScript, set: W.set, cast: {}, co_stars: W.co_stars,
+              beat_words: W.beats ? 4 : 0, cast_ai: W.castAI, character: W.character, scene_ai: false, title: W.title, template: W.template });
+            W.shots = r.shots; W.start = r.start; W.cast = r.cast || {}; W.shotsFor = key;
+            if (r.set) W.set = r.set;
+          }
+          // a guess before the voice exists: ~2.6 words a second plus a little air per shot
+          const secs = Math.round(W.shots.reduce((a, s) => a + (s.duration || String(s.line || "").split(/\s+/).filter(Boolean).length / 2.6 + 0.5), 0));
+          const cast = Object.keys(W.cast || {});
+          let lastSet = null;
+          box.innerHTML = frame(`${W.shots.length} shots, ready to roll`, `
+            <p class="muted small" style="margin-top:-6px">About ${secs} s · ${new Set(W.shots.map((s) => s.set || W.set)).size} scene(s)
+              ${cast.length ? ` · 🎭 also in it: ${cast.map((c) => esc(titleCase(c))).join(", ")}` : ""} - change any camera or action, or just carry on.</p>
+            <div class="cw-shots">${W.shots.map((s, k) => {
+              const sid = s.set || W.set, head = sid !== lastSet ? `<div class="cw-shot-set">🗺 ${esc(String(sid).startsWith("new:") ? "✨ " + sid.slice(4) : setInfo(sid).name)}</div>` : "";
+              lastSet = sid;
+              const anims = Object.keys(cat.anims).filter((a) => !CW_MOVE.has(a) || a === s.action);
+              return `${head}<div class="cw-shot" style="--d:${Math.min(k, 12)}"><span class="cw-n">${k + 1}</span>
+                <span class="cw-line">${s.cutaway ? `📷 <em>${esc(s.cutaway)}</em> - ` : ""}${esc(s.line || "…")}</span>
+                <select data-cam="${k}" title="Camera">${options(Object.keys(cat.cameras), s.camera, Object.fromEntries(Object.keys(cat.cameras).map((c) => [c, "🎥 " + c])))}</select>
+                <select data-act="${k}" title="What she does">${options(anims, s.action, Object.fromEntries(anims.map((a) => [a, "🏃 " + a.replace(/_/g, " ")])))}</select></div>`;
+            }).join("")}</div>
+            <details class="cw-more" id="cw-full"><summary>🔧 Fine-tune every detail - lines, moves, places, sounds, effects, light, who's in it</summary>
+              <div id="cw-shots-full"></div><div id="cw-cast-full"></div>
+              <div class="btns"><button id="cw-add-shot">+ Add a shot</button></div></details>
+            <div class="cw-row" style="justify-content:center">
+              <label class="check"><input type="checkbox" id="cw-cast" ${W.castAI ? "checked" : ""}> 🎭 Let the AI bring in people &amp; things the script mentions</label>
+              <button id="cw-redirect">🔁 Direct again</button></div>`, "Next: check & render →");
+          wire();
+          // the full shot editor (the same one the old Create page had), working on the popup's own shots
+          const tmp = { title: W.title, set: W.set, start: W.start, shots: W.shots, cast: W.cast, co_stars: W.co_stars,
+            ...(W.character ? { character: W.character } : {}) };
+          const drawFull = () => {
+            const marks = cat.sets[W.set]?.marks || ["center", "front", "left", "right", "back"];
+            const sync = () => { W.cast = tmp.cast || {}; drawCast($("#cw-cast-full", box), tmp, () => { W.cast = tmp.cast || {}; }); };
+            drawShots($("#cw-shots-full", box), tmp, marks, sync);
+            sync();
+          };
+          $("#cw-full", box).ontoggle = (e) => {
+            $(".cw-shots", box).hidden = e.target.open;          // one editor at a time, so they can't disagree
+            if (e.target.open) drawFull(); else STEPS[6]();
+          };
+          $("#cw-add-shot", box).onclick = () => { W.shots.push({ camera: "medium", action: "idle", expression: "neutral", line: "" }); drawFull(); };
+          $$("[data-cam]", box).forEach((s) => s.onchange = () => { W.shots[Number(s.dataset.cam)].camera = s.value; });
+          $$("[data-act]", box).forEach((s) => s.onchange = () => { const sh = W.shots[Number(s.dataset.act)]; sh.action = s.value; if (!CW_MOVE.has(s.value)) delete sh.to; });
+          $("#cw-cast", box).onchange = (e) => { W.castAI = e.target.checked; };
+          $("#cw-redirect", box).onclick = guard(async () => { W.shots = null; await STEPS[6](); });
+        },
+        // 8 - everything at a glance, then go
+        async () => {
+          const t = tpl(), scenes = W.scenes || [...new Set(W.shots.map((s) => s.set || W.set))].map((choice) => ({ choice }));
+          const pill = (k, txt) => `<button class="cw-pill" data-goto="${k}">${txt}</button>`;
+          const mus = W.music === "__default" ? "my usual music" : W.music === "__none" ? "no music" : W.music.split("/").pop();
+          const amb = W.ambience === "__default" ? "usual ambience" : W.ambience === "__none" ? "no ambience" : W.ambience === "auto" ? "ambience per scene" : W.ambience;
+          box.innerHTML = frame("Ready when you are!", `
+            <div class="cw-sum-title">“${esc(W.title)}”</div>
+            <div class="mw-sum cw-sum">
+              ${pill(0, `${t.icon || "🎬"} ${esc(t.name || "")}`)}${pill(0, `⭐ ${esc(titleCase(W.character || META.settings.active_character))}${W.co_stars.length ? " + " + esc(W.co_stars.map(titleCase).join(", ")) : ""}`)}
+              ${pill(1, `🎨 ${esc(W.look || "usual look")}`)}${pill(1, `🌐 ${esc(langName(W.language || META.settings.language))}`)}
+              ${pill(2, `🎵 ${esc(mus)}`)}${pill(2, `🌿 ${esc(amb)}`)}
+              ${pill(3, `💬 ${esc(CAP_STYLES[W.cap]?.label || "")}`)}
+              ${pill(4, `✍️ ${W.script.split("\n").filter((l) => l.trim()).length} lines`)}
+              ${pill(5, `🗺 ${scenes.map((s) => esc(String(s.choice).startsWith("new:") ? "✨ " + s.choice.slice(4) : setInfo(s.choice).name)).join(" → ")}`)}
+              ${pill(6, `🎬 ${W.shots.length} shots`)}</div>
+            <p class="muted small" style="text-align:center">Tap anything above to change it. Rendering takes a few minutes${scenes.some((s) => String(s.choice).startsWith("new:")) ? " (plus a few for each new set)" : ""} - follow it at the top right.</p>
+            <div class="cw-extras">
+              <label class="check"><input type="checkbox" id="cw-fresh" ${W.fresh ? "checked" : ""}> 🎙 Record the voice lines again (new takes)</label>
+              ${(W.language || META.settings.language || "en") !== "en" ? `<button id="cw-trans" class="small-btn">🌐 Check the ${esc(langName(W.language || META.settings.language))} translation</button>` : ""}</div>
+            <div class="cw-go">
+              <button id="cw-render" class="primary cw-render">▶ ${W.editId ? "Render it again!" : "Render my video!"}</button>
+              <div class="btns" style="justify-content:center"><button id="cw-save">💾 Save without rendering</button></div></div>`, "");
+          wire();
+          $("#cw-fresh", box).onchange = (e) => { W.fresh = e.target.checked; };
+          const build = () => {
+            const ep = { title: W.title, set: W.set, start: W.start, shots: W.shots, script: W.directScript, template: W.template,
+              captions: { ...(CS.ep.captions || {}), ...CAP_STYLES[W.cap].caps } };
+            if (W.character) ep.character = W.character;
+            if (W.co_stars.length) ep.co_stars = W.co_stars;
+            if (W.look) ep.look_preset = W.look;
+            if (W.language) ep.language = W.language;
+            if (W.music !== "__default") ep.music = W.music === "__none" ? "" : W.music;
+            if (W.ambience !== "__default") ep.ambience = W.ambience === "__none" ? "" : W.ambience;
+            if (W.cast && Object.keys(W.cast).length) ep.cast = W.cast;
+            if (W.translations) ep.translations = W.translations;
+            return ep;
+          };
+          const finish = (how) => {
+            Object.assign(CS, { ep: build(), id: W.editId || "", keepId: !!W.editId, rendered: null, scriptDraft: W.directScript,
+              beats: W.beats, wiz: null });
+            close({ how, fresh: W.fresh });
+          };
+          if ($("#cw-trans", box)) $("#cw-trans", box).onclick = guard(async (e) => {
+            const ep = build();
+            await checkTranslation(ep, e.currentTarget, () => { W.translations = ep.translations; });
+          });
+          $("#cw-render", box).onclick = (e) => { sparkle(e.currentTarget, e); setTimeout(() => finish("render"), 250); };
+          $("#cw-save", box).onclick = () => finish("save");
+        },
+      ];
+      go(Math.min(W.step, W.max));
+    },
+  });
+}
+
 function showResult(video, sheet) {
   const box = $("#result");
   if (!box) return;
-  if (!video) { box.innerHTML = '<span class="muted">Render to see the video here.</span>'; return; }
+  if (!video) { box.innerHTML = ""; return; }
   box.innerHTML = `<video class="preview" src="${esc(video)}" controls playsinline></video>
     <div class="btns"><a class="btn" href="${esc(video.split("?")[0])}" download>⬇ Download mp4</a></div>
     ${sheet ? `<img class="sheet" src="${esc(sheet)}" alt="Shot sheet">` : ""}`;
@@ -2786,9 +3238,9 @@ async function openVideoEditor(id) {
         The video being replaced is kept in output/previous/.</p>`,
     buttons: [
       { label: "Cancel", value: null },
-      { label: "Open in full Create page", left: true, onClick: async () => {
-        CS.id = id; CS.keepId = true; CS.ep = await api("GET", `/api/episodes/${id}`); CS.scriptDraft = undefined;
-        location.hash = "#create";
+      { label: "🪄 Open in Custom Video", left: true, onClick: async () => {
+        CS.wiz = cwFromEpisode(await api("GET", `/api/episodes/${id}`), id); CS.openWiz = true;
+        if (location.hash === "#create") pageCreate(); else location.hash = "#create";
       } },
       { label: "💾 Save", onClick: async (m) => {
         const r = await save(m);

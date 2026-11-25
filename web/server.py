@@ -890,7 +890,8 @@ class Handler(BaseHTTPRequestHandler):
                                             {"name": s["name"], "description": s["description"],
                                              "marks": list(s["marks"])},
                                             lines=int(b.get("lines", 6)), tone=b.get("tone") or tpl["tone"],
-                                            extra=extra, temperature=o["temperature"], others=others)
+                                            extra=extra, temperature=o["temperature"], others=others,
+                                            scenes=str(b.get("scenes") or "auto"))
                 return self.send_json({"lines": lines, "script": "\n".join(lines), "model": model, "set": chosen})
             if arg == "titles":
                 tpl = templates.get(b.get("template")) if b.get("template") else None
@@ -1132,6 +1133,12 @@ class Handler(BaseHTTPRequestHandler):
             cmd = [sys.executable, "-u", str(PIPE / "series.py"), str(f)]
             return self.send_json(submit(Job("series", f"Series: {idea[:40]} ({spec['count']} episodes)",
                                              cmd)).to_dict())
+
+        if head == "scenes" and arg == "plan" and method == "POST":    # the Create popup's Scenes step
+            b = self.body_json()
+            policy = "new" if b.get("scene_policy") == "new" else "reuse"
+            return self.send_json({"scenes": autodirect.plan_scenes(b.get("script", ""), b.get("set") or "auto",
+                                                                    b.get("title", ""), policy)})
 
         if head == "autodirect" and method == "POST":
             b = self.body_json()

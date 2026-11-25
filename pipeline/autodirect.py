@@ -391,6 +391,8 @@ def fit_score(place, sid, s):
 
 def match_set(place, sets, policy="reuse"):
     """The best existing set for a place description, or "new:<place>" if none fits (or policy == "new")."""
+    if place.startswith("new:"):            # already decided (the Create popup's Scenes step)
+        return place
     key = re.sub(r"[^a-z0-9]+", "_", place.lower()).strip("_")
     if key in sets:
         return key
@@ -405,6 +407,34 @@ def match_set(place, sets, policy="reuse"):
         if sc > score:
             best, score = sid, sc
     return best if best and score >= 0.5 else "new:" + place
+
+
+def plan_scenes(script, start, title="", policy="reuse", ollama=None, log=print):
+    """The places a script needs, in order: where it starts (start = a set id, "new:<place>" or "auto" from the
+    title) and every "[@ place]" line. Each = {line (index in script.split("\\n")), place, pick (set id or
+    "new:<place>"), options: up to 3 fitting set ids, first: True for the start}."""
+    sets = catalog.all_sets()
+    if not start or start == "auto":
+        start, place0 = auto_set(title, policy, ollama, log)
+    else:
+        place0 = start[4:] if str(start).startswith("new:") else (sets.get(start) or {}).get("name", start)
+
+    def options(place, pick):
+        ranked = sorted(((fit_score(place, sid, s), sid) for sid, s in sets.items()), reverse=True)
+        out = [pick] if pick in sets else []
+        out += [sid for sc, sid in ranked if sc >= 0.25 and sid not in out]
+        return out[:3]
+    out = [{"line": 0, "place": place0, "pick": start, "options": options(place0, start), "first": True}]
+    for i, raw in enumerate(str(script or "").split("\n")):
+        head = re.match(r"^\s*\[([^\]]*)\]", raw)
+        sc = head and re.search(r"@\s*([^,\]]+)", head.group(1))
+        if not sc:
+            continue
+        place = sc.group(1).strip()
+        pick = match_set(place, sets, policy)
+        name = place[4:] if place.startswith("new:") else (sets[place]["name"] if place in sets else place)
+        out.append({"line": i, "place": name, "pick": pick, "options": options(name, pick)})
+    return out
 
 
 GENERIC_MARKS = {"center": (0, 0), "front": (0, -2.5), "left": (-3, -0.5), "right": (3, -0.5), "back": (0, 3)}
