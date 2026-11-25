@@ -221,8 +221,8 @@ IN_SLOTS = {
     "hero": {"pos": (2.0, 3.7), "w": 2.8, "about": "the big piece that says what the place is (at the back)"},
     "side": {"pos": (-3.4, 4.2), "w": 1.4, "about": "a tall piece against the back wall, left"},
     "group_a": {"pos": (-1.9, 1.0), "w": 1.6, "about": "a furniture group in the middle-left (a table and seats)"},
-    "group_b": {"pos": (2.3, -0.7), "w": 1.4, "about": "a smaller thing near the front right"},
-    "corner": {"pos": (-3.9, 2.6), "w": 1.0, "about": "a small thing framing the left edge (a plant...)"},
+    "group_b": {"pos": (1.75, -1.5), "w": 1.2, "about": "a smaller thing at the front right, half in the frame"},
+    "corner": {"pos": (-2.9, 2.8), "w": 1.0, "about": "a small thing framing the left edge (a plant...)"},
 }
 OUT_SLOTS = {
     "hero": {"pos": (2.2, 4.2), "w": 3.5, "about": "the big piece that says what the place is"},
@@ -579,7 +579,7 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
     if b["indoor"]:
         walls = [w for w in (choice.get("walls") or []) if w in WALL][:2] or list(b["walls"])
         walls = (walls + list(b["walls"]))[:2]
-        for x, wname in zip((-1.9, 1.9), walls):
+        for x, wname in zip((-1.6, 1.9), walls):
             parts, h = WALL[wname](pal, rng, night)
             _piece(recipe, f"base_{wname}_{'l' if x < 0 else 'r'}", parts, (x, HD - 0.06), h)
         _piece(recipe, "base_lamps", lamps(pal, b["lamps"]), (0.0, 0.0), 5.0)
@@ -639,6 +639,9 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
             if mark not in marks:
                 marks[mark] = [round(x, 2), round(y - min(1.6, width * scale / 2 + 0.7), 2)]
         log(f"[set] {sid}: {k}" + (f" ({d.get('name')})" if d and d.get("source") == "imported" else ""))
+    if b["indoor"] and not any(p["kind"] == "rug" for p in recipe["props"]):
+        # the lower part of the frame was bare floor: a rug in the middle (flat, she walks over it)
+        recipe["props"].append({"kind": "rug", "pos": [0.0, 0.6], "rot": 0.0, "z": 0.0, "scale": 1.1})
     if b["indoor"]:                              # the right corner mirrors the left one, like the Legacy Cafe's plants
         rk = b["defaults"].get("corner") or "plant"
         if rk in setgen.PROPS:
