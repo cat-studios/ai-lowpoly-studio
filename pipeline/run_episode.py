@@ -911,6 +911,64 @@ def set_exists(sid):
     return sid in catalog.SETS or (ROOT / "sets" / f"{sid}.json").exists()
 
 
+PREVIEW = {"storyboard": {"res": [216, 384], "fps": 2}, "rough": {"res": [270, 480], "fps": 12}}
+
+
+def preview_sets(ep, log=print):
+    """A quick preview never makes a set: "auto", "new:<place>" and missing ids become the closest set you
+    already have (by name words, else Legacy Cafe). Nothing is written back to the episode file."""
+    import autodirect
+    import catalog
+    sets = catalog.all_sets()
+
+    def pick(sid):
+        sid = str(sid or "")
+        if sid and sid != "auto" and set_exists(sid):
+            return sid
+        if sid == "auto":
+            place = re.sub(r"^(what if|how does|how do|why is|why do|what does|how can|what happens if)\s+", "",
+                           str(ep.get("title") or "").strip(" ?!."), flags=re.I)
+        else:
+            place = sid[4:] if sid.startswith("new:") else sid.replace("_", " ")
+        got = autodirect.match_set(place or "cafe", sets, "reuse") if place else "cafe"
+        got = got if not got.startswith("new:") and set_exists(got) else "cafe"
+        log(f"  preview: '{sid}' isn't made yet - showing it in {got} (the real render makes it)")
+        return got
+
+    ep["set"] = pick(ep.get("set") or "cafe")
+    for shot in ep["shots"]:
+        if shot.get("set"):
+            shot["set"] = pick(shot["set"])
+        shot.pop("want", None)               # no new animations in a preview: the shot's own action plays
+
+
+def write_storyboard(ep, timing, frames_dir, out_dir):
+    """One still from the middle of every shot + storyboard.json (what each shot is) for the preview popup."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for old in out_dir.glob("shot_*.png"):
+        old.unlink()
+    shots = []
+    for i, (shot, tm) in enumerate(zip(ep["shots"], timing["shots"])):
+        if not tm:
+            continue
+        f = tm["f0"] + max(0, tm["n"] // 2)
+        src = frames_dir / f"f_{f:04d}.png"
+        if not src.exists():
+            have = sorted(frames_dir.glob("f_*.png"))
+            src = have[min(len(have) - 1, f - 1)] if have else None
+        img = f"shot_{i + 1:02d}.png"
+        if src:
+            shutil.copyfile(src, out_dir / img)
+        shots.append({"n": i + 1, "image": img if src else "", "line": shot.get("line", ""),
+                      "camera": shot.get("camera", ""), "move": shot.get("move", ""),
+                      "action": shot.get("action", ""), "expression": shot.get("expression", ""),
+                      "set": shot.get("set") or ep.get("set", ""), "speaker": shot.get("speaker", ""),
+                      "cutaway": shot.get("cutaway", ""), "seconds": round(float(shot.get("duration", 0)), 1)})
+    (out_dir / "storyboard.json").write_text(json.dumps({"title": ep.get("title", ""), "time": time.time(),
+                                                         "shots": shots}, indent=1), encoding="utf-8")
+    return out_dir / "storyboard.json"
+
+
 def resolve_scenes(ep, ep_path=None, log=print):
     """Shots can move to another set ("set" on the shot). "new:<idea>" (or an id that doesn't exist yet) makes
     that set now - once per idea - and the chosen ids are written back into the episode file, so the next
@@ -1181,6 +1239,9 @@ def main():
     ap.add_argument("--say", metavar="TEXT", help="voice test: speak TEXT in a character's voice")
     ap.add_argument("--character", help="character id for --say (default: active character)")
     ap.add_argument("--out", type=Path, help="output file for --say")
+    ap.add_argument("--preview", choices=sorted(PREVIEW), help="quick look before the full render: storyboard "
+                    "(one still per shot, no voice) or rough (small moving video with the voice, plain look); "
+                    "nothing new is made (sets, props, animations) - stand-ins are used")
     args = ap.parse_args()
     global FRESH, AUDIO_LEAD, TAIL_PAD
     FRESH = args.fresh_voice
@@ -1197,7 +1258,13 @@ def main():
     blender = tool("blender", "BLENDER", BLENDER_DEFAULT)
     ep = json.loads(args.episode.read_text(encoding="utf-8-sig"))
     name = slug(args.episode.stem)
-    build = ROOT / "build" / name
+    if args.preview:
+        os.environ["STUDIO_PREVIEW"] = "1"        # propgen: stand-in props, no look checks or drawings
+        if args.preview == "storyboard":
+            args.no_tts = True
+        args.no_render = False
+        ep.pop("_no_render", None)
+    build = ROOT / "build" / (name + ("__preview" if args.preview else ""))
     audio_dir, frames_dir = build / "audio", build / "frames"
     audio_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -1208,13 +1275,18 @@ def main():
     resolve_co_stars(ep, cfg)
     ep.setdefault("render_res", [cfg["render"]["width"], cfg["render"]["height"]])
     ep.setdefault("fps", cfg["render"]["fps"])
-    resolve_scenes(ep, args.episode)
+    if args.preview:
+        ep["render_res"], ep["fps"] = list(PREVIEW[args.preview]["res"]), PREVIEW[args.preview]["fps"]
+        preview_sets(ep)
+    resolve_scenes(ep, None if args.preview else args.episode)
     embed_set(ep)
     resolve_cutaways(ep)
     resolve_animations(ep)
     resolve_cast(ep, cfg)
     drop_weak_cutaways(ep)
     ep["_language"] = out_language(ep, cfg)
+    if args.preview == "storyboard":
+        ep["_language"] = "en"                    # no voice, so the English lines are enough
     if ep["_language"] != "en":
         report(0.05, "Translating")
         translate_episode(ep, cfg, ep["_language"])
@@ -1374,18 +1446,25 @@ def main():
         sys.exit(f"The last render had {len(timing['shots'])} shots but the episode now has {len(ep['shots'])} - "
                  "the shots changed, so it needs a full render (re-applying the look only works on the same shots).")
     fps, total = timing["fps"], timing["total_frames"]
+    if args.preview == "storyboard":
+        sb = write_storyboard(ep, timing, frames_dir, ROOT / "output" / "previews" / name)
+        report(1.0, "Done")
+        print(f"Storyboard done in {time.time() - t0:.0f}s -> {sb}")
+        return
 
     # 3. captions + ffmpeg
     res = ep.get("render_res", [216, 384])
     write_captions(build / "captions.ass", ep, ep["shots"], timing, res,
                    S.deep_merge(cfg["captions"], ep.get("captions", {})),
                    S.deep_merge(cfg["branding"], ep.get("branding", {})))
-    out_dir = ROOT / "output"
-    out_dir.mkdir(exist_ok=True)
-    out = out_dir / f"{name}.mp4"
+    out_dir = ROOT / "output" / ("previews" if args.preview else "")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / (f"{name}_rough.mp4" if args.preview else f"{name}.mp4")
     # look = global settings < episode preset < episode overrides
     look = S.deep_merge(cfg["look"], S.LOOK_PRESETS.get(ep.get("look_preset") or "", {}))
     look = S.deep_merge(look, ep.get("look", {}))
+    if args.preview:                              # a rough cut: colours kept, the slow filters left out
+        look.update(blur=0, fringe=0, bloom=0, scanlines=0, grain=0, vignette=0)
     cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-framerate", str(fps), "-i", "frames/f_%04d.png"]
     n_in = 1
     pre = low_res_chain(look)
@@ -1501,11 +1580,15 @@ def main():
         cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono"]
         fc.append(f"[{n_in}:a]anull[a]")
     cmd += ["-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]", "-t", f"{total / fps:.3f}",
-            "-c:v", "libx264", "-preset", "medium",
+            "-c:v", "libx264", "-preset", "veryfast" if args.preview else "medium",
             "-crf", str(max(14, min(30, int(cfg["render"].get("crf", 20))))), "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", str(out)]
     report(0.89, "Adding the look, captions and sound")
     encode_with_progress(cmd, build, total / fps, 0.89, 0.98)
+    if args.preview:
+        report(1.0, "Done")
+        print(f"Rough preview done in {time.time() - t0:.0f}s -> {out}  ({total / fps:.1f}s video)")
+        return
 
     # 4. contact sheet: middle of every shot from the FINISHED video (filter + captions), for review
     picks = "+".join(f"eq(n\\,{round(((s['f0'] - 1 + s['n'] / 2) / fps) * 30)})" for s in timing["shots"])

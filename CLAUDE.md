@@ -14,6 +14,7 @@ python pipeline/run_episode.py episodes/<id>.json [--fresh-voice] [--no-render] 
 python pipeline/make_set.py [--idea "haunted bakery"] [--where inside|outside] [--light day|sunset|night] [--ai auto|off] [--comfy required|auto|off] [--replace <id>]
 python pipeline/music_gen.py --style "lofi chill" --seconds 60 [--engine auto|ace|synth]
 python pipeline/sfx.py              # (re)synthesise the 24 built-in sounds
+python pipeline/run_episode.py episodes/<id>.json --preview storyboard|rough   # quick look, output/previews/
 python -m unittest discover tests   # quick tests (director, script cleanup, cutaways, ideas filter) - run before pushing
 & "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" -b --factory-startup --python pipeline/prepare_character.py -- assets/characters/<x>.vrm --out assets/characters/<id>.blend
 ```
@@ -602,6 +603,17 @@ blue-green slab), other slots = built-in or imported. Known: an outdoor ground p
   🔧 Fine-tune panel reuses `drawShots`/`drawCast` on a temporary episode sharing `W.shots`. Unchanged inputs
   (`cwKey`) keep the shots and any hand edits.
 - `.mw-card` animations use fill-mode `backwards` (`both` held `transform: none` and killed the hover lift).
+
+## Quick previews (2026-11-26)
+`run_episode --preview storyboard|rough` (Custom Video's last step: 👀 Storyboard / 🎞 Rough preview,
+`POST /api/preview {id, kind}` → job kind `preview` in the render lane, files at `/media/previews/`). Nothing new is
+made: env `STUDIO_PREVIEW=1` makes `propgen` return stand-ins (`fallback`, no look check, no sprite, no real-size
+ask, explainers too), `preview_sets` swaps `auto` / `new:` / missing sets for the closest existing one (never written
+back - `resolve_scenes` gets no episode path), shot `want` is dropped. Build dir `build/<name>__preview`.
+Storyboard: no voice (estimated timing), 216x384 at 2 fps, `write_storyboard` copies each shot's middle frame to
+`output/previews/<name>/shot_NN.png` + `storyboard.json`, no ffmpeg. Rough: real voice, 270x480 at 12 fps, the look
+minus blur/fringe/bloom/scanlines/grain/vignette, x264 veryfast → `output/previews/<name>_rough.mp4`, no sheet.
+The popup saves the episode first (`W.previewId`), and the real render then uses that same file.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

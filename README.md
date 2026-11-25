@@ -107,7 +107,10 @@ Three big buttons:
   7. **🎬 Shots** - the script directed in those sets: change any camera or action, or open **🔧 Fine-tune every
      detail** (lines, moves, places, sounds, effects, light, cutaways, who says it, others in the shot, the cast).
   8. **🚀 Render** - everything at a glance, record the voice again if you like, check the translation, then
-     **▶ Render my video!** (or save it without rendering).
+     **▶ Render my video!** (or save it without rendering). Want a look first? **👀 Storyboard** (about a minute:
+     one picture per shot with its line, no voice) or **🎞 Rough preview** (a few minutes: a small moving video
+     with the voice and captions, plain look). Previews never make anything new - a set, prop or move that isn't
+     made yet shows as a stand-in (the closest set you have); the real render makes it.
 
 The scenes come after the script on purpose: the script decides where the story goes, and the shots are directed
 last so walks and pointing use the real sets' own places. Each video is its own new episode (named from the title).

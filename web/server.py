@@ -88,7 +88,7 @@ LANES = {"render": queue.Queue(), "scene": queue.Queue(), "other": queue.Queue()
 
 
 def lane_of(job):
-    return "render" if job.kind == "render" else "scene" if job.kind == "set" else "other"
+    return "render" if job.kind in ("render", "preview") else "scene" if job.kind == "set" else "other"
 
 
 def submit(job):
@@ -786,6 +786,11 @@ class Handler(BaseHTTPRequestHandler):
                 if WEB.resolve() not in target.parents:
                     return self.fail("not found", 404)
                 return self.send_file(target)
+            if method == "GET" and path.startswith("/media/previews/"):   # quick previews (output/previews/)
+                name = path[len("/media/previews/"):]
+                if not re.fullmatch(r"([\w.-]+/)?[\w.-]+\.(mp4|png|json)", name) or ".." in name:
+                    return self.fail("not found", 404)
+                return self.send_file(OUTPUT / "previews" / name)
             if method == "GET" and path.startswith("/media/previous/"):   # earlier versions (output/previous/)
                 name = path[len("/media/previous/"):]
                 if not re.fullmatch(r"[\w.-]+\.(mp4|png)", name):
@@ -1269,6 +1274,20 @@ class Handler(BaseHTTPRequestHandler):
                         shutil.copy2(old, OUTPUT / "previous" / f"{old.stem}-{when}{old.suffix}")
             job = Job("render", f"Render {p.stem}" + (" (look only)" if b.get("reuse_frames") else ""), cmd,
                       result={"video": f"/media/{name}.mp4", "sheet": f"/media/{name}_shots.png", "episode": p.stem})
+            return self.send_json(submit(job).to_dict())
+
+        if head == "preview" and method == "POST":   # a quick look before the full render (storyboard / rough)
+            b = self.body_json()
+            p = episode_path(b.get("id"))
+            if not p.exists():
+                return self.fail("save the episode first", 404)
+            kind = "rough" if b.get("kind") == "rough" else "storyboard"
+            name = slug(p.stem)
+            cmd = [sys.executable, "-u", str(PIPE / "run_episode.py"), str(p), "--preview", kind]
+            result = ({"video": f"/media/previews/{name}_rough.mp4"} if kind == "rough" else
+                      {"storyboard": f"/media/previews/{name}/storyboard.json", "base": f"/media/previews/{name}/"})
+            job = Job("preview", ("Rough preview " if kind == "rough" else "Storyboard ") + p.stem, cmd,
+                      result=dict(result, kind=kind, episode=p.stem))
             return self.send_json(submit(job).to_dict())
 
         if head == "server" and arg == "restart" and method == "POST":   # Settings -> Restart the app

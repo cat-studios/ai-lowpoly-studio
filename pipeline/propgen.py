@@ -7,6 +7,7 @@ Recipes embed the designs they use ("custom_props"), so a set keeps working on i
 """
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -564,6 +565,8 @@ def squeeze_to_width(d, log=print):
 def add_sprite(d, comfy_cfg, log=print, force=False):
     """Give a prop a picture: ComfyUI draws it and it's cut out (assets/props/<kind>.png). Blender shows the sprite
     as a camera-facing cut-out (N64 style) - much more recognisable than shapes. The shapes stay as the fallback."""
+    if _preview():
+        return d
     if not comfy_cfg or (d.get("sprite") and (ROOT / d["sprite"]).exists() and not force):
         return d
     import comfy
@@ -647,7 +650,7 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
             apply_template(have, kind, have.get("looks", ""), tpl)
             log(f"[props] '{kind}' rebuilt as a {tpl[1]} (the old shape is in assets/props/.trash)")
             changed = True
-        if ollama and not have.get("size_checked"):        # older library props get a real size...
+        if ollama and not _preview() and not have.get("size_checked"):        # older library props get a real size...
             real_size(have, ollama, log)
             changed = have.get("size_checked", False)
         if not have.get("animal") and not have.get("vehicle") and squeeze_to_width(have, log):
@@ -662,6 +665,10 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
             _save(have)
         return have
     d = None
+    if _preview():                            # a quick preview: a stand-in now, the real design at the render
+        d = fallback(kind, looks)
+        d["preview"] = True
+        return d
     if ollama:
         import llm
         user = (f"Object: {kind.replace('_', ' ')}\nWhat it looks like: {looks or kind.replace('_', ' ')}\n"
@@ -765,7 +772,14 @@ def look_score(d, ollama, log=print, preview=None):
         return None, ""
 
 
+def _preview():
+    """A quick preview render (run_episode --preview): no AI design, look checks or drawings - stand-ins only."""
+    return bool(os.environ.get("STUDIO_PREVIEW"))
+
+
 def _prop_check_on():
+    if _preview():
+        return False
     try:
         import settings as S
         return bool(S.load_settings()["sets"].get("prop_check", True))
@@ -1092,7 +1106,7 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
             if have.get("sprite") and save:
                 _save(have)
         return have
-    if not ollama:
+    if not ollama or _preview():
         d = fallback(kind, looks)
         d.update(explainer=True, moves=[])
         return d

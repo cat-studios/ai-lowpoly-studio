@@ -92,7 +92,7 @@ function watchJob(job, box, onDone) {
 
 /* ------------------------------------------------------------------ job progress (top-right bar + panel) */
 const JOBUI = { jobs: [], open: false, openLog: null, logFrom: {}, logs: {}, timer: null, flash: null };
-const JOB_ICON = { render: "🎬", set: "🏞", music: "🎵", sfx: "🔊", props: "🎨", fx: "✨", postiz: "📤", voice: "🗣" };
+const JOB_ICON = { render: "🎬", set: "🏞", music: "🎵", sfx: "🔊", props: "🎨", fx: "✨", postiz: "📤", voice: "🗣", preview: "👀" };
 const fmtDur = (s) => { s = Math.max(0, Math.round(s)); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : `${s}s`; };
 
 function jobEta(j) {
@@ -1298,6 +1298,12 @@ async function openCustomWizard() {
             <div class="cw-extras">
               <label class="check"><input type="checkbox" id="cw-fresh" ${W.fresh ? "checked" : ""}> 🎙 Record the voice lines again (new takes)</label>
               ${(W.language || META.settings.language || "en") !== "en" ? `<button id="cw-trans" class="small-btn">🌐 Check the ${esc(langName(W.language || META.settings.language))} translation</button>` : ""}</div>
+            <div class="cw-preview">
+              <div class="muted small">Have a quick look first? Nothing new is made for these (new sets, props and moves show as stand-ins).</div>
+              <div class="btns" style="justify-content:center">
+                <button id="cw-sb" class="small-btn" title="One picture per shot, no voice - about a minute">👀 Storyboard</button>
+                <button id="cw-rough" class="small-btn" title="A small moving video with the voice and captions, plain look - a few minutes">🎞 Rough preview</button></div>
+              <div id="cw-prev-job"></div><div id="cw-prev"></div></div>
             <div class="cw-go">
               <button id="cw-render" class="primary cw-render">▶ ${W.editId ? "Render it again!" : "Render my video!"}</button>
               <div class="btns" style="justify-content:center"><button id="cw-save">💾 Save without rendering</button></div></div>`, "");
@@ -1318,8 +1324,39 @@ async function openCustomWizard() {
             if ((W.scenes || []).some((sc) => String(sc.choice).startsWith("new:"))) ep.set_style = W.setStyle;   // made at render
             return ep;
           };
+          // a preview saves the video first (the same file the real render then uses)
+          const preview = (kind) => guard(async (e) => {
+            const btnEl = e.currentTarget;
+            if (!W.previewId && !W.editId) W.previewId = ((W.title || "episode").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "episode")
+              + "_" + Date.now().toString(36).slice(-5);
+            const id = W.editId || W.previewId;
+            btnEl.disabled = true;
+            try {
+              await api("PUT", `/api/episodes/${id}`, build());
+              const job = await api("POST", "/api/preview", { id, kind });
+              $("#cw-prev", box).innerHTML = "";
+              watchJob(job, $("#cw-prev-job", box), async (j) => {
+                btnEl.disabled = false;
+                const out = $("#cw-prev", box);
+                if (!out) return;                        // the popup moved on
+                if (j.status !== "done") { toast("The preview failed - see the log", true); return; }
+                $("#cw-prev-job", box).innerHTML = "";
+                const t = "?t=" + Date.now();
+                if (j.result.video) {
+                  out.innerHTML = `<video class="cw-rough" src="${esc(j.result.video + t)}" controls playsinline autoplay></video>`;
+                  return;
+                }
+                const sb = await api("GET", j.result.storyboard + t);
+                out.innerHTML = `<div class="cw-board">${sb.shots.map((sh) => `<figure>
+                  ${sh.image ? `<img src="${esc(j.result.base + sh.image + t)}" alt="Shot ${sh.n}" loading="lazy">` : `<div class="cw-noimg">?</div>`}
+                  <figcaption><b>${sh.n}</b> <span class="muted">${esc([sh.camera, sh.action !== "idle" ? sh.action : "", sh.speaker].filter(Boolean).join(" · "))}</span><br>${esc(sh.line || (sh.cutaway ? "📷 " + sh.cutaway : "…"))}</figcaption></figure>`).join("")}</div>`;
+              });
+            } catch (err) { btnEl.disabled = false; throw err; }
+          });
+          $("#cw-sb", box).onclick = preview("storyboard");
+          $("#cw-rough", box).onclick = preview("rough");
           const finish = (how) => {
-            Object.assign(CS, { ep: build(), id: W.editId || "", keepId: !!W.editId, rendered: null, scriptDraft: W.directScript,
+            Object.assign(CS, { ep: build(), id: W.editId || W.previewId || "", keepId: !!W.editId, rendered: null, scriptDraft: W.directScript,
               beats: W.beats, wiz: null });
             close({ how, fresh: W.fresh });
           };
