@@ -472,7 +472,8 @@ camera.
 - Invisible people: the Quaternius "Posed Background Characters" FBX materials import with Principled Alpha 0
   (HASHED) - cast people / crowds / cutaways rendered as only a blob shadow, and their Assets pictures were blank
   white. `blender_models.fix_invisible` (in `load_model`) makes an unlinked alpha < 0.05 solid.
-  `imported.previews_all` treats a picture shared byte-for-byte by 3+ models as blank and draws it again
+  `imported.previews_all` redraws blank pictures (`_blank_png`: a flat PNG decompresses to a few byte values - the
+  blank files were not byte-identical) - also the Quaternius animals, guns and village houses (same cause)
   (`imported.py previews`; 126 blank in production).
 - Whales: the Quick facts template's own example was "[cutaway: a blue whale swimming]" and the writer copied it
   into a sleep series as a comparison. The example is gone; the writer and `find_scenes` are told a cutaway shows

@@ -186,18 +186,37 @@ def make_previews(models, log=print, only_missing=True):
             m["preview"] = f"/impimg/{m['id']}.png"
 
 
+def _blank_png(path):
+    """True for a PNG that is one flat colour (a model that rendered invisible). Stdlib only: the decompressed
+    scanlines of a flat picture hold just a few distinct byte values, whatever filter the encoder used."""
+    import struct
+    import zlib
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return False
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return False
+    pos, idat = 8, b""
+    while pos + 8 <= len(data):
+        n, kind = struct.unpack(">I4s", data[pos:pos + 8])
+        if kind == b"IDAT":
+            idat += data[pos + 8:pos + 8 + n]
+        pos += 12 + n
+    try:
+        raw = zlib.decompress(idat)
+    except zlib.error:
+        return False
+    return len(set(raw)) <= 6
+
+
 def previews_all():
     """Pictures for every ready model that has none yet (also used by `imported.py previews`)."""
     idx = load_index()
     models = [m for p in idx["packs"] for m in p["models"] if m.get("status") == "ok"]
     # blank pictures count as missing: models whose materials came in see-through (blender_models.fix_invisible)
-    # all rendered the same empty white picture - byte-for-byte identical files shared by several models
-    seen = {}
-    for m in models:
-        pv = PREVIEWS / f"{m['id']}.png"
-        if pv.exists():
-            seen.setdefault(hashlib.sha1(pv.read_bytes()).hexdigest(), []).append(pv)
-    blank = [p for ps in seen.values() if len(ps) >= 3 for p in ps]
+    # rendered an empty white picture (not byte-identical files - their metadata differs - so look at the pixels)
+    blank = [PREVIEWS / f"{m['id']}.png" for m in models if _blank_png(PREVIEWS / f"{m['id']}.png")]
     for pv in blank:
         pv.unlink()                                   # redrawn just below (a picture, not a user asset)
     if blank:
