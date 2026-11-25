@@ -860,15 +860,17 @@ class Handler(BaseHTTPRequestHandler):
 
         # ---- AI helpers (Ollama) - optional, synchronous
         if head == "ollama" and arg == "models":
+            # Settings -> AI tools lists the models of the address typed in the box (?url=), before it's saved;
+            # /models/big = the big model server's (default: its saved address)
+            from urllib.parse import parse_qs
             o = S.load_settings()["ollama"]
-            url = o["url"]
-            if sub == "big":                  # Settings -> AI tools: the models the big server already has
-                from urllib.parse import parse_qs
-                url = (parse_qs(urlparse(self.path).query).get("url") or [o.get("design_url") or ""])[0].strip().rstrip("/")
-                if not url:
-                    return self.send_json({"ok": False, "error": "Type the big model server's address first", "models": []})
-                if "://" not in url:
-                    url = "http://" + url
+            url = (parse_qs(urlparse(self.path).query).get("url")
+                   or [o.get("design_url") if sub == "big" else o["url"]])[0] or ""
+            url = url.strip().rstrip("/")
+            if not url:
+                return self.send_json({"ok": False, "error": "Type the server's address first", "models": []})
+            if "://" not in url:
+                url = "http://" + url
             try:
                 return self.send_json({"ok": True, "models": llm.list_models(url)})
             except Exception as exc:

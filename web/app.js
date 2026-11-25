@@ -1925,9 +1925,9 @@ const S_TABS = {
   ai: ["🤖 AI tools", [
     ["Ollama (script & title writing)", [
       ["ollama.url", "Server URL", "text"],
-      ["ollama.model", "Default model", "ollama"],
+      ["ollama.model", "Default model", "ollamapick", { from: "ollama.url" }, "The models your Ollama has (🔄 after changing the address)."],
       ["ollama.design_url", "Big model server", "text", { placeholder: "empty = the server above" }, "Another Ollama with bigger models (e.g. a stronger computer on your network). If it can't be reached, the server above is used."],
-      ["ollama.design_model", "Model on the big server", "ollamabig", {}, "The models that server already has (🔄 after changing the address). Nothing is ever downloaded there."],
+      ["ollama.design_model", "Model on the big server", "ollamapick", { from: "ollama.design_url", big: true, first: "Same as the default model" }, "The models that server already has (🔄 after changing the address). Nothing is ever downloaded there."],
       ["ollama.design_scope", "Use the big server for", "select", { options: ["3d", "text"], labels: { "3d": "Only building 3D props & explainer models", text: "All the AI's writing too (scripts, titles, sets, cast, translations, captions)" } }, "Picture checks, drawings and voices always run on this PC."],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
@@ -2060,8 +2060,9 @@ function drawSettingsTab(st) {
     else if (type === "font") input = `<input type="text" data-key="${key}" list="font-list" value="${esc(v)}"><datalist id="font-list"></datalist>`;
     else if (type === "music") input = `<select data-key="${key}" data-async="music"><option value="${esc(v)}">${esc(v || "None")}</option></select>`;
     else if (type === "ollama") input = `<select data-key="${key}" data-async="ollama"><option>${esc(v)}</option></select>`;
-    else if (type === "ollamabig") input = `<div><div class="row" style="gap:6px;align-items:center"><select data-key="${key}" data-async="ollamabig" style="flex:1"><option value="${esc(v)}">${esc(v || "Same as the default model")}</option></select>
-      <button type="button" id="big-refresh" title="Look again at the big server's models">🔄</button></div><div id="big-status" class="small" style="margin-top:4px"></div></div>`;
+    else if (type === "ollamapick") input = `<div class="om-pick"><div class="row" style="gap:6px;align-items:center">
+        <select data-key="${key}" data-async="ollamapick" data-from="${esc(o.from)}" ${o.big ? 'data-big="1"' : ""} data-first="${esc(o.first || "")}" style="flex:1"><option value="${esc(v)}">${esc(v || o.first || "")}</option></select>
+        <button type="button" class="om-refresh" title="Look again at the server's models">🔄</button></div><div class="om-status small" style="margin-top:4px"></div></div>`;
     else if (type === "comfyckpt") input = `<select data-key="${key}" data-async="ckpt"><option value="${esc(v)}">${esc(v || "First available")}</option></select>`;
     else if (type === "triple") input = `<div class="triple">${[0, 1, 2].map((i) => `<input type="number" data-key="${key}" data-idx="${i}" min="${o.min}" max="${o.max}" step="${o.step}" value="${v[i]}">`).join("")}</div>`;
     return `<div class="setting"><label style="color:var(--text);font-size:13px">${esc(label)}</label>${input}${val}${help ? `<div class="help muted small">${esc(help)}</div>` : ""}</div>`;
@@ -2119,23 +2120,27 @@ function drawSettingsTab(st) {
       om.innerHTML = first + options(r.models.map((m) => m.name), getPath(st, om.dataset.key));
     }
   });
-  // the big model server's own models, with a plain "connected" / "why not" line under them
-  const bm = $("[data-async=ollamabig]", body);
-  const loadBig = async () => {
-    const urlIn = $('[data-key="ollama.design_url"]', body), cur = bm.value;
-    const url = (urlIn?.value || "").trim();
-    $("#big-status", body).innerHTML = url ? '<span class="muted">Looking…</span>' : '<span class="muted">Type the big server&#39;s address above to see its models.</span>';
-    if (!url) return;
-    const r = await api("GET", "/api/ollama/models/big?url=" + encodeURIComponent(url)).catch((e) => ({ ok: false, error: e.message }));
-    const names = r.ok ? r.models.map((m) => m.name) : [];
-    const extra = cur && !names.includes(cur) ? `<option value="${esc(cur)}" selected>⚠ ${esc(cur)}${r.ok ? " (not on that server)" : ""}</option>` : "";
-    bm.innerHTML = `<option value="">Same as the default model</option>` + extra
-      + options(names, cur, Object.fromEntries((r.models || []).map((m) => [m.name, `${m.name}  (${m.params || m.size_gb + " GB"})`])));
-    $("#big-status", body).innerHTML = r.ok ? `<span class="ok">✓ Connected - ${names.length} model${names.length === 1 ? "" : "s"}</span>`
-      + (extra && r.ok ? ' <span class="err">- pick one of its models</span>' : "")
-      : `<span class="err">✗ ${esc(r.error)}</span>`;
-  };
-  if (bm) { loadBig(); $("#big-refresh", body).onclick = guard(loadBig); $('[data-key="ollama.design_url"]', body)?.addEventListener("change", loadBig); }
+  // the models a server already has (the address typed in its box, saved or not), with a plain
+  // "connected" / "why not" line under them and 🔄 to look again - for this PC's Ollama and the big model server
+  for (const pk of $$("[data-async=ollamapick]", body)) {
+    const wrap = pk.closest(".om-pick"), stat = $(".om-status", wrap);
+    const load = async () => {
+      const cur = pk.value, url = ($(`[data-key="${pk.dataset.from}"]`, body)?.value || "").trim();
+      stat.innerHTML = url ? '<span class="muted">Looking…</span>' : '<span class="muted">Type the server&#39;s address above to see its models.</span>';
+      if (!url) return;
+      const r = await api("GET", `/api/ollama/models${pk.dataset.big ? "/big" : ""}?url=` + encodeURIComponent(url)).catch((e) => ({ ok: false, error: e.message }));
+      const names = r.ok ? r.models.map((m) => m.name) : [];
+      const extra = cur && !names.includes(cur) ? `<option value="${esc(cur)}" selected>⚠ ${esc(cur)}${r.ok ? " (not on that server)" : ""}</option>` : "";
+      pk.innerHTML = (pk.dataset.first ? `<option value="">${esc(pk.dataset.first)}</option>` : "") + extra
+        + options(names, cur, Object.fromEntries((r.models || []).map((m) => [m.name, `${m.name}  (${m.params || m.size_gb + " GB"})`])));
+      stat.innerHTML = r.ok ? `<span class="ok">✓ Connected - ${names.length} model${names.length === 1 ? "" : "s"}</span>`
+        + (extra && r.ok ? ' <span class="err">- pick one of its models</span>' : "")
+        : `<span class="err">✗ ${esc(r.error)}</span>`;
+    };
+    load();
+    $(".om-refresh", wrap).onclick = guard(load);
+    $(`[data-key="${pk.dataset.from}"]`, body)?.addEventListener("change", load);
+  }
   const ck = $("[data-async=ckpt]", body);
   if (ck) api("GET", "/api/comfy/status").then((r) => { if (r.ok) ck.innerHTML = `<option value="">First available</option>` + options(r.checkpoints, getPath(st, "comfy.checkpoint")); });
   if ($("#t-ollama")) {
