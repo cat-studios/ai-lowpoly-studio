@@ -14,6 +14,7 @@ python pipeline/run_episode.py episodes/<id>.json [--fresh-voice] [--no-render] 
 python pipeline/make_set.py [--idea "haunted bakery"] [--where inside|outside] [--light day|sunset|night] [--ai auto|off] [--comfy required|auto|off] [--replace <id>]
 python pipeline/music_gen.py --style "lofi chill" --seconds 60 [--engine auto|ace|synth]
 python pipeline/sfx.py              # (re)synthesise the 24 built-in sounds
+python -m unittest discover tests   # quick tests (director, script cleanup, cutaways, ideas filter) - run before pushing
 & "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" -b --factory-startup --python pipeline/prepare_character.py -- assets/characters/<x>.vrm --out assets/characters/<id>.blend
 ```
 - `--no-tts` = no voice; `--no-render` re-encodes existing frames (the web app's "Re-apply look only" =
