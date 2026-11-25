@@ -907,6 +907,7 @@ def match(kind, looks="", setting=""):
     - Categories (category_map): the setting's categories first (a kitchen's fish is the food one), then the
       category the thing's own name is in; inside a room a street/vehicle/tree model is only used when the thing
       asked for is one (a van crashing into a shop is fine, a "light" in a cafe is not the traffic light)."""
+    global PACK_PREFER                      # set below: the first match picks the set's pack (style B)
     kw = _ordered_words(kind)
     if not kw:
         return None
@@ -947,7 +948,6 @@ def match(kind, looks="", setting=""):
                 best, best_key = (pack, m), key
     if not best:
         return None                         # nothing is that thing: the studio makes its own
-    global PACK_PREFER
     if PACK_LOCK and not PACK_PREFER:
         PACK_PREFER = best[0]["id"]         # the first match decides the set's pack
     d = match_model(*best, kind, looks)
