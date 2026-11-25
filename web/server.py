@@ -1381,6 +1381,21 @@ class Handler(BaseHTTPRequestHandler):
                 prof = self.body_json()
                 S.save_character(arg, prof)
                 return self.send_json(character_info(arg))
+            if method == "DELETE" and not sub:      # never destroys: everything goes to assets/characters/.trash
+                if arg == S.load_settings().get("active_character"):
+                    raise ValueError("that's the active character - make another one active first")
+                if not (S.CHAR_DIR / f"{arg}.json").exists():
+                    return self.fail("no such character", 404)
+                bin_ = S.CHAR_DIR / ".trash" / f"{arg}-{stamp()}"
+                bin_.mkdir(parents=True, exist_ok=True)
+                mine = re.compile(rf"{re.escape(arg)}(\..+|-\d{{8}}-\d{{6}}\.\w+)")     # catgirl.blend, catgirl-<stamp>.vrm
+                moved = []
+                for folder in (S.CHAR_DIR, VOICES):
+                    for f in list(folder.glob(f"{arg}*")):
+                        if f.is_file() and mine.fullmatch(f.name):
+                            f.replace(bin_ / f.name)
+                            moved.append(f.name)
+                return self.send_json({"ok": True, "moved": moved, "trash": str(bin_.relative_to(ROOT))})
             if method == "POST" and sub == "activate":
                 cfg = S.load_settings()
                 cfg["active_character"] = arg

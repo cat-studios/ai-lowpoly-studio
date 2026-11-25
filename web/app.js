@@ -1308,7 +1308,8 @@ function drawCharacter(info) {
   box.innerHTML = `
     <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">${esc(p.name)}</h2>
       ${info.active ? '<span class="badge">ACTIVE</span>' : '<button id="activate">Make active</button>'}
-      <button data-char-preview="${esc(p.id)}" ${info.has_model ? "" : "disabled"}>🖼 ${info.preview ? "Remake" : "Make"} preview</button></div>
+      <button data-char-preview="${esc(p.id)}" ${info.has_model ? "" : "disabled"}>🖼 ${info.preview ? "Remake" : "Make"} preview</button>
+      <button id="c-delete" class="danger" ${info.active ? 'disabled title="This is the active character - make another one active first"' : 'title="Move this character to the trash"'}>🗑 Delete</button></div>
       <div id="char-prev" style="margin:10px 0">${info.preview ? `<img src="${esc(info.preview)}?v=${Date.now()}" alt="${esc(p.name)} preview" style="max-width:216px;border-radius:8px;background:#000">`
         : `<p class="muted small">${info.has_model ? "No preview yet - make one to see the character here." : "Import a model first to make a preview."}</p>`}</div>
       <div class="inline-job" id="char-prev-job"></div>
@@ -1352,6 +1353,15 @@ function drawCharacter(info) {
   });
   const save = async () => { await api("PUT", `/api/characters/${p.id}`, collect()); };
   $("#c-save").onclick = guard(async () => { await save(); toast("Character saved"); pageCharacters(); });
+  $("#c-delete").onclick = guard(async () => {
+    if (!(await uiConfirm(`Delete ${p.name}? The profile, 3D model, preview, backups and reference voice move to assets/characters/.trash (nothing is destroyed). Videos already made keep their mp4; re-rendering one that used ${p.name} would use the active character instead.`,
+      { title: "Delete character", ok: "🗑 Delete", danger: true }))) return;
+    const r = await api("DELETE", `/api/characters/${p.id}`);
+    await refreshMeta();
+    CHAR_SEL = null;
+    toast(`${p.name} moved to the trash (${r.moved.length} files)`);
+    pageCharacters();
+  });
   if ($("#activate")) $("#activate").onclick = guard(async () => { await save(); await api("POST", `/api/characters/${p.id}/activate`); await refreshMeta(); toast(`${p.name} is now the active character`); pageCharacters(); });
   $("#c-test").onclick = guard(async () => {
     await save();

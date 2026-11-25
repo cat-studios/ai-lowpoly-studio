@@ -177,7 +177,8 @@ A video remembers the look it was made with, so changing your global look doesn'
 Profiles with a name, *about* text (the script AI reads it), model, voice, tail and camera distance. Import or
 replace a VRoid `.vrm` (old versions are kept as timestamped backups; ear bones are found automatically), make a
 preview picture, upload a reference voice, test the voice, and choose the active character. A new character uses
-the placeholder body until you import a model.
+the placeholder body until you import a model. 🗑 Delete moves a character (profile, model, preview, backups and
+reference voice) to `assets/characters/.trash`; the active character can't be deleted - make another one active first.
 
 ### GIF
 Turn a video (one of yours or an upload) into a GIF that stays under 10 MB.

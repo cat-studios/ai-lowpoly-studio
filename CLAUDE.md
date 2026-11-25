@@ -720,7 +720,8 @@ render. CSS `.mw-*` in style.css (respects prefers-reduced-motion).
   are fine; say what was not run. When they do ask for verification: render, inspect frames/contact sheets
   (`output/*_shots.png`), measure audio (`volumedetect`/`astats`), drive the web app in the browser pane (also at
   mobile size), and say plainly what wasn't tested.
-- **Never hard-delete user assets.** Removals go to `.trash/` folders (episodes, sets, music, sfx, props, actors,
+- **Never hard-delete user assets.** Removals go to `.trash/` folders (episodes, sets, music, sfx, props, actors, characters (`DELETE
+  /api/characters/<id>` → `assets/characters/.trash/<id>-<stamp>/` with its voice; never the active one),
   packs, videos) or `sets/.hidden.json` for code-built sets; replaced models/voices get timestamped backups.
 - Stopping processes, restarting the live app and deleting anything need an explicit go-ahead.
 - Keep manual paths alongside AI ones (they write scripts by hand too). AI helpers must degrade gracefully when
