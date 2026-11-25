@@ -64,9 +64,14 @@ def design_call(fn, ollama, *args, **kw):
     if url and not _DESIGN_DOWN:
         try:
             return fn(url, design_model(ollama), *args, **kw)
-        except (OSError, TimeoutError) as exc:      # connection refused / unreachable / timed out
+        except (OSError, TimeoutError) as exc:      # connection refused / unreachable / timed out / no such model
             _DESIGN_DOWN.append(str(exc))
-            print(f"[props] design server {url} not reachable ({exc.__class__.__name__}) - using the main Ollama")
+            import urllib.error
+            if isinstance(exc, urllib.error.HTTPError) and exc.code == 404:
+                print(f"[props] the big model server {url} answered but has no model \"{design_model(ollama)}\" - "
+                      "check the name in Settings -> AI tools - using the main Ollama")
+            else:
+                print(f"[props] big model server {url} not reachable ({exc.__class__.__name__}) - using the main Ollama")
     model = (ollama or {}).get("design_model") if not url else None
     return fn(ollama["url"], model or ollama["model"], *args, **kw)
 

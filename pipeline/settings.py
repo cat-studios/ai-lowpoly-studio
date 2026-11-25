@@ -148,7 +148,12 @@ def load_settings():
     data = {}
     if SETTINGS_FILE.exists():
         data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8-sig"))
-    return deep_merge(DEFAULTS, data)
+    out = deep_merge(DEFAULTS, data)
+    o = out.get("ollama") or {}
+    for k in ("url", "model", "vision_model", "design_url", "design_model"):
+        if isinstance(o.get(k), str):     # typed by hand: " qwen3-coder-next:latest" was "no such model" on the server
+            o[k] = o[k].strip().rstrip("/") if k.endswith("url") else o[k].strip()
+    return out
 
 
 MASK = "__saved__"   # stands in for secrets in anything sent to the browser

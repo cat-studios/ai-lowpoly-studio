@@ -462,6 +462,10 @@ camera.
   Test (toilet/volcano/heart): 52-89 s each (local 8B: 80-215 s), 5-8 moves (local 0-4), real cone/ball shapes -
   but still 4/10 in the look check: every designer from 8B to 80B scores 3-4, so the 4B vision judge is now the
   limit, not the designer. A section `on_top` of a cone/pyramid/sphere sinks into it (the crater floated).
+  Settings → AI tools lists the big server's own models (`GET /api/ollama/models/big[?url=]`, a ✓ Connected / ✗ why
+  line, 🔄); `settings.load_settings` strips spaces and trailing slashes from the Ollama fields - production had
+  `" qwen3-coder-next:latest"` typed in, his server answered 404 (no such model) and the log said "not reachable"
+  (`propgen.design_call` now says which).
 
 ## Create page = three buttons + the Custom Video popup (2026-11-25, the user's mock-up)
 - The page shows only 🎲 Make a Random Video, 📺 Make a Series and 🪄 Custom Video (`.hero-btn`, star bursts from
