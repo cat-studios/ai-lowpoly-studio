@@ -20,6 +20,11 @@ From idea to video:
 7. **Final mix** - pixel captions, title, watermark and end card, music at 5 %, timed sound effects, the set's
    ambience, and a calm intro and outro with fades.
 
+**The opening** decides whether people keep watching, so the first line is a hook (a surprising claim or bold
+question of at most 8 words - the AI writer is told so, and its editor checks it), the camera pushes in on her while
+she says it (no more walking in), and the hook's key word pops up twice the size as she says it (Settings → Text &
+branding → "Hook word pops up big").
+
 ## Installing on a new PC (Windows 10/11)
 
 1. **Python 3.12 or newer** (python.org; tick "Add to PATH"), then the one package the app itself needs:

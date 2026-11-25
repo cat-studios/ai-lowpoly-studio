@@ -2085,6 +2085,7 @@ const S_TABS = {
       ["captions.mode", "Caption style", "select", { options: ["words", "line", "off"] }, "words = a few words at a time mid-screen (how many: the Create page's caption style), line = the whole line."],
       ["captions.font", "Font", "font", {}, "Any font installed in Windows."],
       ["captions.effect", "Entrance effect", "select", { options: () => META.effects }],
+      ["captions.hook_pop", "Hook word pops up big", "bool", {}, "In the first line (the hook), its key word shows twice the size with a bounce as she says it - the first seconds decide if people keep watching."],
       ["captions.color", "Text colour", "color"],
       ["captions.shadow_color", "Shadow / outline colour", "color"],
       ["captions.outline", "Outline (0 = drop shadow)", "range", { min: 0, max: 3, step: 1 }],

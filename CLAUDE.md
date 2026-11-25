@@ -620,6 +620,17 @@ Storyboard: no voice (estimated timing), 216x384 at 2 fps, `write_storyboard` co
 minus blur/fringe/bloom/scanlines/grain/vignette, x264 veryfast → `output/previews/<name>_rough.mp4`, no sheet.
 The popup saves the episode first (`W.previewId`), and the real render then uses that same file.
 
+## Stronger opening (2026-11-26)
+- Writer (`llm.generate_script`): the FIRST line is a hook (<= 8 words, surprising claim / bold question, no
+  greeting, name or "Today we..."); `polish_script` lists a weak first line as a problem.
+- Director: `autodirect.direct(opening="hook")` (default) - the first line is a `medium` + `push_in` on her with the
+  line's own action (a move becomes idle), not the walk-in; `opening="walk"` = the old `_opening_walk`. A `[show:]`
+  opening or an action in the brackets still wins.
+- Captions: `captions.hook_pop` (default on; Settings → Text & branding): in the first line (its whole beat group),
+  `run_episode.hook_word` picks the longest word not in `HOOK_SKIP`; its caption group pops in from 40 % to 125 %
+  and the word is drawn at up to 2x size (`\fs`, capped so it fits the frame width: 0.92 * width / (0.68 * letters)),
+  in its cycle colour. Drawn at render resolution like every caption, so it stays pixelated.
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

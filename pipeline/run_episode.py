@@ -407,6 +407,23 @@ EFFECTS = {   # ASS override tags applied to each caption event (times in ms)
 }
 
 
+HOOK_SKIP = set("""a an the and or but if so of to in on at by for with from as is are was were be been am i
+you we they he she it its it's i'm you're my your our their this that these those what whats what's how why who when
+where which do does did can could would will should ever just really very there here than then not no yes
+""".split())
+
+
+def hook_word(words):
+    """The word of the hook (the first line) that pops up big: the longest word that says something
+    ("What if the MOON vanished?" -> VANISHED), the later one on a tie."""
+    best, k_best = 0, None
+    for k, w in enumerate(words):
+        core = re.sub(r"[^\w']", "", w).lower()
+        if core and core not in HOOK_SKIP and len(core) >= best:
+            best, k_best = len(core), k
+    return k_best
+
+
 def write_captions(path, ep, shots, timing, res, cap, brand):
     fps = timing["fps"]
     font = cap["font"].replace(",", " ")
@@ -448,7 +465,17 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
         lines.append(f"Dialogue: 1,{ass_time(0)},{ass_time(min(end, total))},Title,,0,0,0,,{fx}{text}")
     cyc = [ass_color(c) for c in (cap.get("cycle") or []) if c]   # word colours, in order through the video
     color_i = 0
-    for shot, tm in zip(shots, timing["shots"]):
+    # the hook: in the first line, its key word pops up big (2x, a bounce) as it is said
+    first_line = next((i for i, s in enumerate(shots) if s.get("line")), None)
+    hook = None
+    if cap.get("hook_pop", True) and first_line is not None and cap["mode"] == "words":
+        g = shots[first_line].get("beat_group")
+        idx = [i for i, s in enumerate(shots) if s.get("line") and (i == first_line or (g is not None and s.get("beat_group") == g))]
+        flat = [(i, k) for i in idx for k in range(len(ass_text(up(shots[i]["line"])).split()))]
+        words_all = [w for i in idx for w in ass_text(up(shots[i]["line"])).split()]
+        k = hook_word(words_all)
+        hook = flat[k] if k is not None and k < len(flat) else None
+    for si, (shot, tm) in enumerate(zip(shots, timing["shots"])):
         if not shot.get("line") or cap["mode"] == "off":
             continue
         start = (tm["f0"] - 1) / fps + float(shot.get("lead", AUDIO_LEAD))
@@ -479,12 +506,21 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
                 dur = max(0.12, dur)
             end = min(shot_end, t + dur + (0.35 if last else 0))
             parts = []
+            big = hook and hook[0] == si and hook[1] in chunk
             for k in chunk:
                 col = cyc[color_i % len(cyc)] if cyc else None
                 color_i += 1
                 tag = "{\\c" + col + "&}" if col else ""
-                parts.append(f"{tag}{words[k]}")
-            lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(end)},Caption,,0,0,{low},,{fx}{' '.join(parts)}")
+                if big and k == hook[1]:
+                    # twice the size, kept inside the frame's width (a long word at 2x ran off a 216 px frame)
+                    base = max(4, round(res[1] * cap["size"]))
+                    fs = max(base, min(base * 2, round(res[0] * 0.92 / (0.68 * max(1, len(words[k]))))))
+                    tag = "{\\fs" + str(fs) + "\\c" + (col or tcol2) + "&}"
+                    parts.append(f"{tag}{words[k]}{{\\fs{base}}}")
+                else:
+                    parts.append(f"{tag}{words[k]}")
+            efx = ("{\\fscx40\\fscy40\\t(0,110,\\fscx125\\fscy125)\\t(110,240,\\fscx100\\fscy100)}" if big else fx)
+            lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(end)},Caption,,0,0,{low},,{efx}{' '.join(parts)}")
             t += dur
     if brand.get("watermark"):
         top = brand.get("watermark_corner", "bottom-right").startswith("top")

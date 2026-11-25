@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
 import autodirect as A  # noqa: E402
+import run_episode as R  # noqa: E402
 
 
 def shots(script, **kw):
@@ -77,6 +78,17 @@ class Cast(unittest.TestCase):
         self.assertEqual(r["cast"]["sun"]["type"], "thing")
         self.assertEqual(r["cast"]["mom"]["type"], "person")
 
+
+
+class Opening(unittest.TestCase):
+    def test_hook_pushes_in_instead_of_walking(self):
+        first = shots("The moon just vanished tonight.\nThe tides would stop!")[0]
+        self.assertEqual((first["camera"], first["move"]), ("medium", "push_in"))
+        self.assertNotIn(first["action"], ("walk_to", "run_to"))
+
+    def test_hook_word(self):
+        self.assertEqual(R.hook_word("WHAT IF THE MOON VANISHED?".split()), 4)
+        self.assertIsNone(R.hook_word("WHAT IF IT IS".split()))
 
 if __name__ == "__main__":
     unittest.main()

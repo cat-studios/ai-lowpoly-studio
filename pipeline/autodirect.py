@@ -676,7 +676,7 @@ def _pick_dest(marks, pos, visits):
 
 
 def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse", speakers=None, beat_words=0,
-           beat_sets=None, walk_every=0, wipe_every=0, move_every=0):
+           beat_sets=None, walk_every=0, wipe_every=0, move_every=0, opening="hook"):
     """walk_every: every Nth beat she walks, with the camera following her (0 = never), never within WALK_GAP shots
     of another walk. move_every: every Nth beat the camera moves instead (orbit / push in / pull out from a new
     angle) - she walked about too much when every 3rd beat was a walk.
@@ -792,7 +792,12 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             recent = [s.get("action") for s in shots[-2:]]
             action = next((a for a in HAPPY_ANIMS[i % len(HAPPY_ANIMS):] + HAPPY_ANIMS if a not in recent), "nod")
         shot = {}
-        if i == 0 and "action" not in d and "want" not in d:
+        if i == 0 and opening == "hook" and "action" not in d and "want" not in d and not shown:
+            # the hook: the first line is said straight to the camera while it pushes in on her (a walk-in spent
+            # the first seconds - the ones that decide if people stay - on her feet)
+            shot.update(action=action if action not in catalog.MOVE_ANIMS else "idle", camera="medium",
+                        move="push_in", expression=expr if expr != "neutral" else "happy")
+        elif i == 0 and "action" not in d and "want" not in d:
             # open by walking in, toward the camera so her face is seen (she may start further back)
             origin, dest = _opening_walk(sets, cur_set, marks, pos)
             if cur_set == set_name and origin in start_marks:

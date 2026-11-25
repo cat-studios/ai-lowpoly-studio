@@ -50,6 +50,7 @@ DEFAULTS = {
         "title_color": "#f0f0f0",
         "title_color2": "#f0e060",       # second line of the title
         "effect": "pop",                 # none, pop (scale in), bounce, fade
+        "hook_pop": True,                # the first line's key word pops up big as it's said (the hook)
     },
     "branding": {
         "watermark": "",                 # e.g. "@mychannel" - small text in a corner
