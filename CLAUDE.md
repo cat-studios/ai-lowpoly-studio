@@ -493,8 +493,13 @@ making a set is now a style (`catalog.SET_STYLES`, `make_set.create_set(style=)`
 Who picks: the Sets page and Regenerate popup (`#g-style`, `#rg-style`), the Custom Video Scenes step (cards when a
 place is new; `ep.set_style` for places made at render - `run_episode` passes it to `create_set`), random videos
 pick one of A/B/C by chance, series always `base` (`series.py` sets `set_style`). Set cards show 🏛/🎨/⚖️.
-NOT yet seen in a render: the bases were written blind (the user wants test scenes in production) - generate one
-of each in production and adjust positions/sizes from the previews.
+Tested in production (2026-11-25, one set per base, `Test base ...` / `Test base v2 ...` previews): outdoor bases read
+as well as Legacy Park first time; indoor ones needed: a set id (`None.json` was saved), a 10 x 8 room (12 x 10 left
+things small and the floor bare), a second group + back-right corner + a centre rug, the hero NOT hidden behind
+group_c, a bright plant as the half-in-frame front piece (dark lamps/slabs read as holes), wall pieces only from the
+base's `wall_options`, and the AI's slot picks limited: a variant of the default ("cloud_bed", "throne") stays the
+hand-built piece, only the hero may be newly designed and only when the idea names it (its "teacher_desk" was a
+blue-green slab), other slots = built-in or imported. Known: an outdoor ground patch can look like a dark hole.
 - Also fixed: the random video threw "Cannot set properties of null" at the end when you had left the Create page
   (its status line was gone); `watchJob` accepts a missing box and the random flow works from `CS` state.
 
