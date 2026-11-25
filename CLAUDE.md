@@ -380,6 +380,41 @@ and no bookshelves, 4/10 each, 12 min). Military parade ground: 4/10 (a park) â†
   macro]`, `[action: shrug]`) is stripped.
 - Blender 6: `use_nodes` is only set when a new material/world has no node tree (5.x always has one).
 
+## Explainer objects (2026-11-25, step 1 of the "explainer" plan)
+The user compared the studio with a faceless explainer channel (a narrated toilet cross-section) and chose: the
+catgirl stays on screen as the presenter, the LOOK never changes (memory: keep-video-look), order = moving
+cut-open objects first, then style templates (pacing/content only) + series, later a storyboard step and a gliding
+camera.
+- Script: `[show: toilet]` brings the object on beside her (it stays until another is shown or `[show: off]`),
+  `[show: toilet open]` takes its cover off, `[show: toilet flap]` = a close-up of that part. Director
+  (`autodirect.direct`, `shown`): an `appear` event with `to: [x, y]` = 1.5 m beside where she ends that shot, on
+  the side towards the middle; every later shot carries `show: {who, open[, part]}`; the show line gets a medium
+  two-shot and she points at it (an opening walk-in stays a walk); a part shot gets closeup + push_in; cameras
+  that would lose it (side/back/silhouette/tiny/macro) become medium; no automatic walks while it's on stage.
+  `blender_cast.spot` takes a `[x, y]` `to`. The script writer is told about `[show:]`.
+- Design (`propgen.design_explainer`, at render from `resolve_cast` for cast entries with `"explainer": True`,
+  saved as `assets/props/explain_<kind>.json` and reused): first a plain-text "anatomy" answer (sections, real
+  sizes, what's inside, what moves), then `EXPLAIN_GUIDE` JSON: SECTIONS placed against each other
+  (first/behind/in_front/on_top/left/right + z fraction) and PARTS at FRACTIONS inside them, moves with a hinge
+  EDGE and a direction word. `_layout_explainer` turns that into metres: box sections = hollow (back/sides/bottom/
+  top walls, `WALL` 3.5 cm) + a front panel `cover: true`; other shapes = the shape as cover + a dark back panel;
+  liquids fill their section wall to wall (the AI only sets the level); inner parts are clamped inside the walls.
+  Asked for positions in metres, the local model stacked every part on one spot or made a flat slab.
+  `_clean_moves`: turn (degrees about x/y/z round a pivot), slide (dir metres, capped at 0.35 x height), spin
+  (turns/s), fill/drain (level 0-1), pulse, shake; each with a `word`. Look-checked once more on a fail, never
+  made a sprite (the moving parts are the point).
+- Blender: `blender_sets.p_explainer` hangs each named group under an empty at its pivot (a turn's pivot, the
+  bottom middle for fill/drain, else the middle) and the covers under their own empty (`EXPLAIN[root.name]`).
+  `blender_cast.explain_moves`: each move starts when its word is said (`word_frames`: shot `word_t`, else spread
+  over the talk; translated videos use `line_src` spread) while it's on stage (moves whose word never comes play
+  one after another in its first shot), keyframes every frame, parts stay where moved; the cover slides forward and
+  shrinks away at the first `open` shot; show shots without a part go to `FOCUS` (two-shot), part shots to `CUT`
+  (target = the part's middle, `z` = its height; `blender_build` uses `cut["z"]` and a 0.8 m minimum distance).
+  Size: about 1.5 m tall (a demonstration model), whatever the real size.
+- Quality limit: the local model's objects read as diagrams ("a green cabinet" with a tank of water, a gold chain
+  and a red flapper inside), not as the real thing - the toilet scored 4/10 in the look check. The mechanics (open,
+  moves on words, framing, her pointing) work in renders (`episodes/zz_check_explain.json`).
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

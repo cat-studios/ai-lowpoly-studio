@@ -305,6 +305,20 @@ Mom: You forgot your lunch again.
   imported models - posed people (cheering, walking, running... picked from the words) or several of the animal or
   thing it names. With nothing to build it from (an "army of cats" without a cat model) the group is left out.
 
+### Explaining how something works
+She can present a model of a thing and show how it works - its parts move when she names them:
+```
+[show: toilet] When you flush a toilet, here's what happens.
+[show: toilet open] Inside the tank, a chain lifts a rubber flap.
+[show: toilet flap] The flap opens and the water drains into the bowl.
+[show: off] And that's how a toilet works!
+```
+`[show: thing]` brings the model on beside her (she points at it), `open` takes its front off so you see inside,
+a part name (`flap`) gives a close-up of that part, `[show: off]` puts it away. The AI builds the model while the
+video renders, from what the script says about it (sections, the parts inside, and what each part does: turns,
+slides, spins, fills, drains, beats or rattles), and each part moves on the word that names its action. Models are
+kept in the prop library and reused. They're simple diagrams made from basic shapes, in the same low-poly look.
+
 ### Cutaways
 Show something instead of her while she keeps talking (voice-over):
 ```

@@ -133,6 +133,10 @@ def parse_directions(line, marks):
         return {}, line.strip()
     d = {}
     inner = m.group(1)
+    show = re.search(r"\bshow\s*:\s*([^,\]]+)", inner, re.I)          # "show: toilet open" (explainer object)
+    if show:
+        d["show"] = show.group(1).strip().lower()
+        inner = inner[:show.start()] + inner[show.end():]
     cut = re.search(r"\bcut(?:away)?\s*:\s*([^,\]]+)", inner, re.I)   # "cutaway: a plane flying past"
     if cut:
         d["cutaway"] = cut.group(1).strip()
@@ -150,7 +154,9 @@ def parse_directions(line, marks):
         if joined and joined.group(2) in marks:
             d["action"], d["to"] = joined.group(1), joined.group(2)
             continue
-        if t in catalog.CAMERAS:
+        if t in marks and i and tokens[i - 1] in (*catalog.MOVE_ANIMS, "point"):
+            d["to"] = t                    # "[run_to back]", "[point back]": the mark, not the "back" camera
+        elif t in catalog.CAMERAS:
             d["camera"] = t
         elif t in catalog.MOVES:
             d["move"] = t
@@ -242,6 +248,12 @@ ANIM_WORDS = {   # -> animation, used only when the brackets name no action of t
 def _take_cast(tokens, marks, d):
     """Pull '+name verb [from_side] [mark]' groups out of the token list into d['events']."""
     rest, i = [], 0
+    # "[huge_crowd enter, shocked]": the AI forgot the "+" - an unknown word right before an arrival verb is someone
+    # coming on all the same (only arrival verbs: "[scared run]" is not a cast member called "scared")
+    tokens = ["+" + t if (not t.startswith("+") and k + 1 < len(tokens)
+                          and tokens[k + 1] in ("enter", "crash_in", "appear", "fall", "fly_by")
+                          and re.fullmatch(r"[a-z][a-z0-9_]{1,23}", t) and not _known_word(t, marks)) else t
+              for k, t in enumerate(tokens)]
     while i < len(tokens):
         t = tokens[i]
         if not (t.startswith("+") and len(t) > 1):
@@ -628,6 +640,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             speakers.setdefault(who.replace("_", " ").lower(), who)
             speakers.setdefault(who.lower(), who)
     cur_set = set_name                     # scene changes ("@ place") carry on until the next one
+    shown = None                           # the explainer object on stage ("[show: toilet]"): {who, at, open}
     airborne = holding = False             # floating (float_up ... land), holding balloons
     set_k = 0                              # beat_sets: each script line starts in the next set of the list
     for i, raw in enumerate(lines):
@@ -656,6 +669,32 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                     pos = "center" if "center" in marks else marks[0]
         d, text = parse_directions(raw, marks)
         d.pop("scene", None)
+        show_now, shot_events_pre = None, []
+        if "show" in d:
+            # "[show: toilet]" brings an explainer object on beside her (it stays until another is shown or
+            # "[show: off]"); "[show: toilet open]" takes its cover off; "[show: toilet flap]" = close on that part
+            ws = [w for w in re.split(r"[\s]+", d.pop("show")) if w]
+            if ws and ws[0] in ("off", "none", "away", "hide"):
+                if shown:
+                    shot_events_pre.append({"who": shown["who"], "do": "vanish"})
+                shown = None
+            elif ws:
+                who = re.sub(r"[^a-z0-9_]+", "", ws[0])[:24]
+                is_open = any(w in ("open", "inside", "opened", "cut", "cutaway", "cross_section") for w in ws[1:])
+                part = next((re.sub(r"[^a-z0-9_]+", "", w) for w in ws[1:]
+                             if w not in ("open", "inside", "opened", "cut", "cutaway", "cross_section", "closed")),
+                            None)
+                if who and (not shown or shown["who"] != who):
+                    if shown:
+                        shot_events_pre.append({"who": shown["who"], "do": "vanish"})
+                    at = [0.0, 0.0]                  # beside where she ends up this shot (set below)
+                    shot_events_pre.append({"who": who, "do": "appear", "to": at})
+                    cast[who] = {**(cast.get(who) or {}), "type": "thing", "looks": who.replace("_", " "),
+                                 "explainer": True}
+                    shown = {"who": who, "at": at, "open": False}
+                if shown:
+                    shown["open"] = shown["open"] or is_open
+                    show_now = {"who": shown["who"], "open": shown["open"], **({"part": part} if part else {})}
         mood = mood_of(text)
         action, expr, cam, move = MOOD[mood]
         if mood in ("neutral", "happy", "question", "smug") and action_of(text):
@@ -688,7 +727,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             shot.update(action=action, camera=cam, move=move, expression=expr)
             walked = any(s.get("action") in catalog.MOVE_ANIMS for s in shots[-WALK_GAP:])
             if walk_every and i % walk_every == walk_every - 1 and action in ("idle", "wave", "nod") \
-                    and "action" not in d and len(text.split()) > 2 and not walked \
+                    and "action" not in d and len(text.split()) > 2 and not walked and not shown \
                     and d.get("camera") not in CLOSE_CAMS:   # not on a short "Nya!", nor in a close shot asked for
                 shot.update(action="walk_to", camera="medium", move="follow")     # a tracking shot as she walks
             elif move_every and i % move_every == move_every - 1 and move == "static" \
@@ -698,6 +737,27 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                     cb = CAMERA_BEATS[(i // move_every + 1) % len(CAMERA_BEATS)]
                 shot.update(camera=cb[0], move=cb[1])
         shot.update(d)
+        if shot_events_pre:
+            shot["events"] = shot_events_pre + list(shot.get("events") or [])
+        for ev in shot_events_pre:
+            if ev.get("do") == "appear" and shown and ev["who"] == shown["who"]:
+                # beside where she stands at the end of this shot (the opening line may walk her in), on the
+                # side towards the middle of the set
+                end = shot.get("to") if shot.get("action") in catalog.MOVE_ANIMS and shot.get("to") else pos
+                me = (list(end) if isinstance(end, (list, tuple)) else _xy(sets, cur_set, end)) or (0.0, 0.0)
+                side = -1.0 if me[0] > 0.3 else 1.0
+                ev["to"][:] = [round(me[0] + side * 1.5, 2), round(me[1] + 0.35, 2)]
+        if shown:
+            # an explainer object is on stage: every shot carries it (its parts move on their words in any shot)
+            shot["show"] = show_now or {"who": shown["who"], "open": shown["open"]}
+            if show_now and show_now.get("part") and "camera" not in d:
+                shot.update(camera="closeup", move="push_in")          # close on the part being talked about
+            elif show_now and "camera" not in d:
+                shot.update(camera="medium", move="static")            # her and the object, side by side
+                if "action" not in d and "want" not in d and shot.get("action") not in catalog.MOVE_ANIMS:
+                    shot.update(action="point", at=shown["at"])   # she points at it (an opening walk-in stays a walk)
+            elif "camera" not in d and shot.get("camera") in ("side", "back", "silhouette", "tiny", "macro"):
+                shot["camera"] = "medium"     # cameras that would lose the object
         if shot.get("action") in catalog.MOVE_ANIMS and shot.get("camera") in CLOSE_CAMS and "camera" not in d:
             shot.update(camera="medium", move="follow")      # a walk gets a tracking shot, not an eye close-up
         if shot.get("action") in SHOW_ANIMS and "camera" not in d \

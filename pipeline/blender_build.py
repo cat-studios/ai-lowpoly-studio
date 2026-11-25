@@ -1901,13 +1901,13 @@ for si, shot in enumerate(SHOTS):
     if cut:                    # cutaway: frame the subject, three-quarter and a little low; follow it if it moves
         # a 9:16 frame at ~32 mm sees about 0.63 x distance across and 1.12 x distance up
         w, h = cut.get("w", cut["r"] * 2), cut["h"]
-        dist = max(1.4, w * 0.8 / 0.63, h * 1.5 / 1.12)      # wide things may run off the sides
+        dist = max(0.8 if cut.get("part") else 1.4, w * 0.8 / 0.63, h * 1.5 / 1.12)   # wide things run off the sides
         if cut.get("verb") == "fly_by":
             dist = max(dist * 1.3, 3.0)      # the camera follows it across (TRACK_TO), so it can stay close
         elif cut["moving"]:
             dist *= 1.2
         center = cut["center"].copy()
-        center.z = 0.0
+        center.z = float(cut.get("z", 0.0))         # a part of an explainer object can be up off the ground
         off = Vector((0.3 * dist, -dist, max(0.22, 0.55 * h)))      # small things: a low, macro-ish angle
         aim_obj = cut["target"]
         lens = 32 if name in ("wide", "medium", "side", "high", "low", "back", "lead") else lens

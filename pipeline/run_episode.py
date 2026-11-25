@@ -767,6 +767,15 @@ def resolve_cast(ep, cfg, log=print):
                 s["events"] = [e for e in s["events"] if e.get("who") != who]
     for who, info in list(cast.items()):
         info = dict(info) if isinstance(info, dict) else {}
+        if info.get("explainer") and not (info.get("def") or {}).get("explainer"):
+            # "[show: toilet]": a model with moving parts, designed for what the narration says about it
+            first = next((i for i, s in enumerate(ep["shots"]) if (s.get("show") or {}).get("who") == who), 0)
+            lines = [s.get("line_src") or s.get("line") or "" for s in ep["shots"][first:first + 14]]
+            info["type"] = "thing"
+            info["def"] = propgen.design_explainer(who, info.get("looks") or "", lines, cfg.get("ollama"),
+                                                   log=lambda m: log("  " + m))
+            cast[who] = info
+            continue
         if not info.get("def") and not info.get("actor") and not info.get("generated"):
             try:                                     # "crowd", "audience", "herd of cows": imported models in a group
                 import imported

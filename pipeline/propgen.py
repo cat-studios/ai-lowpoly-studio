@@ -101,7 +101,7 @@ def _settle(parts):
         done.append(p)
 
 
-def clean(raw, kind, looks="", by="ollama"):
+def clean(raw, kind, looks="", by="ollama", settle=True):
     """Validate an AI design. Returns a definition or None if nothing usable came back."""
     if not isinstance(raw, dict):
         return None
@@ -117,8 +117,13 @@ def clean(raw, kind, looks="", by="ollama"):
         pos = _vec(p.get("pos") or p.get("position"), 3, -8.0, 16.0, (0.0, 0.0, size[2] / 2))
         rot = _vec(p.get("rot") or p.get("rotation"), 3, -360.0, 360.0, (0.0, 0.0, 0.0))
         col = str(p.get("color") or p.get("colour") or "").strip()
-        parts.append({"shape": shape, "pos": pos, "size": size, "rot": rot,
-                      "color": col.lower() if HEX.fullmatch(col) else "#9a9180", "glow": bool(p.get("glow"))})
+        part = {"shape": shape, "pos": pos, "size": size, "rot": rot,
+                "color": col.lower() if HEX.fullmatch(col) else "#9a9180", "glow": bool(p.get("glow"))}
+        if p.get("name"):                      # explainer objects: named parts move together, covers come off
+            part["name"] = slug(p["name"]) or "body"
+        if p.get("cover"):
+            part["cover"] = True
+        parts.append(part)
     if not parts:
         return None
     # sit it on the ground: the lowest point touches z=0 (models often forget the centre rule)
@@ -128,7 +133,8 @@ def clean(raw, kind, looks="", by="ollama"):
     cy = (min(p["pos"][1] - p["size"][1] / 2 for p in parts) + max(p["pos"][1] + p["size"][1] / 2 for p in parts)) / 2
     for p in parts:
         p["pos"] = [round(p["pos"][0] - cx, 3), round(p["pos"][1] - cy, 3), round(p["pos"][2] - low, 3)]
-    _settle(parts)
+    if settle:                     # (an explainer's chain hangs inside its tank on purpose)
+        _settle(parts)
     # footprint + height measured from the parts, not trusted from the model
     radius = max(math.hypot(abs(p["pos"][0]) + p["size"][0] / 2, abs(p["pos"][1]) + p["size"][1] / 2) for p in parts)
     height = max(p["pos"][2] + p["size"][2] / 2 for p in parts)
@@ -746,6 +752,294 @@ def look_checked(d, kind, looks, setting, ollama, log=print):
         d = nd
     best = dict(best, checked=False, complex=True)   # failed twice: a drawn picture reads better than shapes
     log(f"[props] '{kind}' still doesn't look right - it gets a drawn picture (sprite) instead")
+    return best
+
+
+# --------------------------------------------------------------------------- explainer objects
+# "How a toilet flushes": the object she presents, built from NAMED parts that move when the narration names them
+# (the chain lifts, the flap opens, the water drains), with cover panels that come off to show it cut open.
+# Built by blender_sets.p_explainer, animated by blender_cast.explain_moves, put on stage by "[show: toilet]".
+MOVES = ("turn", "slide", "spin", "fill", "drain", "pulse", "shake")
+EXPLAIN_GUIDE = (
+    "You plan a low-poly 3D EXPLAINER model (N64 style) of an object, so a narrator can show how it works: it is "
+    "made of SECTIONS (hollow shells you can see into when their front is taken off) with named PARTS inside or on "
+    "them, and the parts MOVE when the narration mentions them. You only say what is where - the positions are "
+    "worked out for you. Reply with JSON only:\n"
+    '{"sections": [{"name": "...", "shape": "box|cylinder|sphere|cone", "size": [width, depth, height], '
+    '"color": "#rrggbb", "place": {"rel": "first|behind|in_front|on_top|left|right", "of": "other section", '
+    '"z": 0.0}, "open": true}], '
+    '"parts": [{"name": "...", "in": "section name", "shape": "box|cylinder|sphere|cone|pyramid", '
+    '"at": [x, y, z], "size": [w, d, h], "color": "#rrggbb", "liquid": false}], '
+    '"moves": [{"part": "part name", "do": "turn|slide|spin|fill|drain|pulse|shake", "word": "one word from the '
+    'narration", "hinge": "back|front|left|right|top|bottom", "axis": "x|y|z", "amount": number, '
+    '"dir": "up|down|left|right|forward|back"}]}\n'
+    "SECTIONS: sizes in metres at real scale. The first has place rel \"first\". Each other one is placed against "
+    "a section already listed: behind it, in front of it, on top of it, left or right of it; z = how high its "
+    "bottom starts, as a fraction of that section's height (0 = on the ground, 0.5 = halfway up). open: true when "
+    "the narration talks about what is INSIDE it (its front panel comes off).\n"
+    "PARTS: at = where its centre is inside its section, as fractions 0 to 1: x 0 = left wall, 1 = right wall; "
+    "y 0 = front, 1 = back; z 0 = floor, 1 = ceiling (use a little below 0 or above 1 for things stuck on the "
+    "outside, like a handle). size = fractions of the section's size too (0.5 = half as wide). liquid: true for "
+    "water, lava, blood, fuel... - a liquid fills its section's bottom: at z = half its size z.\n"
+    "MOVES, one for each action the narration describes, in order: turn = rotate amount degrees about axis around "
+    "the part's hinge edge (a flap lifting at its back edge: hinge back, axis x, amount -60); slide = move amount "
+    "metres in dir; spin = keep turning, amount = turns per second; fill / drain = a liquid's level rises / falls "
+    "to amount (0 to 1); pulse = beats bigger and smaller; shake = rattles. word = the word in the narration where "
+    "it happens. 2 to 8 moves.\n"
+    "Keep it simple and readable: 1 to 4 sections, 3 to 12 parts, bold colours that stand out for the moving "
+    "parts.\n"
+    'Example "coffee maker" (narration: the heater warms the water, it rises up the tube and drips into the pot): '
+    '{"sections": [{"name": "base", "shape": "box", "size": [0.3, 0.3, 0.12], "color": "#2e2e33", '
+    '"place": {"rel": "first"}, "open": true}, {"name": "tank", "shape": "box", "size": [0.3, 0.14, 0.3], '
+    '"color": "#2e2e33", "place": {"rel": "on_top", "of": "base", "z": 1}, "open": true}], "parts": [{"name": '
+    '"heater", "in": "base", "shape": "box", "at": [0.5, 0.5, 0.4], "size": [0.6, 0.5, 0.25], "color": "#ff5a2a"}, '
+    '{"name": "water", "in": "tank", "shape": "box", "at": [0.5, 0.5, 0.35], "size": [0.9, 0.9, 0.7], '
+    '"color": "#3f8fe0", "liquid": true}, {"name": "tube", "in": "tank", "shape": "cylinder", "at": [0.85, 0.7, 0.5], '
+    '"size": [0.1, 0.2, 1.0], "color": "#e8e8e8"}, {"name": "pot", "in": "base", "shape": "cylinder", '
+    '"at": [0.5, -0.6, 0.9], "size": [0.7, 0.9, 0.9], "color": "#a8d8ff"}], "moves": [{"part": "heater", '
+    '"do": "pulse", "word": "warms"}, {"part": "water", "do": "drain", "word": "rises", "amount": 0.3}, '
+    '{"part": "pot", "do": "shake", "word": "drips"}]}'
+)
+
+DIRS = {"up": (0, 0, 1), "down": (0, 0, -1), "left": (-1, 0, 0), "right": (1, 0, 0), "forward": (0, -1, 0),
+        "front": (0, -1, 0), "back": (0, 1, 0), "backward": (0, 1, 0), "out": (0, -1, 0), "in": (0, 1, 0)}
+WALL = 0.035                    # a hollow section's wall thickness (m)
+
+
+def _shade_hex(c, f):
+    c = c if HEX.fullmatch(str(c or "")) else "#9a9180"
+    return "#%02x%02x%02x" % tuple(min(255, max(0, int(int(c[i:i + 2], 16) * f))) for i in (1, 3, 5))
+
+
+def _layout_explainer(raw):
+    """The AI's plan (sections placed against each other, parts at fractions inside them, moves with named hinges)
+    -> parts in metres + moves with real pivots. Hollow box sections get back/side/bottom walls, a lid, and a
+    front panel marked cover; other shapes are one cover shape with a dark back panel behind the inside."""
+    secs_in = [x for x in (raw.get("sections") or []) if isinstance(x, dict) and x.get("name")][:4]
+    if not secs_in:
+        return None
+    secs, parts = {}, []
+    for x in secs_in:
+        name = slug(x["name"]) or f"section{len(secs)}"
+        size = _vec(x.get("size"), 3, 0.08, 6.0, (0.6, 0.6, 0.8))
+        pl = x.get("place") if isinstance(x.get("place"), dict) else {}
+        rel, of = str(pl.get("rel") or "first").lower(), secs.get(slug(pl.get("of") or ""))
+        if not secs or not of or rel == "first":
+            c = [0.0, 0.0, size[2] / 2] if not secs else [0.0, 0.0, size[2] / 2]
+            if secs and rel != "first":
+                of = list(secs.values())[-1]
+        if of and rel != "first":
+            oc, osz = of["c"], of["size"]
+            zf = _num(pl.get("z"), 0.0, 1.5, 0.0)
+            bottom = (oc[2] - osz[2] / 2) + osz[2] * zf
+            if rel in ("on_top", "top", "above"):
+                bottom = oc[2] + osz[2] / 2
+            c = [oc[0], oc[1], bottom + size[2] / 2]
+            if rel in ("behind", "back"):
+                c[1] = oc[1] + osz[1] / 2 + size[1] / 2
+            elif rel in ("in_front", "front"):
+                c[1] = oc[1] - osz[1] / 2 - size[1] / 2
+            elif rel == "left":
+                c[0] = oc[0] - osz[0] / 2 - size[0] / 2
+            elif rel == "right":
+                c[0] = oc[0] + osz[0] / 2 + size[0] / 2
+        col = str(x.get("color") or "#c8c8c8")
+        col = col if HEX.fullmatch(col) else "#c8c8c8"
+        shape = SHAPES.get(str(x.get("shape") or "box").lower(), "box")
+        secs[name] = {"c": c, "size": size, "shape": shape, "open": bool(x.get("open", True)), "color": col}
+        w, dd, h = size
+        if shape == "box":
+            t = min(WALL, w / 6, dd / 6, h / 6)
+            for nm, pos, sz in (("back", [c[0], c[1] + dd / 2 - t / 2, c[2]], [w, t, h]),
+                                ("left", [c[0] - w / 2 + t / 2, c[1], c[2]], [t, dd, h]),
+                                ("right", [c[0] + w / 2 - t / 2, c[1], c[2]], [t, dd, h]),
+                                ("bottom", [c[0], c[1], c[2] - h / 2 + t / 2], [w, dd, t]),
+                                ("top", [c[0], c[1], c[2] + h / 2 - t / 2], [w, dd, t])):
+                parts.append({"name": name, "shape": "box", "pos": pos, "size": sz,
+                              "color": _shade_hex(col, 0.85 if nm == "back" else 1.0)})
+            parts.append({"name": name + "_front", "shape": "box", "pos": [c[0], c[1] - dd / 2 + t / 2, c[2]],
+                          "size": [w, t, h], "color": col, "cover": bool(x.get("open", True))})
+        else:
+            parts.append({"name": name + "_front", "shape": shape, "pos": list(c), "size": list(size), "color": col,
+                          "cover": bool(x.get("open", True))})
+            parts.append({"name": name, "shape": "box", "pos": [c[0], c[1] + dd * 0.35, c[2]],
+                          "size": [w * 0.8, dd * 0.12, h * 0.85], "color": _shade_hex(col, 0.6)})
+    for x in (raw.get("parts") or [])[:14]:
+        if not isinstance(x, dict) or not x.get("name"):
+            continue
+        sec = secs.get(slug(x.get("in") or "")) or list(secs.values())[0]
+        c0, sz0 = sec["c"], sec["size"]
+        at = _vec(x.get("at"), 3, -0.6, 1.6, (0.5, 0.5, 0.5))
+        fs = _vec(x.get("size"), 3, 0.02, 1.5, (0.3, 0.3, 0.3))
+        size = [max(0.015, fs[k] * sz0[k]) for k in range(3)]
+        if x.get("liquid"):        # fills its section from wall to wall, floor up (the AI only says how deep)
+            size = [max(0.02, sz0[0] - 2.2 * WALL), max(0.02, sz0[1] - 2.2 * WALL),
+                    max(0.02, min(size[2], sz0[2] - 2 * WALL))]
+            pos = [c0[0], c0[1], c0[2] - sz0[2] / 2 + WALL + size[2] / 2]
+        else:
+            pos = [c0[0] - sz0[0] / 2 + at[0] * sz0[0], c0[1] - sz0[1] / 2 + at[1] * sz0[1],
+                   c0[2] - sz0[2] / 2 + at[2] * sz0[2]]
+            for k in range(3):     # meant to be inside (0..1): keep it inside the walls (a flapper floated above)
+                if 0.0 <= at[k] <= 1.0:
+                    inner = max(0.02, sz0[k] - 2.2 * WALL)
+                    size[k] = min(size[k], inner * 0.95)
+                    lo_k, hi_k = c0[k] - inner / 2 + size[k] / 2, c0[k] + inner / 2 - size[k] / 2
+                    pos[k] = min(max(pos[k], lo_k), hi_k)
+        col = str(x.get("color") or "#ff8a3a")
+        parts.append({"name": slug(x["name"]) or "part", "shape": SHAPES.get(str(x.get("shape") or "box").lower(), "box"),
+                      "pos": pos, "size": size, "color": col if HEX.fullmatch(col) else "#ff8a3a",
+                      "liquid": bool(x.get("liquid"))})
+    moves = []
+    for mv in (raw.get("moves") or [])[:10]:
+        if not isinstance(mv, dict):
+            continue
+        mv = dict(mv)
+        name = slug(mv.get("part") or "")
+        mine = [q for q in parts if q["name"] == name]
+        if mine and str(mv.get("do") or "").lower() in ("turn", "rotate", "open"):
+            lo = [min(q["pos"][k] - q["size"][k] / 2 for q in mine) for k in range(3)]
+            hi = [max(q["pos"][k] + q["size"][k] / 2 for q in mine) for k in range(3)]
+            mid = [(a + b) / 2 for a, b in zip(lo, hi)]
+            edge = {"back": (1, hi), "front": (1, lo), "left": (0, lo), "right": (0, hi), "top": (2, hi),
+                    "bottom": (2, lo)}.get(str(mv.get("hinge") or "").lower())
+            if edge:
+                mid[edge[0]] = edge[1][edge[0]]
+            mv["pivot"] = mid
+        if isinstance(mv.get("dir"), str):
+            dv = DIRS.get(mv["dir"].lower().strip(), (0, 0, 1))
+            amt = _num(mv.get("amount"), -3.0, 3.0, 0.15)
+            mv["dir"] = [round(v * amt, 3) for v in dv]
+        moves.append(mv)
+    return {"parts": parts, "moves": moves}
+
+
+def _explainer_clean(raw, kind, looks):
+    if isinstance(raw, dict) and raw.get("sections"):
+        raw = _layout_explainer(raw) or raw
+    if not isinstance(raw, dict):
+        return None
+    d = clean(raw, kind, looks, settle=False)
+    if not d:
+        return None
+    # clean() centred it on its footprint and stood it on the ground: move the pivots the same way
+    shift = None
+    try:
+        ps = [p for p in raw["parts"] if isinstance(p, dict)]
+        sz = [_vec(p.get("size") or p.get("scale"), 3, 0.02, 14.0, (0.5, 0.5, 0.5)) for p in ps]
+        po = [_vec(p.get("pos") or p.get("position"), 3, -8.0, 16.0, (0.0, 0.0, s[2] / 2)) for p, s in zip(ps, sz)]
+        cx = (min(q[0] - s[0] / 2 for q, s in zip(po, sz)) + max(q[0] + s[0] / 2 for q, s in zip(po, sz))) / 2
+        cy = (min(q[1] - s[1] / 2 for q, s in zip(po, sz)) + max(q[1] + s[1] / 2 for q, s in zip(po, sz))) / 2
+        shift = [-cx, -cy, -min(q[2] - s[2] / 2 for q, s in zip(po, sz))]
+    except Exception:
+        pass
+    names = {p.get("name") or "body" for p in d["parts"] if not p.get("cover")}
+    for p in d["parts"]:
+        p.setdefault("name", "body")
+    d["moves"] = _clean_moves(raw.get("moves"), names)
+    for m in d["moves"]:
+        if shift and "pivot" in m:
+            m["pivot"] = [round(a + b, 3) for a, b in zip(m["pivot"], shift)]
+        if m["do"] == "slide":                 # a part slides a little, not off the model ("reseals": 2 m up)
+            n = math.sqrt(sum(v * v for v in m["dir"])) or 1.0
+            lim = 0.35 * float(d["height"])
+            if n > lim:
+                m["dir"] = [round(v * lim / n, 3) for v in m["dir"]]
+    d.update(explainer=True, complex=False, place="near")
+    return d
+
+
+def _clean_moves(raw, names):
+    out = []
+    for mv in (raw or [])[:10]:
+        if not isinstance(mv, dict):
+            continue
+        part = slug(mv.get("part") or "")
+        do = str(mv.get("do") or "").lower().strip()
+        do = {"rotate": "turn", "open": "turn", "move": "slide", "lift": "slide", "rise": "fill", "empty": "drain",
+              "beat": "pulse", "grow": "pulse", "vibrate": "shake", "spinning": "spin"}.get(do, do)
+        if part not in names or do not in MOVES:
+            continue
+        m = {"part": part, "do": do, "word": re.sub(r"[^a-z0-9]+", "", str(mv.get("word") or "").lower())[:20]}
+        ax = str(mv.get("axis") or "").lower()
+        m["axis"] = ax if ax in ("x", "y", "z") else ("x" if do == "turn" else "z")
+        dflt = {"turn": 60.0, "slide": 0.15, "spin": 1.0, "fill": 1.0, "drain": 0.1, "pulse": 1.0, "shake": 1.0}[do]
+        m["amount"] = round(_num(mv.get("amount"), -720.0, 720.0, dflt), 3)
+        if do in ("fill", "drain"):
+            m["amount"] = round(max(0.02, min(1.0, m["amount"] if m["amount"] <= 1.0 else m["amount"] / 100)), 3)
+        if do == "spin":
+            m["amount"] = round(max(-3.0, min(3.0, m["amount"])), 3)
+        if do == "slide":
+            m["dir"] = _vec(mv.get("dir"), 3, -2.0, 2.0, (0.0, 0.0, 0.15))
+        if mv.get("pivot") is not None and do == "turn":
+            m["pivot"] = _vec(mv.get("pivot"), 3, -8.0, 16.0, (0.0, 0.0, 0.0))
+        out.append(m)
+    return out
+
+
+def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True):
+    """An explainer object for `kind`, built for these narration lines (so it has the parts and moves they talk
+    about). Saved to the prop library as "explain_<kind>" and reused (its moves still play on their words; the ones
+    a new script doesn't say play in turn when it's first shown). Look-checked like any made prop, but never turned
+    into a flat picture (the moving parts are the point)."""
+    import llm
+    kind = slug(kind)
+    key = "explain_" + kind
+    have = library().get(key)
+    if have and have.get("explainer"):
+        log(f"[props] reusing explainer '{kind}' from the prop library")
+        return have
+    if not ollama:
+        d = fallback(kind, looks)
+        d.update(explainer=True, moves=[])
+        return d
+    narration = " / ".join(str(x) for x in lines if x)[:900]
+    # think first: the real object's anatomy in plain words (sections, real sizes, how they sit, what's inside and
+    # what moves) - asked straight for the plan, the model stacked every part on one spot or made a flat slab
+    try:
+        anatomy = llm.chat(ollama["url"], ollama["model"],
+                           "You describe how real objects are built, for someone making a simple cut-away model. "
+                           "In under 120 words: the 1 to 4 main sections (each with its real width, depth and "
+                           "height in metres and where it sits against the others), what is inside each, and which "
+                           "parts move and how, for this narration. Plain text, no JSON.",
+                           f"Object: {kind.replace('_', ' ')}\nNarration: {narration or 'how it works'}",
+                           temperature=0.3)[:1200]
+    except Exception:
+        anatomy = ""
+    user = (f"Object: {kind.replace('_', ' ')}\n" + (f"What it looks like: {looks}\n" if looks else "")
+            + (f"How the real one is built: {anatomy}\n" if anatomy else "")
+            + f"Narration (what the moves must show): {narration or 'how it works'}")
+    best = None
+    for attempt in (1, 2):
+        try:
+            d = _explainer_clean(llm.chat_json(ollama["url"], ollama["model"], EXPLAIN_GUIDE, user, temperature=0.5),
+                                 kind, looks)
+        except Exception as exc:
+            log(f"[props] explainer design failed ({exc.__class__.__name__})")
+            d = None
+        if not d or len(d["parts"]) < 3:
+            continue
+        d["kind"], d["looks"] = key, looks or kind.replace("_", " ")
+        log(f"[props] explainer '{kind}': {len(d['parts'])} parts "
+            f"({', '.join(sorted({p['name'] for p in d['parts']}))}), {sum(1 for p in d['parts'] if p.get('cover'))} "
+            f"cover, moves: {', '.join(m['part'] + ' ' + m['do'] for m in d['moves']) or 'none'}")
+        score, problem = (None, "")
+        if _prop_check_on():
+            score, problem = look_score(dict(d, kind=kind), ollama, log)
+        if score is not None:
+            d["look_score"] = score
+            log(f"[props] explainer '{kind}' looks like it? {score}/10" + (f" - {problem}" if problem else ""))
+        if best is None or (d.get("look_score") or 0) > (best.get("look_score") or 0):
+            best = d
+        if score is None or score >= PROP_PASS:
+            break
+        user += f"\nYour last model was checked and did NOT look like it: {problem or 'not recognisable'}. Fix that."
+    if not best:
+        d = fallback(kind, looks)
+        d.update(explainer=True, moves=[], kind=key)
+        return d
+    best["checked"] = (best.get("look_score") or PROP_PASS) >= PROP_PASS
+    if save:
+        _save(best)
     return best
 
 

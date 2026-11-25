@@ -609,6 +609,8 @@ def p_custom(r, p, d):
     # (or the object was judged too complicated for them)
     if d.get("sprite") and (PROJECT / d["sprite"]).exists() and (not d.get("parts") or d.get("complex")):
         return p_sprite(r, p, d)
+    if d.get("explainer"):
+        return p_explainer(r, p, d)
     f = RNG.uniform(0.9, 1.1)
     for i, part in enumerate(d.get("parts", [])):
         kind, kw = SHAPE_PRIM.get(part.get("shape"), SHAPE_PRIM["box"])
@@ -618,6 +620,61 @@ def p_custom(r, p, d):
         col = part.get("color", "#9a9180")
         P(kind, f"{p['kind']}_{i}", tuple(part.get("pos", (0, 0, sz))), (sx, sy, sz), col if glow else shade(col, f),
           r, unlit=glow, rot=(rx, ry, rz), **kw)
+
+
+EXPLAIN = {}     # root object name -> {"groups": {part name: (empty, (lo, hi))}, "cover": (empty, (lo, hi)) or None}
+
+
+def _part_box(parts):
+    lo = [min(q["pos"][k] - q["size"][k] / 2 for q in parts) for k in range(3)]
+    hi = [max(q["pos"][k] + q["size"][k] / 2 for q in parts) for k in range(3)]
+    return lo, hi
+
+
+def p_explainer(r, p, d):
+    """An explainer object (propgen.design_explainer): parts with the same "name" hang under one empty, so they
+    move together (blender_cast.explain_moves turns, slides, fills... it); "cover" parts hang under their own empty
+    and are taken away to show it cut open. Each empty sits at the group's pivot: a turn's own pivot, the bottom
+    middle for fill/drain (the level rises from the bottom), else the middle."""
+    parts = d.get("parts", [])
+    by_name, covers = {}, []
+    for part in parts:
+        (covers if part.get("cover") else by_name.setdefault(part.get("name") or "body", [])).append(part)
+    moves = d.get("moves") or []
+    info = {"groups": {}, "cover": None}
+
+    def pivot(name, box):
+        lo, hi = box
+        mid = [(a + b) / 2 for a, b in zip(lo, hi)]
+        for mv in moves:
+            if mv.get("part") != name:
+                continue
+            if mv.get("pivot"):
+                return list(mv["pivot"])
+            if mv.get("do") in ("fill", "drain"):
+                return [mid[0], mid[1], lo[2]]
+        return mid
+
+    def build(group_parts, name, piv):
+        e = H.empty(f"{p['kind']}__{name}", r, tuple(piv))
+        for i, part in enumerate(group_parts):
+            kind, kw = SHAPE_PRIM.get(part.get("shape"), SHAPE_PRIM["box"])
+            sx, sy, sz = (max(0.01, v / 2) for v in part.get("size", (0.5, 0.5, 0.5)))
+            rx, ry, rz = (math.radians(v) for v in part.get("rot", (0, 0, 0)))
+            loc = tuple(a - b for a, b in zip(part.get("pos", (0, 0, sz)), piv))
+            P(kind, f"{p['kind']}__{name}_{i}", loc, (sx, sy, sz), part.get("color", "#9a9180"), e,
+              unlit=bool(part.get("glow")), rot=(rx, ry, rz), **kw)
+        return e
+
+    for name, gp in by_name.items():
+        box = _part_box(gp)
+        piv = pivot(name, box)
+        info["groups"][name] = (build(gp, name, piv), box)
+    if covers:
+        box = _part_box(covers)
+        info["cover"] = (build(covers, "cover", [(a + b) / 2 for a, b in zip(*box)]), box)
+    EXPLAIN[r.name] = info
+    return None
 
 
 def p_balloons(r, p):

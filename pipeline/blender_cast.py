@@ -13,6 +13,7 @@ move by keyframing their root (enter, crash_in, fall, fly_by, appear, vanish, ex
 """
 import math
 import random
+import re
 
 import catalog
 from mathutils import Vector
@@ -123,6 +124,11 @@ def spot(e, fr, side, radius, claim=True):
     to = e.get("to")
     if isinstance(to, str) and to in B.MARKS:
         return Vector((*B.MARKS[to], 0.0))
+    if isinstance(to, (list, tuple)) and len(to) >= 2:      # a spot the director chose ([show: ...] objects)
+        c = Vector((float(to[0]), float(to[1]), 0.0))
+        if claim:
+            TAKEN.append((c.copy(), radius))
+        return c
     if e.get("cutaway"):
         return her(fr) + Vector((0.0, 0.6, 0.0))
     h = her(fr)
@@ -349,6 +355,9 @@ def animate_thing(who, info, side):
     size = float(info.get("scale", 0) or 0) or min(1.0, 2.2 / max(radius, 0.01), 3.5 / max(height, 0.01))
     if not info.get("scale") and height * size < 0.55:     # tiny things (a pizza, a phone) are shown bigger
         size = 0.55 / max(height, 0.01)
+    if d and d.get("explainer") and not info.get("scale"):
+        # an explainer object is a demonstration model beside her: about her height, whatever its real size
+        size = max(0.25, min(4.0, 1.5 / max(height, 0.01), 1.3 / max(radius, 0.01)))
     r = radius * size
     shadow = B.make_shadow(max(0.2, r * 0.8), f"shadow_{who}")
     colors = [p.get("color", "#888888") for p in (d or {}).get("parts", [])][:4] or ["#888888"]
@@ -478,12 +487,149 @@ def animate_thing(who, info, side):
         CUT[si] = {"target": tgt, "center": (p0 + p1) / 2 if verb == "fly_by" else p1.copy(),
                    "h": vis_h, "w": vis_w, "r": r, "verb": verb,
                    "moving": verb in ("fly_by", "fall", "crash_in", "enter")}
+    if d and d.get("explainer"):
+        explain_moves(who, root, d, size, plan)
     for f, n, verb, p0, p1 in plan:
         if verb == "crash_in":
             debris(who, p1, colors, f + n)
         if verb in ("enter", "crash_in", "fall", "appear", "bounce", "spin", "shake"):
             note_focus(f, p1)
     print(f"[cast] {who}: thing ({'AI prop' if d else info.get('prop', '?')}), {len(evs)} events, size x{size:.2f}")
+
+
+# --------------------------------------------------------------------------- explainer objects
+def _stem(w):
+    return re.sub(r"[^a-z0-9]+", "", str(w).lower())
+
+
+def _word_match(spoken, want):
+    """'lifts' ~ 'lift', 'flaps' ~ 'flap', 'filling' ~ 'fill' (not 'a' ~ 'an')."""
+    if not spoken or not want:
+        return False
+    if spoken == want:
+        return True
+    k = max(4, len(want) - 2)
+    return len(spoken) >= 4 and len(want) >= 3 and (spoken.startswith(want[:k]) or want.startswith(spoken[:k]))
+
+
+def word_frames(si):
+    """[(word, frame)] for a shot's English words, at the moment each is said (shot "word_t" from the voice's word
+    times; a translated video spreads the English words over the speech, since only it was timed)."""
+    shot = B.SHOTS[si]
+    f0, n = B.shot_info[si]["f0"], B.shot_info[si]["n"]
+    lead, talk = float(shot.get("lead", 0) or 0), float(shot.get("talk", 0) or 0)
+    words = str(shot.get("line_src") or shot.get("line") or "").split()
+    if not words:
+        return []
+    wt = shot.get("word_t")
+    if shot.get("line_src") or not (isinstance(wt, list) and len(wt) == len(words)):
+        wt = [talk * k / len(words) for k in range(len(words))]
+    return [(_stem(w), min(f0 + n - 1, f0 + round((lead + float(t)) * B.FPS))) for w, t in zip(words, wt)]
+
+
+def explain_moves(who, root, d, size, plan):
+    """Animate an explainer object's parts (blender_sets.p_explainer): each move plays when its word is said while
+    the object is on stage (moves whose word never comes play one after another in its first shot), and the part
+    stays where the move left it. The cover comes off at the first shot that shows it open. Also tells the cameras
+    what to frame: the object beside her (FOCUS), or one part close up (CUT)."""
+    info = B.blender_sets.EXPLAIN.get(root.name)
+    if not info:
+        return
+    on = [(f, f + n) for f, n, verb, p0, p1 in plan if verb in ("appear", "enter", "fall", "crash_in")]
+    off = [f for f, n, verb, p0, p1 in plan if verb in ("vanish", "exit")]
+    if not on:
+        return
+    t_on = on[0][0]
+    t_off = min([f for f in off if f > t_on] + [B.TOTAL + 1])
+    where = next(p1 for f, n, verb, p0, p1 in plan if verb in ("appear", "enter", "fall", "crash_in"))
+    shown = [si for si, s in enumerate(B.SHOTS) if (s.get("show") or {}).get("who") == who
+             and t_on <= B.shot_info[si]["f0"] + B.shot_info[si]["n"] - 1 and B.shot_info[si]["f0"] < t_off]
+    # when each move starts
+    said = [(w, fr) for si in range(len(B.SHOTS)) for w, fr in word_frames(si) if t_on <= fr < t_off]
+    first = shown[0] if shown else None
+    spare = (B.shot_info[first]["f0"] + round(float(B.SHOTS[first].get("lead", 0) or 0) * B.FPS)) if first is not None \
+        else t_on + 2
+    sched = []
+    for mv in d.get("moves") or []:
+        if mv.get("part") not in info["groups"]:
+            continue
+        hit = next((fr for w, fr in said if _word_match(w, _stem(mv.get("word", "")))), None)
+        if hit is None:
+            hit = spare
+            spare += round(0.8 * B.FPS)
+        sched.append((max(hit, t_on + 1), mv))
+    sched.sort(key=lambda x: x[0])
+    dur = max(2, round(0.7 * B.FPS))
+    # the cut-open view: the cover comes away at the first shot that asks for it open
+    opens = [B.shot_info[si]["f0"] for si in shown if (B.SHOTS[si].get("show") or {}).get("open")]
+    t_open = opens[0] if opens else None
+    for name, (e, box) in info["groups"].items():
+        mine = [(t0, mv) for t0, mv in sched if mv["part"] == name]
+        if not mine:
+            continue
+        base_loc = e.location.copy()
+        lv = [mv for _, mv in mine if mv.get("do") in ("fill", "drain")]
+        level0 = (0.15 if lv[0]["do"] == "fill" else 1.0) if lv else 1.0
+        for fr in range(1, B.TOTAL + 1):
+            rot, offv, sc, level = [0.0, 0.0, 0.0], Vector((0.0, 0.0, 0.0)), 1.0, level0
+            for t0, mv in mine:
+                if fr < t0:
+                    break
+                do, amt = mv.get("do"), float(mv.get("amount", 0) or 0)
+                ax = "xyz".index(mv.get("axis", "z")) if mv.get("axis", "z") in "xyz" else 2
+                u = min(1.0, (fr - t0) / dur)
+                ease = B.smooth(u)
+                if do == "turn":
+                    rot[ax] += math.radians(amt) * ease
+                elif do == "slide":
+                    dv = mv.get("dir") or [0, 0, 1]
+                    offv += Vector((float(dv[0]), float(dv[1]), float(dv[2]))) * ease
+                elif do == "spin":
+                    secs = min(fr - t0, round(float(mv.get("seconds", 2.5)) * B.FPS)) / B.FPS
+                    rot[ax] += math.tau * (amt or 1.0) * secs
+                elif do in ("fill", "drain"):
+                    level = level + (max(0.02, min(1.0, amt)) - level) * ease
+                elif do == "pulse":
+                    times = max(1, int(mv.get("times", 2) or 2))
+                    span = dur * times
+                    if fr - t0 < span:
+                        sc *= 1.0 + 0.22 * math.sin(math.pi * ((fr - t0) % dur) / dur)
+                elif do == "shake":
+                    if fr - t0 < dur * 2:
+                        offv.x += 0.03 * math.sin((fr - t0) * 2.3) * (1 - (fr - t0) / (dur * 2))
+            e.location = base_loc + offv
+            e.rotation_euler = rot
+            e.scale = (sc, sc, max(1e-3, sc * level))
+            for path in ("location", "rotation_euler", "scale"):
+                e.keyframe_insert(path, frame=fr)
+    if info["cover"] and t_open:
+        ce, _ = info["cover"]
+        base = ce.location.copy()
+        n_open = max(2, round(0.5 * B.FPS))
+        for fr in (1, t_open - 1, *range(t_open, t_open + n_open + 1)):
+            if fr < 1:
+                continue
+            u = min(1.0, max(0.0, (fr - t_open) / n_open))
+            ce.location = base + Vector((0.0, -0.6 * B.smooth(u), 0.15 * math.sin(math.pi * u)))
+            ce.scale = (max(1e-3, 1 - B.smooth(u)),) * 3
+            ce.keyframe_insert("location", frame=fr)
+            ce.keyframe_insert("scale", frame=fr)
+    # cameras: the object beside her, or a part close up
+    for si in shown:
+        part = (B.SHOTS[si].get("show") or {}).get("part")
+        if part and part in info["groups"]:
+            lo, hi = info["groups"][part][1]
+            mid = Vector([(a + b) / 2 for a, b in zip(lo, hi)])
+            tgt = B.empty(f"part_target_{who}_{si}", root, tuple(mid))
+            ext = max(hi[0] - lo[0], hi[1] - lo[1])
+            CUT[si] = {"target": tgt, "center": where + Vector((mid.x * size, mid.y * size, 0.0)),
+                       "z": mid.z * size, "h": max(0.25, (hi[2] - lo[2]) * size * 1.6),
+                       "w": max(0.25, ext * size * 1.6), "r": ext * size / 2, "verb": "show", "moving": False,
+                       "part": True}
+        else:
+            FOCUS.setdefault(si, where.copy())
+    print(f"[cast] {who}: explainer - {len(sched)} moves"
+          + (f", opens at frame {t_open}" if t_open else "") + f", shown in {len(shown)} shots")
 
 
 def attach_to_hand(root, shadow, starts, others):
