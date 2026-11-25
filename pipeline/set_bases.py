@@ -635,9 +635,10 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
             marks[kind[1:]] = [sd["pos"][0], round(sd["pos"][1] - r - 0.7, 2)]
             continue
         default = b["defaults"].get(sid) or ""
-        if want and default and not default.startswith("@") and \
-                propgen.slug(kind).split("_")[-1] == default.split("_")[-1]:
-            kind, looks = default, ""            # a "cloud_bed" is still a bed: the hand-built one (it scored 4/10)
+        if want and default and propgen.slug(kind).split("_")[-1] == default.lstrip("@").split("_")[-1]:
+            # a "cloud_bed" is still a bed, a "throne" is the hall's own throne: the hand-built one (the AI's
+            # cloud bed scored 4/10; the throne became an imported armchair)
+            kind, looks = default, ""
         # a newly designed thing only for the hero, and only when the idea names it ("volcano lab" -> a volcano):
         # the AI's own "teacher_desk" was a blue-green slab next to the hand-built desk it replaced
         named = set(propgen.slug(kind).split("_")) & set(re.findall(r"[a-z]+", str(idea).lower()))
