@@ -412,8 +412,21 @@ camera.
   (target = the part's middle, `z` = its height; `blender_build` uses `cut["z"]` and a 0.8 m minimum distance).
   Size: about 1.5 m tall (a demonstration model), whatever the real size.
 - Quality limit: the local model's objects read as diagrams ("a green cabinet" with a tank of water, a gold chain
-  and a red flapper inside), not as the real thing - the toilet scored 4/10 in the look check. The mechanics (open,
-  moves on words, framing, her pointing) work in renders (`episodes/zz_check_explain.json`).
+  and a red flapper inside), not as the real thing - toilet, volcano and heart all score 3-4/10 in the look check.
+  The mechanics (open, moves on words, framing, her pointing) work in renders (`episodes/zz_check_explain.json`).
+  Tried a bigger local model (qwen3:14b, 2026-11-25): no better (all 4/10 or less) and 2-3x slower - removed at
+  the user's request. `ollama.design_model` (Settings -> AI tools, "" = `ollama.model`, `propgen.design_model()`)
+  stays: it's used by the prop maker and the explainer maker. Code-set shapes (`ROUND_SHAPES`: volcano -> cone,
+  heart -> sphere, tank -> cylinder for the biggest section) didn't save it either: the model put the cone on a box
+  column, and for the heart it ignored the sections format.
+- **Closed = a drawn picture, open = the cut-away** (the fix for recognisability): with ComfyUI on,
+  `design_explainer(comfy_cfg=)` also gets a sprite (`add_sprite`, as other props); `p_explainer` puts the sprite
+  under a `__closed` empty and the model under `__diagram`; `explain_moves` swaps them (0.35 s) at the first
+  `open` shot (a part close-up counts as open). Never opened = the picture only. Dev has no voice-venv, so no
+  sprites here: tested with a stand-in picture (`episodes/zz_check_volcano_pic.json`).
+- **Round sections** (`blender_sets._half`): a cone/cylinder/sphere section is bisected down its middle (bmesh
+  `bisect_plane` + `holes_fill`, the cut capped in a darker colour): the back half stays, the front half is the
+  cover - a cross-section. Box sections stay hollow boxes. Parts carry `"half": "back"|"front"` through `clean()`.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

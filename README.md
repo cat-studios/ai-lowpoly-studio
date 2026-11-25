@@ -317,7 +317,10 @@ She can present a model of a thing and show how it works - its parts move when s
 a part name (`flap`) gives a close-up of that part, `[show: off]` puts it away. The AI builds the model while the
 video renders, from what the script says about it (sections, the parts inside, and what each part does: turns,
 slides, spins, fills, drains, beats or rattles), and each part moves on the word that names its action. Models are
-kept in the prop library and reused. They're simple diagrams made from basic shapes, in the same low-poly look.
+kept in the prop library and reused. With ComfyUI on, a closed model shows as a drawn picture of the real thing,
+and turns into the cut-open diagram when she says `open` (or looks at a part). The diagrams are simple shapes in the
+same low-poly look - round things (a volcano, a heart) are cut in half like a cross-section drawing. Settings →
+🤖 AI tools → *Model that builds props & explainer models* can pick a different Ollama model for this.
 
 ### Cutaways
 Show something instead of her while she keeps talking (voice-over):

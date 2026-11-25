@@ -1414,6 +1414,7 @@ const S_TABS = {
     ["Ollama (script & title writing)", [
       ["ollama.url", "Server URL", "text"],
       ["ollama.model", "Default model", "ollama"],
+      ["ollama.design_model", "Model that builds props & explainer models", "ollama", {}, "A bigger model (e.g. qwen3:14b) plans 3D objects better. Empty = the default model."],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
       ["sets.look_check", "Check that new sets look like the place", "bool", {}, "The picture model looks at each new set and the AI fixes ones that read as another place (adds a few minutes)."],
@@ -1594,8 +1595,14 @@ function drawSettingsTab(st) {
   if (fl) api("GET", "/api/fonts").then((fs) => { fl.innerHTML = fs.map((f) => `<option value="${esc(f)}">`).join(""); });
   const ms = $("[data-async=music]", body);
   if (ms) api("GET", "/api/music").then((list) => { ms.innerHTML = `<option value="">None</option>` + options(list.map((m) => m.path), getPath(st, ms.dataset.key), Object.fromEntries(list.map((m) => [m.path, m.name]))); });
-  const om = $("[data-async=ollama]", body);
-  if (om) api("GET", "/api/ollama/models").then((r) => { if (r.ok) om.innerHTML = options(r.models.map((m) => m.name), getPath(st, "ollama.model")); });
+  const oms = [...body.querySelectorAll("[data-async=ollama]")];
+  if (oms.length) api("GET", "/api/ollama/models").then((r) => {
+    if (!r.ok) return;
+    for (const om of oms) {
+      const first = om.dataset.key === "ollama.model" ? "" : `<option value="">Same as the default model</option>`;
+      om.innerHTML = first + options(r.models.map((m) => m.name), getPath(st, om.dataset.key));
+    }
+  });
   const ck = $("[data-async=ckpt]", body);
   if (ck) api("GET", "/api/comfy/status").then((r) => { if (r.ok) ck.innerHTML = `<option value="">First available</option>` + options(r.checkpoints, getPath(st, "comfy.checkpoint")); });
   if ($("#t-ollama")) {

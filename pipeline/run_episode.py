@@ -773,7 +773,7 @@ def resolve_cast(ep, cfg, log=print):
             lines = [s.get("line_src") or s.get("line") or "" for s in ep["shots"][first:first + 14]]
             info["type"] = "thing"
             info["def"] = propgen.design_explainer(who, info.get("looks") or "", lines, cfg.get("ollama"),
-                                                   log=lambda m: log("  " + m))
+                                                   log=lambda m: log("  " + m), comfy_cfg=comfy_cfg)
             cast[who] = info
             continue
         if not info.get("def") and not info.get("actor") and not info.get("generated"):

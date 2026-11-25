@@ -614,6 +614,20 @@ def explain_moves(who, root, d, size, plan):
             ce.scale = (max(1e-3, 1 - B.smooth(u)),) * 3
             ce.keyframe_insert("location", frame=fr)
             ce.keyframe_insert("scale", frame=fr)
+    # a drawn picture while it's closed: it swaps for the cut-away model when it opens (never opened = the picture)
+    if info.get("closed") is not None:
+        pic, dia = info["closed"], info["diagram"]
+        n_sw = max(2, round(0.35 * B.FPS))
+        keys = [(1, 1.0)]
+        if t_open:
+            keys += [(t_open - 1, 1.0)] + [(t_open + k, 1.0 - k / n_sw) for k in range(1, n_sw + 1)]
+        for fr, v in keys:
+            if fr < 1:
+                continue
+            pic.scale = (max(1e-3, v),) * 3
+            dia.scale = (max(1e-3, 1.0 - v),) * 3
+            pic.keyframe_insert("scale", frame=fr)
+            dia.keyframe_insert("scale", frame=fr)
     # cameras: the object beside her, or a part close up
     for si in shown:
         part = (B.SHOTS[si].get("show") or {}).get("part")

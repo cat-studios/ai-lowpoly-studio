@@ -693,7 +693,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                                  "explainer": True}
                     shown = {"who": who, "at": at, "open": False}
                 if shown:
-                    shown["open"] = shown["open"] or is_open
+                    shown["open"] = shown["open"] or is_open or bool(part)    # a part close-up shows the inside
                     show_now = {"who": shown["who"], "open": shown["open"], **({"part": part} if part else {})}
         mood = mood_of(text)
         action, expr, cam, move = MOOD[mood]

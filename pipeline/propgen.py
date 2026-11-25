@@ -47,6 +47,11 @@ GUIDE = (
 )
 
 
+def design_model(ollama):
+    """The model that plans 3D objects (Settings -> AI tools; a bigger one, e.g. qwen3:14b, places parts better)."""
+    return (ollama or {}).get("design_model") or (ollama or {}).get("model")
+
+
 def slug(name):
     s = re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
     return s[:28].strip("_")
@@ -123,6 +128,8 @@ def clean(raw, kind, looks="", by="ollama", settle=True):
             part["name"] = slug(p["name"]) or "body"
         if p.get("cover"):
             part["cover"] = True
+        if p.get("half") in ("back", "front"):  # a round explainer section cut in half (blender_sets._half)
+            part["half"] = p["half"]
         parts.append(part)
     if not parts:
         return None
@@ -619,7 +626,7 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
                 + (f"It is part of this place: {setting}\n" if setting else ""))
         for attempt in range(2):
             try:
-                d = clean(llm.chat_json(ollama["url"], ollama["model"], GUIDE, user, temperature=0.7), kind, looks)
+                d = clean(llm.chat_json(ollama["url"], design_model(ollama), GUIDE, user, temperature=0.7), kind, looks)
             except Exception as exc:
                 log(f"[props] Ollama failed on '{kind}' ({exc.__class__.__name__}: {str(exc)[:80]})")
                 d = None
@@ -738,7 +745,7 @@ def look_checked(d, kind, looks, setting, ollama, log=print):
                 + f"Your last design was checked and did NOT look like it: {problem or 'not recognisable'}. "
                   "Build it again so it clearly reads as this object.")
         try:
-            nd = clean(llm.chat_json(ollama["url"], ollama["model"], GUIDE, user, temperature=0.6), kind, looks)
+            nd = clean(llm.chat_json(ollama["url"], design_model(ollama), GUIDE, user, temperature=0.6), kind, looks)
         except Exception:
             nd = None
         if not nd or len(nd["parts"]) < 2:
@@ -786,6 +793,10 @@ EXPLAIN_GUIDE = (
     "metres in dir; spin = keep turning, amount = turns per second; fill / drain = a liquid's level rises / falls "
     "to amount (0 to 1); pulse = beats bigger and smaller; shake = rattles. word = the word in the narration where "
     "it happens. 2 to 8 moves.\n"
+    "Give each section the shape of the real thing - a volcano or a mountain is a cone, a heart, a ball or a head "
+    "is a sphere, a tank, a pipe, a can or a tree trunk is a cylinder, a cabinet or a box is a box. Round sections "
+    "are cut in half down the middle when opened, like a cross-section drawing, so put the inside parts on that "
+    "middle (y = 0.5).\n"
     "Keep it simple and readable: 1 to 4 sections, 3 to 12 parts, bold colours that stand out for the moving "
     "parts.\n"
     'Example "coffee maker" (narration: the heater warms the water, it rises up the tube and drips into the pot): '
@@ -811,13 +822,40 @@ def _shade_hex(c, f):
     return "#%02x%02x%02x" % tuple(min(255, max(0, int(int(c[i:i + 2], 16) * f))) for i in (1, 3, 5))
 
 
-def _layout_explainer(raw):
+# the main section's shape for well-known round things - the model built a volcano, a heart and an egg from boxes
+# however the guide asked
+ROUND_SHAPES = [("cone", "volcano mountain hill pyramid anthill termite_mound"),
+                ("sphere", "heart ball planet earth globe egg eye head balloon bubble apple orange moon sun stomach "
+                           "brain lung cell atom"),
+                ("cylinder", "tank can bottle pipe tower rocket trunk drum battery candle thermos boiler well silo "
+                             "lighthouse tube")]
+
+
+def _main_shape(kind):
+    ws = set(re.findall(r"[a-z]+", str(kind).lower()))
+    for shape, words in ROUND_SHAPES:
+        if ws & set(words.split()):
+            return shape
+    return None
+
+
+def _layout_explainer(raw, kind=""):
     """The AI's plan (sections placed against each other, parts at fractions inside them, moves with named hinges)
     -> parts in metres + moves with real pivots. Hollow box sections get back/side/bottom walls, a lid, and a
     front panel marked cover; other shapes are one cover shape with a dark back panel behind the inside."""
-    secs_in = [x for x in (raw.get("sections") or []) if isinstance(x, dict) and x.get("name")][:4]
+    secs_in = [dict(x) for x in (raw.get("sections") or []) if isinstance(x, dict) and x.get("name")][:4]
     if not secs_in:
         return None
+    hint = _main_shape(kind)
+    if hint:                                   # the biggest section takes the thing's own shape
+        def vol(x):
+            v = _vec(x.get("size"), 3, 0.08, 6.0, (0.6, 0.6, 0.8))
+            return v[0] * v[1] * v[2]
+        biggest = max(secs_in, key=vol)
+        biggest["shape"] = hint
+        if hint == "sphere":                   # a ball is as deep as it is wide
+            v = _vec(biggest.get("size"), 3, 0.08, 6.0, (0.6, 0.6, 0.8))
+            biggest["size"] = [v[0], max(v[1], v[0] * 0.8), v[2]]
     secs, parts = {}, []
     for x in secs_in:
         name = slug(x["name"]) or f"section{len(secs)}"
@@ -859,11 +897,15 @@ def _layout_explainer(raw):
                               "color": _shade_hex(col, 0.85 if nm == "back" else 1.0)})
             parts.append({"name": name + "_front", "shape": "box", "pos": [c[0], c[1] - dd / 2 + t / 2, c[2]],
                           "size": [w, t, h], "color": col, "cover": bool(x.get("open", True))})
-        else:
-            parts.append({"name": name + "_front", "shape": shape, "pos": list(c), "size": list(size), "color": col,
-                          "cover": bool(x.get("open", True))})
-            parts.append({"name": name, "shape": "box", "pos": [c[0], c[1] + dd * 0.35, c[2]],
-                          "size": [w * 0.8, dd * 0.12, h * 0.85], "color": _shade_hex(col, 0.6)})
+        else:        # round: cut in half down the middle - the back half stays, the front half is the cover
+            parts.append({"name": name, "shape": shape, "pos": list(c), "size": list(size), "color": col,
+                          "half": "back"})
+            if x.get("open", True):
+                parts.append({"name": name + "_front", "shape": shape, "pos": list(c), "size": list(size),
+                              "color": col, "half": "front", "cover": True})
+            else:
+                parts.append({"name": name, "shape": shape, "pos": list(c), "size": list(size), "color": col,
+                              "half": "front"})
     for x in (raw.get("parts") or [])[:14]:
         if not isinstance(x, dict) or not x.get("name"):
             continue
@@ -915,7 +957,7 @@ def _layout_explainer(raw):
 
 def _explainer_clean(raw, kind, looks):
     if isinstance(raw, dict) and raw.get("sections"):
-        raw = _layout_explainer(raw) or raw
+        raw = _layout_explainer(raw, kind) or raw
     if not isinstance(raw, dict):
         return None
     d = clean(raw, kind, looks, settle=False)
@@ -976,7 +1018,7 @@ def _clean_moves(raw, names):
     return out
 
 
-def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True):
+def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True, reuse=True, comfy_cfg=None):
     """An explainer object for `kind`, built for these narration lines (so it has the parts and moves they talk
     about). Saved to the prop library as "explain_<kind>" and reused (its moves still play on their words; the ones
     a new script doesn't say play in turn when it's first shown). Look-checked like any made prop, but never turned
@@ -985,8 +1027,12 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
     kind = slug(kind)
     key = "explain_" + kind
     have = library().get(key)
-    if have and have.get("explainer"):
+    if reuse and have and have.get("explainer"):
         log(f"[props] reusing explainer '{kind}' from the prop library")
+        if comfy_cfg and not have.get("sprite"):
+            have = add_sprite(dict(have, looks=have.get("looks") or kind.replace("_", " ")), comfy_cfg, log)
+            if have.get("sprite") and save:
+                _save(have)
         return have
     if not ollama:
         d = fallback(kind, looks)
@@ -996,7 +1042,7 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
     # think first: the real object's anatomy in plain words (sections, real sizes, how they sit, what's inside and
     # what moves) - asked straight for the plan, the model stacked every part on one spot or made a flat slab
     try:
-        anatomy = llm.chat(ollama["url"], ollama["model"],
+        anatomy = llm.chat(ollama["url"], design_model(ollama),
                            "You describe how real objects are built, for someone making a simple cut-away model. "
                            "In under 120 words: the 1 to 4 main sections (each with its real width, depth and "
                            "height in metres and where it sits against the others), what is inside each, and which "
@@ -1011,7 +1057,7 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
     best = None
     for attempt in (1, 2):
         try:
-            d = _explainer_clean(llm.chat_json(ollama["url"], ollama["model"], EXPLAIN_GUIDE, user, temperature=0.5),
+            d = _explainer_clean(llm.chat_json(ollama["url"], design_model(ollama), EXPLAIN_GUIDE, user, temperature=0.5),
                                  kind, looks)
         except Exception as exc:
             log(f"[props] explainer design failed ({exc.__class__.__name__})")
@@ -1038,6 +1084,10 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
         d.update(explainer=True, moves=[], kind=key)
         return d
     best["checked"] = (best.get("look_score") or PROP_PASS) >= PROP_PASS
+    if comfy_cfg:
+        # closed, it's a drawn picture of the real thing (recognisable at a glance); "open" swaps in the cut-away
+        # model with its moving parts (blender_sets.p_explainer / blender_cast.explain_moves)
+        best = add_sprite(best, comfy_cfg, log)
     if save:
         _save(best)
     return best

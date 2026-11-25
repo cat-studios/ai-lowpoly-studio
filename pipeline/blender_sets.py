@@ -622,7 +622,32 @@ def p_custom(r, p, d):
           r, unlit=glow, rot=(rx, ry, rz), **kw)
 
 
-EXPLAIN = {}     # root object name -> {"groups": {part name: (empty, (lo, hi))}, "cover": (empty, (lo, hi)) or None}
+def _half(o, keep, cap_colour):
+    """Cut a solid shape in half down its middle (the plane facing the camera) and keep the back or front half,
+    the cut closed with a darker cap - a round section (a volcano's cone, a heart's ball, a tank's cylinder) cut
+    open like a cross-section diagram: the back half stays, the front half is the cover that comes off."""
+    import bmesh
+    me = o.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    res = bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, 0, 0), plane_no=(0, 1, 0),
+                                 clear_inner=(keep == "back"), clear_outer=(keep == "front"))
+    cut = [g for g in res["geom_cut"] if isinstance(g, bmesh.types.BMEdge)]
+    before = set(bm.faces)
+    if cut:
+        bmesh.ops.holes_fill(bm, edges=cut, sides=0)
+    caps = [f for f in bm.faces if f not in before]
+    if caps:
+        me.materials.append(H.mat(cap_colour))
+        for f in caps:
+            f.material_index = len(me.materials) - 1
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+
+
+EXPLAIN = {}     # root object name ->{"groups": {part name: (empty, (lo, hi))}, "cover": (empty, (lo, hi)) or None}
 
 
 def _part_box(parts):
@@ -641,7 +666,13 @@ def p_explainer(r, p, d):
     for part in parts:
         (covers if part.get("cover") else by_name.setdefault(part.get("name") or "body", [])).append(part)
     moves = d.get("moves") or []
-    info = {"groups": {}, "cover": None}
+    info = {"groups": {}, "cover": None, "closed": None, "diagram": None}
+    holder = r
+    if d.get("sprite") and (PROJECT / d["sprite"]).exists():
+        # closed it's the drawn picture of the real thing; the cut-away model takes its place when it opens
+        info["closed"] = H.empty(f"{p['kind']}__closed", r, (0, 0, 0))
+        p_sprite(info["closed"], p, d)
+        holder = info["diagram"] = H.empty(f"{p['kind']}__diagram", r, (0, 0, 0))
 
     def pivot(name, box):
         lo, hi = box
@@ -656,14 +687,16 @@ def p_explainer(r, p, d):
         return mid
 
     def build(group_parts, name, piv):
-        e = H.empty(f"{p['kind']}__{name}", r, tuple(piv))
+        e = H.empty(f"{p['kind']}__{name}", holder, tuple(piv))
         for i, part in enumerate(group_parts):
             kind, kw = SHAPE_PRIM.get(part.get("shape"), SHAPE_PRIM["box"])
             sx, sy, sz = (max(0.01, v / 2) for v in part.get("size", (0.5, 0.5, 0.5)))
             rx, ry, rz = (math.radians(v) for v in part.get("rot", (0, 0, 0)))
             loc = tuple(a - b for a, b in zip(part.get("pos", (0, 0, sz)), piv))
-            P(kind, f"{p['kind']}__{name}_{i}", loc, (sx, sy, sz), part.get("color", "#9a9180"), e,
-              unlit=bool(part.get("glow")), rot=(rx, ry, rz), **kw)
+            o = P(kind, f"{p['kind']}__{name}_{i}", loc, (sx, sy, sz), part.get("color", "#9a9180"), e,
+                  unlit=bool(part.get("glow")), rot=(rx, ry, rz), **kw)
+            if part.get("half") in ("back", "front"):
+                _half(o, part["half"], shade(part.get("color", "#9a9180"), 0.62))
         return e
 
     for name, gp in by_name.items():
