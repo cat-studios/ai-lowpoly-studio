@@ -219,10 +219,10 @@ def o_path(p, length=24.0, w=1.6):
 # --------------------------------------------------------------------------- the bases
 # slot: pos (x, y), rot, default kind (a built-in prop, "" = empty), what it's for (told to the AI), max width
 IN_SLOTS = {     # laid out for the 9:16 wide shot of a 10 x 8 room (it sees about |x| < 0.36 * (y + 6))
-    "hero": {"pos": (1.7, 2.8), "w": 2.4, "about": "the big piece that says what the place is (at the back)"},
+    "hero": {"pos": (1.3, 3.0), "w": 2.4, "about": "the big piece that says what the place is (at the back)"},
     "side": {"pos": (-2.6, 3.2), "w": 1.2, "about": "a tall piece against the back wall, left"},
     "group_a": {"pos": (-1.6, 0.9), "w": 1.6, "about": "a furniture group in the middle-left (a table and seats)"},
-    "group_c": {"pos": (1.9, 0.6), "w": 1.4, "about": "a second furniture group, middle right"},
+    "group_c": {"pos": (2.5, 0.3), "w": 1.4, "about": "a second furniture group, right edge (never in front of the hero)"},
     "group_b": {"pos": (1.75, -1.5), "w": 1.2, "about": "a smaller thing at the front right, half in the frame"},
     "corner": {"pos": (-2.5, 1.8), "w": 0.9, "about": "a small thing framing the left edge (a plant...)"},
     "corner_r": {"pos": (3.0, 3.4), "w": 0.9, "about": "a small thing in the back right corner"},
@@ -269,7 +269,7 @@ BASES = {
         "name": "Bedroom", "indoor": True, "floor": "planks", "lamps": "globe", "ambience": "amb_room",
         "words": "bedroom bed sleep nap dream bedtime night room kids room nursery dorm hotel room",
         "walls": ["window", "pictures"], "seats": "chair",
-        "defaults": {"hero": "bed", "side": "bookshelf", "group_a": "desk_pc", "group_b": "floor_lamp", "corner": "plant"},
+        "defaults": {"hero": "bed", "side": "bookshelf", "group_a": "desk_pc", "group_b": "plant", "corner": "plant"},
         "palettes": {
             "cozy lilac": {"floor": ["#c9a27a", "#b08a62"], "wall": "#e6dcf2", "trim": "#8a6aa8", "accent": "#b48ee0",
                            "accent2": "#ff8fb8", "fog": "#e8e0f0", "wood": "#8c5a3c"},
@@ -282,7 +282,7 @@ BASES = {
         "name": "Living room", "indoor": True, "floor": "planks", "lamps": "globe", "ambience": "amb_room",
         "words": "living room lounge home house apartment family sofa couch tv movie night party",
         "walls": ["window", "pictures"], "seats": "chair",
-        "defaults": {"hero": "sofa", "side": "bookshelf", "group_a": "rug", "group_b": "floor_lamp", "corner": "plant"},
+        "defaults": {"hero": "sofa", "side": "bookshelf", "group_a": "rug", "group_b": "plant", "corner": "plant"},
         "palettes": {
             "warm home": {"floor": ["#b08a62", "#9a744e"], "wall": "#f2e2c8", "trim": "#8c5a3c", "accent": "#d9805a",
                           "accent2": "#5a8fe0", "fog": "#efdcc0", "wood": "#7a4a2a"},
@@ -296,7 +296,7 @@ BASES = {
         "words": "classroom school class lesson teacher student homework exam library study university lecture "
                  "museum gallery",
         "walls": ["board", "clock"], "seats": "chair",
-        "defaults": {"hero": "desk_pc", "side": "bookshelf", "group_a": "school_desk", "group_b": "school_desk",
+        "defaults": {"hero": "desk_pc", "side": "bookshelf", "group_a": "school_desk", "group_b": "plant",
                      "corner": "plant"},
         "palettes": {
             "school green": {"floor": ["#d9d2c0", "#b8b0a0"], "wall": "#f2efd8", "trim": "#5a7a4a", "accent": "#e0603a",
