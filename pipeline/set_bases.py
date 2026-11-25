@@ -26,7 +26,8 @@ import catalog
 import propgen
 import setgen
 
-ROOM = [12.0, 10.0]                 # indoor bases: 12 x 10 m (hw 6, hd 5), walls 5 m tall
+ROOM = [10.0, 8.0]                  # indoor bases: 10 x 8 m (hw 5, hd 4), walls 5 m tall - a 12 x 10 room left
+                                    # everything at the back small and the floor empty
 HW, HD = ROOM[0] / 2, ROOM[1] / 2
 
 
@@ -165,7 +166,7 @@ WALL = {"window": w_window, "board": w_board, "whiteboard": lambda p, r, n=False
 
 
 # --------------------------------------------------------------------------- ceiling lamps
-def lamps(p, style, xs=(-2.6, 0.3, 3.0), y=1.8):
+def lamps(p, style, xs=(-2.2, 0.2, 2.4), y=1.2):
     light = p.get("light", "#ffe9a8")
     parts = []
     for x in xs:
@@ -217,12 +218,14 @@ def o_path(p, length=24.0, w=1.6):
 
 # --------------------------------------------------------------------------- the bases
 # slot: pos (x, y), rot, default kind (a built-in prop, "" = empty), what it's for (told to the AI), max width
-IN_SLOTS = {
-    "hero": {"pos": (2.0, 3.7), "w": 2.8, "about": "the big piece that says what the place is (at the back)"},
-    "side": {"pos": (-3.4, 4.2), "w": 1.4, "about": "a tall piece against the back wall, left"},
-    "group_a": {"pos": (-1.9, 1.0), "w": 1.6, "about": "a furniture group in the middle-left (a table and seats)"},
+IN_SLOTS = {     # laid out for the 9:16 wide shot of a 10 x 8 room (it sees about |x| < 0.36 * (y + 6))
+    "hero": {"pos": (1.7, 2.8), "w": 2.4, "about": "the big piece that says what the place is (at the back)"},
+    "side": {"pos": (-2.6, 3.2), "w": 1.2, "about": "a tall piece against the back wall, left"},
+    "group_a": {"pos": (-1.6, 0.9), "w": 1.6, "about": "a furniture group in the middle-left (a table and seats)"},
+    "group_c": {"pos": (1.9, 0.6), "w": 1.4, "about": "a second furniture group, middle right"},
     "group_b": {"pos": (1.75, -1.5), "w": 1.2, "about": "a smaller thing at the front right, half in the frame"},
-    "corner": {"pos": (-2.9, 2.8), "w": 1.0, "about": "a small thing framing the left edge (a plant...)"},
+    "corner": {"pos": (-2.5, 1.8), "w": 0.9, "about": "a small thing framing the left edge (a plant...)"},
+    "corner_r": {"pos": (3.0, 3.4), "w": 0.9, "about": "a small thing in the back right corner"},
 }
 OUT_SLOTS = {
     "hero": {"pos": (2.2, 4.2), "w": 3.5, "about": "the big piece that says what the place is"},
@@ -230,6 +233,8 @@ OUT_SLOTS = {
     "group_a": {"pos": (-2.0, 1.2), "w": 2.0, "about": "something to sit at or use, middle left"},
     "group_b": {"pos": (2.4, -0.6), "w": 1.6, "about": "a smaller thing near the front right"},
     "corner": {"pos": (-3.6, 3.2), "w": 1.6, "about": "a tree / post / plant framing the left edge"},
+    "group_c": {"pos": (2.6, 1.6), "w": 1.6, "about": "a second smaller thing, middle right"},
+    "corner_r": {"pos": (3.8, 5.5), "w": 1.6, "about": "a tree / post framing the right edge"},
 }
 
 BASES = {
@@ -395,7 +400,22 @@ def h_throne(p):
             box((-0.58, 0.1, 1.0), (0.16, 0.8, 0.12), gold), box((0.58, 0.1, 1.0), (0.16, 0.8, 0.12), gold)], 3.1, 1.2
 
 
-HANDMADE = {"throne": h_throne}       # "@throne" as a slot default: a base's own piece, built from parts
+HANDMADE = {"throne": h_throne}
+
+# per base: the second furniture group, the back-right corner, and the wall pieces the AI may choose from
+for _bid, (_gc, _cr, _walls) in {
+        "shop": ("table", "plant", ["window", "board", "shelf", "pictures", "neon", "clock"]),
+        "kitchen": ("stool", "plant", ["window", "shelf", "clock", "pictures", "board"]),
+        "bedroom": ("rug", "plant", ["window", "pictures", "shelf", "clock"]),
+        "living_room": ("tv", "plant", ["window", "pictures", "shelf", "clock"]),
+        "classroom": ("school_desk", "plant", ["board", "clock", "window", "pictures", "whiteboard"]),
+        "office": ("desk_pc", "plant", ["window", "whiteboard", "clock", "pictures", "shelf"]),
+        "scifi": ("console", "crate", ["porthole", "neon"]),
+        "hall": ("barrel", "crate", ["banners", "torches", "shelf"]),
+        "street": ("lamppost", "bush", []), "park": ("bush", "tree", []), "beach": ("rock", "palm", []),
+        "forest": ("rock", "pine", [])}.items():
+    BASES[_bid]["defaults"].update(group_c=_gc, corner_r=_cr)
+    BASES[_bid]["wall_options"] = _walls       # "@throne" as a slot default: a base's own piece, built from parts
 
 GROUPS = {   # a slot filled with one of these gets seats around it (the Legacy Cafe's tables + stools)
     "table": [(-0.95, 0.25, 1.3), (0.95, 0.25, -1.3)],
@@ -577,9 +597,10 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
 
     # fixed pieces: the back wall's two features, lamps / the outdoor backdrop
     if b["indoor"]:
-        walls = [w for w in (choice.get("walls") or []) if w in WALL][:2] or list(b["walls"])
+        ok = b.get("wall_options") or b["walls"]      # the AI chooses only from what suits the place
+        walls = [w for w in (choice.get("walls") or []) if w in ok][:2] or list(b["walls"])
         walls = (walls + list(b["walls"]))[:2]
-        for x, wname in zip((-1.6, 1.9), walls):
+        for x, wname in zip((-1.4, 1.7), walls):
             parts, h = WALL[wname](pal, rng, night)
             _piece(recipe, f"base_{wname}_{'l' if x < 0 else 'r'}", parts, (x, HD - 0.06), h)
         _piece(recipe, "base_lamps", lamps(pal, b["lamps"]), (0.0, 0.0), 5.0)
@@ -642,9 +663,5 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
     if b["indoor"] and not any(p["kind"] == "rug" for p in recipe["props"]):
         # the lower part of the frame was bare floor: a rug in the middle (flat, she walks over it)
         recipe["props"].append({"kind": "rug", "pos": [0.0, 0.6], "rot": 0.0, "z": 0.0, "scale": 1.1})
-    if b["indoor"]:                              # the right corner mirrors the left one, like the Legacy Cafe's plants
-        rk = b["defaults"].get("corner") or "plant"
-        if rk in setgen.PROPS:
-            recipe["props"].append({"kind": rk, "pos": [3.9, 4.4], "rot": 0.0, "z": 0.0, "scale": 1.0})
     recipe["marks"] = marks
     return recipe
