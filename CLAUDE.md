@@ -272,7 +272,7 @@ Round 2b (v2 → `_v3`/`_v4`, same script directed again):
 ## Look check for made props (2026-11-25)
 Every prop the studio makes (AI shapes or a body template: duck, van, ant) gets `propgen.look_checked`: a check
 render (`check_render`: blender_build straight, the prop as a one-shot cutaway, 270x480) scored by the vision model
-(`look_score`, 1-10, `PROP_PASS` = 6); a fail → the AI redesigns it once from the critique (keeping the real size);
+(`look_score`, 1-10, `PROP_PASS` = 5 - was 6, too slow); a fail → the AI redesigns it once from the critique (keeping the real size);
 a second fail → `complex: true` → a drawn sprite (ComfyUI + sprite_cut, so only where voice-venv exists - in dev
 it keeps the best shape, marked `checked: false`). Library props made before are checked once on their next use.
 Templates no longer force `complex` (they're checked like anything else). Mailbox: 4/10 twice → sprite (54 s);
@@ -292,13 +292,13 @@ furniture) - the dragon filled 14 shots; length cards: short 4-5 lines, medium 6
 ## Look check for sets (2026-11-25)
 `make_set.create_set` (AI sets from an idea, with a preview): after the layout the set is saved and previewed
 untextured and judged BLIND (`judge_picture`: the vision model says what place it sees + the things in it, NOT
-told the target; the text model compares that with the idea → score 1-10, `SET_PASS` = 6, + what to add/remove).
+told the target; the text model compares that with the idea → score 1-10, `SET_PASS` = 5 (was 6), + what to add/remove).
 Told the target, qwen3.5:4b scored two near-identical empty rooms 4 and 8; blind it called the post office "a cozy
 living room (piano)" and a library set "a classroom (blackboard, easel)". A fail → `fix_plan` turns the critique into concrete changes (Ollama: add
 [{kind, count, looks}] placed in `showcase` - in the wide shot -, remove [kinds], also from wall_pictures/new_props;
 the retry uses theme "random" so a theme can't put them back) and the designer is asked again with the critique
 (`llm.design_set(feedback=)`); things it asks to add carry `"generate": True` (setgen skips the imported
-stand-in - the user's imported bookshelf is an empty frame - and propgen designs + look-checks one); up to `SET_TRIES` = 3, the best-scoring try is kept, then textures + the final
+stand-in - the user's imported bookshelf is an empty frame - and propgen designs + look-checks one); up to `SET_TRIES` = 2 (was 3: a stomach set took 20+ min; `fix_plan` adds at most 2 kinds), the best-scoring try is kept, then textures + the final
 preview. Re-asking with the critique alone repeated the same set 3 times (a "haunted library" with a chalkboard
 and no bookshelves, 4/10 each, 12 min). Military parade ground: 4/10 (a park) → 8/10.
 - `propgen.squeeze_to_width`: a made prop far wider than the real thing (real width from `real_size`, allowing
@@ -321,8 +321,8 @@ and no bookshelves, 4/10 each, 12 min). Military parade ground: 4/10 (a park) �
 - Phases 2-4 (done): `pipeline/animgen.py` - `write()` (Ollama, GUIDE = the pose list + the x_ examples, format
   errors fed back), `check_render()` (blender_build straight, 270x480 @ 12 fps, closeup + medium, candidate passed
   with env `ANIMLIB_EXTRA`, the REAL character via `run_episode.resolve_character` - the stand-in body made every
-  pose look wrong), `vision_check()` (qwen3.5 scores 1-10, `PASS` = 6; yes/no turned down everything), best try kept,
-  up to 3 tries, saved with its check picture `assets/anims/<name>.png`. `ensure(word, line)`: exists → reuse; else
+  pose look wrong), `vision_check()` (qwen3.5 scores 1-10, `PASS` = 5 (was 6); yes/no turned down everything), best try kept,
+  up to 2 tries (was 3), saved with its check picture `assets/anims/<name>.png`. `ensure(word, line)`: exists → reuse; else
   `is_action()` (Ollama) → make; non-actions are remembered in `assets/anims/.not_actions.json`. Salute: 61 s, 9/10.
   `hand_to_forehead` pose added (checked: reads as a salute). The user chose automatic making (~30-100 s each).
 - Director: unknown bracket words (`[yawn]`) and `[do:salute]` set shot `"want"` (the shot keeps its mood action as

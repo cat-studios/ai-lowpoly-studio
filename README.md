@@ -252,7 +252,7 @@ camera that turns round inside the room sees a wall instead of the open edge.
 
 A new set from an idea is checked before it's finished: the picture model looks at a quick preview and scores how
 well it shows the place. If it doesn't (a "haunted library" that looks like a classroom), the AI adds what's
-missing and removes what doesn't belong, and tries again (up to three times; the best try is kept). This can make
+missing and removes what doesn't belong, and tries once more (the better try is kept). This can make
 a new set take several minutes longer. Props that came out absurdly wide are squeezed to their real width.
 Both checks (sets and props) can be turned off in Settings → 🤖 AI tools when you're in a hurry.
 

@@ -25,7 +25,7 @@ import animlib  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 BLENDER = os.environ.get("BLENDER", r"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe")
-PASS = 6                                        # vision score (1-10) that counts as "looks right"
+PASS = 5                                        # vision score (1-10) that counts as "looks right" (forgiving)
 ROOMY = {"palm_up_out", "point_side", "wave_up", "arm_up_high", "arm_forward", "reach_forward", "hand_by_face",
          "hands_on_head"}
 
@@ -160,7 +160,7 @@ def vision_check(strip, name, description, ollama, log=print):
         return None, ""
 
 
-def make(name, description="", ollama=None, log=print, tries=3, check=True):
+def make(name, description="", ollama=None, log=print, tries=2, check=True):
     """Write, render-check and save an animation. Returns it (also when never confirmed: "checked": false)."""
     name = animlib.slug(name)
     if not name:

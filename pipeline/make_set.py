@@ -121,8 +121,8 @@ def apply_picture_colours(plan, image, log=print):
         f"{plan['floor']} floor")
 
 
-SET_PASS = 6          # vision score (1-10) for "this looks like the place"
-SET_TRIES = 3         # the first design + up to two redesigns from the critique
+SET_PASS = 5          # vision score (1-10) for "this looks like the place" (6 retried too often - slow)
+SET_TRIES = 2         # the first design + one redesign from the critique (3 tries took 10+ minutes)
 
 
 def judge_picture(pic, place, ollama, log=print):
@@ -182,7 +182,7 @@ def fix_plan(plan, place, critique, ollama, log=print):
         log(f"[set] couldn't turn the critique into changes ({exc.__class__.__name__})")
         return set()
     remove = {_norm_kind(k) for k in (r.get("remove") or []) if isinstance(k, str)}
-    adds = [a for a in (r.get("add") or []) if isinstance(a, dict) and a.get("kind")][:4]
+    adds = [a for a in (r.get("add") or []) if isinstance(a, dict) and a.get("kind")][:2]   # each costs a check
     added = {_norm_kind(a["kind"]) for a in adds}          # the added ones replace the plan's own (imported) copies
     keep = lambda e, key="kind": _norm_kind(e.get(key)) not in remove | added      # noqa: E731
     plan["props"] = [e for e in plan.get("props") or [] if isinstance(e, dict) and keep(e)]

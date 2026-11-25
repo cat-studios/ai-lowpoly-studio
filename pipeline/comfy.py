@@ -166,6 +166,9 @@ VENV_PY = ROOT / "tools" / "voice-venv" / "Scripts" / "python.exe"
 def object_sprite(name, looks, out_png, cfg, seed=None, log=print, max_px=128):
     """Draw one object with the image model and cut it out -> RGBA sprite at out_png.
     Returns {"aspect": w/h, ...} or None (ComfyUI offline, no image model, or the cut-out failed)."""
+    if not VENV_PY.exists():         # before drawing: a picture that can't be cut out is wasted GPU time (and it
+        log("[props] tools/voice-venv not found - can't cut a sprite out, so nothing is drawn")   # pushed Ollama's
+        return None                  # models out of the 12 GB GPU, so every next AI call reloaded them)
     st = status(cfg.get("url", "http://127.0.0.1:8666"))
     if not st["ok"] or not st["models"]:
         return None
@@ -177,9 +180,6 @@ def object_sprite(name, looks, out_png, cfg, seed=None, log=print, max_px=128):
     for attempt in range(4):                     # a new seed each time: most cut-outs fail on a bad picture, not on the idea
         raw.write_bytes(txt2img(st["url"], prompt, model, 512, 512, steps=int(cfg.get("steps", 20)),
                                 cfg=float(cfg.get("cfg", 6.5)), seed=(seed or 1) + attempt * 7919))
-        if not VENV_PY.exists():
-            log("[props] tools/voice-venv not found - can't cut the sprite out")
-            return None
         r = subprocess.run([str(VENV_PY), str(ROOT / "pipeline" / "sprite_cut.py"), str(raw), str(out_png), str(max_px)],
                            capture_output=True, text=True)
         try:

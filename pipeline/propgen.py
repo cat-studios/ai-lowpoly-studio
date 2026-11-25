@@ -672,7 +672,7 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
 
 
 # ----------------------------------------------------------------------------- does it look like what it is?
-PROP_PASS = 6                                  # vision score (1-10) that counts as "looks like it"
+PROP_PASS = 5                                  # vision score (1-10) that counts as "looks like it" (forgiving)
 
 
 def check_render(d, log=print):
