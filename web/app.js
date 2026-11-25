@@ -287,8 +287,8 @@ async function pageCreate() {
   app.innerHTML = `
   <section class="panel">
     <div class="step-h"><h3><span class="make-roll">🎲</span> Make a whole video</h3></div>
-    <p class="muted small" style="margin:0 0 8px">One button: a random idea, a random new scene, the script and the shots. Review them, then render.</p>
-    <div class="btns"><button id="make-all" class="primary">🎲 Random idea, scene, script and shots</button>
+    <p class="muted small" style="margin:0 0 8px">Pick a place, a topic, a vibe, a guest and a time from random cards (or re-roll), add a note if you like - the studio does the rest and renders it.</p>
+    <div class="btns"><button id="make-all" class="primary">🎲 Make a random video</button>
       <span id="make-status" class="muted small"></span></div>
     <div class="make-bar"><i id="make-fill"></i></div>
     <div class="inline-job" id="make-job"></div>
@@ -608,10 +608,13 @@ async function pageCreate() {
   const waitJob = (job, box) => new Promise((resolve, reject) => watchJob(job, box, (j) =>
     (j.status === "done" && j.result?.set ? resolve(j) : reject(new Error("the scene could not be made - see the log")))));
   $("#make-all").onclick = guard(async (e) => {
-    const panel = e.currentTarget.closest(".panel");
+    const btnEl = e.currentTarget;
+    const picks = await openMakeWizard();        // the cards: place, topic, vibe, guest, time, length + a note
+    if (!picks) return;
+    const panel = btnEl.closest(".panel");
     panel.classList.add("making");
     $("#make-fill").style.width = "4%";
-    try { await busy(e.currentTarget, "🎲 Making…", async () => {
+    try { await busy(btnEl, "🎲 Making…", async () => {
     // the status line and the bar move on together: step n of 4 fills (n - 1) quarters and a bit more
     const status = (t) => {
       $("#make-status").textContent = t;
@@ -621,24 +624,32 @@ async function pageCreate() {
     };
     const pick = (a) => a[Math.floor(Math.random() * a.length)];
     status("1/5 Thinking up an idea…");
-    const tr = await api("POST", "/api/ai/titles", { theme: "", character: $("#ep-char").value, model: CS.model });
+    const tr = await api("POST", "/api/ai/titles", { theme: picks.topic, character: $("#ep-char").value, model: CS.model });
     if (!tr.titles?.length) throw new Error("No idea came back - try again");
     CS.ep.title = pick(tr.titles);
     $("#ep-title").value = CS.ep.title;
-    // a random length for this video (6 to 24 lines); music, ambience and look use their defaults, not a random pick
-    CS.lines = 6 + Math.floor(Math.random() * 19);
+    // the length card picks the number of lines; music, ambience and look use their defaults, not a random pick
+    // lines -> seconds: each line is ~4-5 s once split into beats (a 12-line "medium" video ran 60 s)
+    const [lo, hi] = picks.length.startsWith("short") ? [4, 5] : picks.length.startsWith("long") ? [10, 13] : [6, 8];
+    CS.lines = lo + Math.floor(Math.random() * (hi - lo + 1));
+    CS.tone = picks.tone;
+    const guest = picks.guest.startsWith("nobody") ? "" : `${picks.guest} shows up and plays a part (bring them in with +name). `;
+    const when = /turning into/.test(picks.time) ? `Time: ${picks.time} - change the light along the way with [sunset], [night] or [dawn]. ` : `Time: ${picks.time}. `;
+    CS.extra = `Place: ${picks.scene}. ${guest}${when}${picks.note ? "Also: " + picks.note : ""}`.trim();
     for (const k of ["music", "ambience", "look_preset"]) delete CS.ep[k];
     $("#ep-music").value = "";
     $("#ep-amb").value = "";
     $("#ep-look").value = "";
     status("2/5 Writing the script…");
-    const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: CS.ep.set, scene_policy: "reuse", character: $("#ep-char").value,
+    // the script is written for the picked place (the set is made after it) - not for whatever set was selected
+    const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: "new:" + picks.scene, scene_policy: "reuse", character: $("#ep-char").value,
       model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [] });
     $("#script").value = r.script; CS.scriptDraft = r.script;
     // the scene comes from the title and the script, not the other way round
     status("3/5 Making a scene that fits the script (a few minutes)…");
-    const idea = `${CS.ep.title}. ${(r.lines || []).slice(0, 3).join(" ")}`.slice(0, 300);
-    const done = await waitJob(await api("POST", "/api/sets/generate", { idea, where: pick(Object.keys(WHERE)), light: pick(Object.keys(LIGHT)) }), $("#make-job"));
+    const idea = `${picks.scene}. ${CS.ep.title}. ${(r.lines || []).slice(0, 2).join(" ")}`.slice(0, 300);
+    const firstLight = picks.time.split(/\W+/).map((w) => MW_LIGHT[w]).find(Boolean);       // the first light word
+    const done = await waitJob(await api("POST", "/api/sets/generate", { idea, where: "", light: firstLight || "" }), $("#make-job"));
     await refreshMeta();
     CS.ep.set = done.result.set;
     CS.ep.start = "front";
@@ -652,6 +663,97 @@ async function pageCreate() {
     showResult(fin.result.video + "?t=" + Date.now(), fin.result.sheet + "?t=" + Date.now());
     status("Done - the video is ready below.");
     }); } finally { panel.classList.remove("making"); }
+  });
+}
+
+/* ---- "Make a whole video" wizard: a little magic show between steps, three random cards per step (re-roll for three
+   more), then an optional note. The picks steer the title, the scene, the script and the light. */
+const MW_STEPS = [
+  { key: "scene", q: "Where does it happen?", icon: "📍", cards: [
+    "a cozy cafe", "a haunted library", "a candy factory", "a busy train station", "a tropical beach", "a snowy mountain cabin",
+    "a space station", "a giant kitchen", "a neon arcade", "a misty forest", "an underwater city", "a rooftop at night",
+    "a school classroom", "a farm with a red barn", "a desert canyon", "a cloud kingdom in the sky", "a toy shop",
+    "a museum after closing", "a bakery at dawn", "a pirate ship", "a bubble bath", "a laundromat", "a volcano island",
+    "a supermarket", "a park in autumn", "a hospital waiting room", "a castle courtyard", "a tiny dollhouse",
+    "a camping site by a lake", "a city street in the rain", "a greenhouse full of plants", "a bowling alley",
+    "an old lighthouse", "a submarine", "the moon", "a music studio", "a bedroom at 3 am", "a zoo"] },
+  { key: "topic", q: "What's it about?", icon: "💡", cards: [
+    "gravity", "dreams", "black holes", "why cats purr", "the deepest ocean", "time travel", "volcanoes", "the human brain",
+    "lightning", "dinosaurs", "how plants eat", "the speed of light", "money", "sleep", "ants", "chocolate",
+    "the moon landing", "rainbows", "earthquakes", "memory", "yawning", "the internet", "bees", "ice ages", "magnets",
+    "hiccups", "the pyramids", "octopuses", "snowflakes", "the sun", "hair", "sneezing", "coffee", "sharks", "clouds",
+    "robots", "taste buds", "fireflies", "the north pole", "music"] },
+  { key: "tone", q: "What's the vibe?", icon: "🎭", cards: [
+    "funny", "wholesome", "chaotic", "dramatic", "spooky", "cute", "deadpan", "excited", "mysterious", "silly",
+    "heartfelt", "sarcastic", "nervous", "proud", "motivational", "grumpy"] },
+  { key: "guest", q: "Who drops in?", icon: "🚪", cards: [
+    "nobody - just her", "a mischievous dog", "her mom", "a lost robot", "a tiny dragon", "a grumpy pigeon", "a talking cactus",
+    "a confused tourist", "a ghost", "a delivery driver", "a giant snail", "a pirate", "a scientist", "a sleepy bear",
+    "an alien", "a chef", "a cow", "a mail truck", "a rubber duck", "a wizard"] },
+  { key: "time", q: "When?", icon: "🌗", cards: [
+    "a sunny day", "a golden sunset", "a starry night", "day turning into night", "a rainy evening", "a snowy morning",
+    "a foggy dawn", "a stormy night", "night turning into dawn"] },
+  { key: "length", q: "How long?", icon: "⏱", cards: ["short (about 20 s)", "medium (about 40 s)", "long (about a minute)"] },
+];
+const MW_LIGHT = { day: "day", sunny: "day", morning: "day", sunset: "sunset", golden: "sunset", evening: "sunset",
+  night: "night", starry: "night", stormy: "night", dawn: "sunset", foggy: "sunset", rainy: "sunset", snowy: "day" };
+
+function mwPick(list, n, not = []) {
+  const pool = list.filter((x) => !not.includes(x));
+  const out = [];
+  while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  return out;
+}
+
+function mwMagic(box, text) {        // the little show between steps (~0.9 s)
+  return new Promise((res) => {
+    box.innerHTML = `<div class="mw-magic"><div class="mw-orbit">${Array.from("✨⭐💫🌟✨").map((c, i) =>
+      `<span style="--i:${i}">${c}</span>`).join("")}</div><div class="mw-wand">🪄</div><p>${esc(text)}</p></div>`;
+    setTimeout(res, matchMedia("(prefers-reduced-motion: reduce)").matches ? 150 : 950);
+  });
+}
+
+async function openMakeWizard() {
+  const picks = {};
+  return openModal({
+    title: "🎲 Make a whole video", wide: true,
+    body: `<div id="mw-box" class="mw-box"></div>`,
+    buttons: [{ label: "Cancel", left: true, value: null }],
+    onOpen: async (m, close) => {
+      const box = $("#mw-box", m);
+      const showStep = async (i) => {
+        if (i >= MW_STEPS.length) return lastStep();
+        const st = MW_STEPS[i];
+        await mwMagic(box, i === 0 ? "Shuffling the ideas…" : ["Mixing the magic…", "Rolling the dice…", "Sprinkling stardust…", "Asking the stars…"][i % 4]);
+        let shown = mwPick(st.cards, 3);
+        const draw = () => {
+          box.innerHTML = `<div class="mw-step">
+            <div class="mw-dots">${MW_STEPS.map((_, k) => `<i class="${k < i ? "done" : k === i ? "on" : ""}"></i>`).join("")}<i class="${i >= MW_STEPS.length ? "on" : ""}"></i></div>
+            <h3>${st.icon} ${esc(st.q)}</h3>
+            <div class="mw-cards">${shown.map((c, k) => `<button class="mw-card" data-mw="${k}" style="--d:${k}">${esc(c)}</button>`).join("")}</div>
+            <div class="btns" style="justify-content:center"><button id="mw-roll">🎲 Three more</button>
+              ${i > 0 ? '<button id="mw-back">← Back</button>' : ""}</div></div>`;
+          $$("[data-mw]", box).forEach((b) => b.onclick = () => { picks[st.key] = shown[Number(b.dataset.mw)]; showStep(i + 1); });
+          $("#mw-roll", box).onclick = () => { shown = mwPick(st.cards, 3, shown); draw(); };
+          if (i > 0) $("#mw-back", box).onclick = () => showStep(i - 1);
+        };
+        draw();
+      };
+      const lastStep = async () => {
+        await mwMagic(box, "Almost there…");
+        box.innerHTML = `<div class="mw-step">
+          <div class="mw-dots">${MW_STEPS.map(() => '<i class="done"></i>').join("")}<i class="on"></i></div>
+          <h3>✍️ Anything else? <span class="muted small">(optional)</span></h3>
+          <p class="mw-sum">${MW_STEPS.map((s) => `<span>${s.icon} ${esc(picks[s.key] || "")}</span>`).join("")}</p>
+          <textarea id="mw-note" rows="3" placeholder="e.g. she's scared of the dark; end with a twist - or leave it empty"></textarea>
+          <div class="btns" style="justify-content:center"><button id="mw-back">← Back</button>
+            <button class="primary" id="mw-go">✨ Make my video</button></div></div>`;
+        $("#mw-note", box).focus();
+        $("#mw-back", box).onclick = () => showStep(MW_STEPS.length - 1);
+        $("#mw-go", box).onclick = () => close({ ...picks, note: $("#mw-note", box).value.trim() });
+      };
+      showStep(0);
+    },
   });
 }
 
@@ -1572,11 +1674,11 @@ const ON_ICON = { floor: "🧍 floor", table: "🍽 table", wall: "🖼 wall" };
 
 async function pageAssets(tab) {
   if (tab) AS_TAB = tab;
-  const [props, fx, music, imp, actors] = await Promise.all([api("GET", "/api/assets/props"), api("GET", "/api/assets/fx"), api("GET", "/api/music"), api("GET", "/api/imported"), api("GET", "/api/actors")]);
+  const [props, fx, music, imp, actors, anims] = await Promise.all([api("GET", "/api/assets/props"), api("GET", "/api/assets/fx"), api("GET", "/api/music"), api("GET", "/api/imported"), api("GET", "/api/actors"), api("GET", "/api/anims")]);
   const nSfx = Object.keys(META.sfx || {}).length;
   const nImp = imp.packs.reduce((n, p) => n + p.models.length, 0);
   const tabs = [["props", "🧱", "Props", props.length], ["imported", "📦", "Imported", nImp], ["actors", "🧍", "Actors", actors.actors.length],
-                ["fx", "✨", "Effects", fx.length], ["music", "🎵", "Music", music.length], ["sfx", "🔊", "Sounds", nSfx]];
+                ["anims", "🕺", "Animations", anims.filter((a) => !a.builtin).length], ["fx", "✨", "Effects", fx.length], ["music", "🎵", "Music", music.length], ["sfx", "🔊", "Sounds", nSfx]];
   app.innerHTML = `
     <div class="assets-head">
       <div><h2>Assets</h2><p class="muted small">Everything the studio made for you or you added - props drawn for your sets and scripts, particle effects, music and sounds.</p></div>
@@ -1588,9 +1690,58 @@ async function pageAssets(tab) {
   if (AS_TAB === "props") return assetsProps(body, props);
   if (AS_TAB === "imported") return assetsImported(body);
   if (AS_TAB === "actors") return assetsActors(body, actors);
+  if (AS_TAB === "anims") return assetsAnims(body, anims);
   if (AS_TAB === "fx") return assetsFx(body, fx);
   A_TAB = AS_TAB === "sfx" ? "sfx" : "music";
   return A_TAB === "music" ? audioMusic(body) : audioSfx(body);
+}
+
+/* ---- animations (pipeline/animlib.py + animgen.py): made by the AI when a script asks for one, or here */
+JOB_ICON.anim = "🕺";
+function assetsAnims(box, anims) {
+  const own = anims.filter((a) => !a.builtin);
+  const card = (a) => {
+    const st = a.checked ? `<span class="chip good">✓ ${a.score ? a.score + "/10" : "checked"}</span>`
+      : a.checked === false ? `<span class="chip warn" title="${esc(a.problem || "")}">⚠ ${a.score ? a.score + "/10" : "not confirmed"}</span>`
+      : `<span class="chip dim">unchecked</span>`;
+    return `<div class="asset-card" style="cursor:default">
+      <div class="asset-thumb checker" style="aspect-ratio:9/4">${a.picture ? `<img src="${esc(a.picture)}" alt="${esc(a.name)}" loading="lazy" style="max-width:100%;max-height:100%">` : `<div class="asset-noimg"><span>🕺</span><small>no picture</small></div>`}</div>
+      <div class="asset-actions"><button data-an-del="${esc(a.name)}" title="Delete">🗑</button></div>
+      <div class="asset-info"><div class="asset-name">${esc(a.name.replace(/_/g, " "))}</div>
+        <div class="asset-meta">${st}<span class="chip">${a.length}s${a.loop ? " · loops" : ""}</span>${a.by === "ai" ? '<span class="chip">AI</span>' : ""}</div>
+        <div class="muted small">${esc(a.description)}</div>
+        ${a.checked === false && a.problem ? `<div class="muted small">Checker: ${esc(a.problem)}</div>` : ""}</div></div>`;
+  };
+  box.innerHTML = `
+    <div class="asset-toolbar"><p class="muted small" style="margin:0;flex:1">Actions she learned. When a script asks for one she can't do yet
+      (<code>[salute]</code> or <code>[do:salute]</code>), the AI makes it from poses that are known to look right, renders a quick check and has the
+      picture model look at it - about half a minute to two minutes, then every video reuses it. Write <code>[salute]</code> in a script to use one.</p></div>
+    <div class="panel"><h3 style="margin-top:0">Make an animation</h3>
+      <div class="row" style="align-items:end">
+        <label style="flex:1">Name<input type="text" id="an-name" placeholder="e.g. salute"></label>
+        <label style="flex:3">What she does (optional)<input type="text" id="an-desc" placeholder="e.g. salutes like a soldier, right hand to the forehead"></label>
+      </div>
+      <div class="btns"><button class="primary" id="an-go">🕺 Make it</button></div>
+      <div class="inline-job" id="an-job"></div></div>
+    <div class="asset-grid" style="margin-top:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+      ${own.length ? own.map(card).join("") : '<div class="empty"><div class="empty-ic">🕺</div>No animations yet - they appear here when a script asks for one, or make one above.</div>'}</div>`;
+  $("#an-go").onclick = guard(async () => {
+    const name = $("#an-name").value.trim();
+    if (!name) throw new Error("Give it a name first");
+    const job = await api("POST", "/api/anims/make", { name, description: $("#an-desc").value.trim() });
+    toast("Making it - this takes a minute or two");
+    watchJob(job, $("#an-job"), async (j) => {
+      if (j.status !== "done") return toast("Couldn't make it - see the log", true);
+      toast("Animation ready ✓");
+      await pageAssets("anims");
+    });
+  });
+  $$("[data-an-del]").forEach((b) => b.onclick = guard(async () => {
+    if (!(await uiConfirm(`Delete the "${b.dataset.anDel}" animation? It moves to the animations trash folder.`, { title: "Delete animation", ok: "Delete", danger: true }))) return;
+    await api("DELETE", `/api/anims/${encodeURIComponent(b.dataset.anDel)}`);
+    toast("Deleted");
+    await pageAssets("anims");
+  }));
 }
 
 /* ---- props */
@@ -1925,6 +2076,7 @@ function impModelCard(m) {
     <div class="asset-info"><div class="asset-name">${esc(m.name)}</div>
       <div class="asset-meta"><span class="chip">${esc(IMP_FORMAT[m.format] || m.format)}</span>${h ? `<span class="chip">${h}</span>` : ""}
         <span class="pill ${cls}" title="${esc(m.note || "")}">${label}</span></div>
+      ${m.description ? `<div class="muted small" title="was: ${esc(m.original_name || "")}">${esc(m.description)}</div>` : ""}
       <div class="muted small">${esc(m.pack)}</div></div></div>`;
 }
 
@@ -1961,6 +2113,8 @@ async function assetsImported(box) {
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <label class="search" style="flex:1;min-width:180px">🔎<input type="text" id="imp-q" placeholder="Search ${models.length} models" value="${esc(IMP.q)}"></label>
         <button id="imp-cat" title="Let the AI sort models whose names the studio doesn't recognise (also happens on every import)">🏷 Categorize</button>
+        <button id="imp-name" title="The picture model looks at each model and gives it a clear name and a description (a generic 'fence' becomes 'Wooden Farm Fence')">✏️ Name &amp; describe</button>
+        <button id="imp-dupes" title="Models imported twice, or the same model saved in several formats: keep one">🧹 Remove duplicates</button>
         <button id="imp-sel">${IMP.select ? "Done" : "☑ Select"}</button>
         ${IMP.select ? `<button id="imp-all">Pick all shown (${shown.length})</button><button id="imp-none">Clear</button>
           <button class="danger" id="imp-del" ${IMP.picked.size ? "" : "disabled"}>🗑 Delete ${IMP.picked.size || ""} picked</button>` : ""}
@@ -2007,6 +2161,27 @@ async function assetsImported(box) {
       toast("Categories updated ✓");
       await pageAssets("imported");
     });
+  });
+  $("#imp-name").onclick = guard(async () => {
+    const todo = models.filter((m) => m.status === "ok" && !m.description).length;
+    if (!(await uiConfirm(`Name and describe ${todo} model${todo === 1 ? "" : "s"} from their pictures? It runs in the background, a few seconds per model (${Math.max(1, Math.round(todo * 4 / 60))} min or so). Their file names are kept as "original name".`,
+      { title: "Name & describe", ok: "Start" }))) return;
+    const job = await api("POST", "/api/imported/describe", {});
+    watchJob(job, $("#ip-job"), async (j) => {
+      if (j.status !== "done") return toast("Naming stopped - see the log (is Ollama running?)", true);
+      toast("Models named ✓");
+      await pageAssets("imported");
+    });
+  });
+  $("#imp-dupes").onclick = guard(async () => {
+    const d = await api("GET", "/api/imported/duplicates");
+    if (!d.extra) return toast("No duplicates found ✓");
+    const ex = d.examples.slice(0, 4).map((g) => `${g[0].name} (${g.length}×)`).join(", ");
+    if (!(await uiConfirm(`${d.extra} duplicate cop${d.extra === 1 ? "y" : "ies"} of ${d.groups} model${d.groups === 1 ? "" : "s"} - e.g. ${ex}. Keep one of each (OBJ when the same model came in several formats) and move the others to the trash folder?`,
+      { title: "Remove duplicates", ok: `Remove ${d.extra}`, danger: true }))) return;
+    const r = await api("POST", "/api/imported/dedupe", {});
+    toast(`${r.removed} duplicate${r.removed === 1 ? "" : "s"} removed`);
+    await pageAssets("imported");
   });
   $("#imp-sel").onclick = () => { IMP.select = !IMP.select; if (!IMP.select) IMP.picked.clear(); redraw(); };
   if (IMP.select) {

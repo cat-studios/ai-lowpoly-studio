@@ -8,6 +8,8 @@ pipeline/imported.py; this module only handles the requests and starts the impor
     GET    /api/imported/all            -> {models: [... with "category"], packs: [...]} (the Assets page)
     DELETE /api/imported/model/<id>     -> one model's files to packs/.trash/models-<stamp>/
     POST   /api/imported/delete         -> {"ids": [...]} several models at once (same trash)
+    GET    /api/imported/duplicates     -> {groups, extra, examples}; POST /api/imported/dedupe removes the copies
+    POST   /api/imported/describe       -> job: the vision model names + describes models from their pictures
 """
 import re
 import sys
@@ -49,6 +51,19 @@ def handle(h, method, parts, *, submit, Job, root):
 
     if method == "DELETE" and arg == "model" and len(parts) > 1:   # one model (its files go to the trash)
         return h.send_json({"ok": True, "deleted": IM.delete_models([parts[1]])})
+
+    if method == "GET" and arg == "duplicates":    # what Remove duplicates would remove
+        g = IM.find_duplicates()
+        return h.send_json({"groups": len(g), "extra": sum(len(x) - 1 for x in g), "examples": g[:6]})
+
+    if method == "POST" and arg == "dedupe":       # the copies (not the first/OBJ one) go to the trash
+        return h.send_json({"ok": True, "removed": IM.remove_duplicates()})
+
+    if method == "POST" and arg == "describe":     # the ✏️ Name & describe button: vision model, a job
+        cmd = [sys.executable, "-u", str(root / "pipeline" / "imported.py"), "describe"]
+        if h.body_json().get("redo"):
+            cmd.append("--redo")
+        return h.send_json(submit(Job("import", "Name and describe models", cmd)).to_dict())
 
     if method == "POST" and arg == "categorize":   # the 🏷 Categorize button: a background job (Ollama)
         cmd = [sys.executable, "-u", str(root / "pipeline" / "imported.py"), "categorize"]

@@ -1757,14 +1757,14 @@ CAMS = {
     "silhouette": ((0.6, 3.0, 1.1),          "head", 35),     # low, from behind: she reads as a dark shape
 }
 def _blockers(fr):
-    """(x, y, radius) of what can stand in a camera's way at frame fr: floor props and the cast."""
-    out = list(OBST)
+    """(x, y, radius, is_cast) of what can stand in a camera's way at frame fr: floor props and the cast."""
+    out = [(x, y, r, False) for x, y, r in OBST]
     if EP.get("cast"):
         for tr in CAST_TRACKS.values():                  # people, where they are at that frame
             p = tr["loc"].get(fr)
             if p is not None and p.z > -10:              # AWAY (off stage) is far below the floor
-                out.append((p.x, p.y, 0.4))
-        out += [(p.x, p.y, max(0.35, r)) for p, r in getattr(blender_cast, "TAKEN", [])]
+                out.append((p.x, p.y, 0.4, True))
+        out += [(p.x, p.y, max(0.35, r), True) for p, r in getattr(blender_cast, "TAKEN", [])]
     return out
 
 
@@ -1772,9 +1772,11 @@ def _view_blocked(cam, tgt, fr=None):
     """A floor prop or cast member (bigger than a crate) stands between the camera and her, or the camera is in one."""
     c, t = Vector((cam.x, cam.y, 0.0)), Vector((tgt.x, tgt.y, 0.0))
     seg = t - c
-    for ox, oy, r in (_blockers(fr) if fr else OBST):
+    for ox, oy, r, cast in (_blockers(fr) if fr else [(x, y, rr, False) for x, y, rr in OBST]):
         p = Vector((ox, oy, 0.0))
-        if r < 0.35 or (p - t).length < r + 0.35:       # small things, or the thing she stands at
+        if (p - t).length < 0.3:                         # that's the speaker herself (a cast person speaking)
+            continue
+        if not cast and (r < 0.35 or (p - t).length < r + 0.35):   # small props, or the furniture she stands at
             continue
         u = max(0.0, min(0.85, (p - c).dot(seg) / max(seg.length_squared, 1e-6)))
         if (c + seg * u - p).length < r * 0.85:

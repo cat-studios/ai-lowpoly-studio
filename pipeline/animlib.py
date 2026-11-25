@@ -19,6 +19,7 @@ rot = twist the upper arm (< 0 turns the bent forearm in across the body, > 0 up
 only bends forward). The same values work for both arms (blender_build mirrors them). Head/body are added.
 """
 import json
+import os
 import math
 import re
 from pathlib import Path
@@ -34,6 +35,7 @@ ARM = {
     "hand_to_chin":    (-1.15, 0.22, 0.0, 2.1),     # think
     "hand_at_mouth":   (-2.3, 0.0, -1.6, 2.4),      # forearm across the mouth (sneeze, oops, giggle, gasp)
     "hand_over_eyes":  (-2.3, 0.0, -1.6, 2.4),      # = hand_at_mouth with "head_down" (facepalm, crying, peek)
+    "hand_to_forehead": (-0.6, 1.0, 0.6, 2.4),     # fingertips at the brow, elbow out (checked: reads as a salute) - hand at the temple/forehead (salute, "phew", shading the eyes)
     "arm_forward":     (-1.15, 0.5, 0.2, 0.35),     # thrown forward, open hand (blow kiss, "here!", offering)
     "reach_forward":   (-1.4, 0.2, 0.0, 0.15),      # straight out in front (grab, press, push)
     "point_side":      (-0.7, 1.0, 0.25, 0.22),     # pointing out to her side
@@ -128,18 +130,20 @@ def validate(a, name=""):
     length = float(a.get("length") or out[-1]["t"] or 1.0)
     return {"name": slug(a.get("name") or name), "description": str(a.get("description") or "")[:200],
             "length": round(max(0.2, min(30.0, length)), 3), "loop": bool(a.get("loop")),
-            "keys": out, "shake": shakes, **({k: a[k] for k in ("by", "checked", "created") if k in a})}
+            "keys": out, "shake": shakes, **({k: a[k] for k in ("by", "checked", "created", "problem", "needs_room", "request", "score") if k in a})}
 
 
 def library():
     """name -> animation: the built-in examples, then assets/anims/*.json (a file wins over a built-in)."""
     out = {n: validate(dict(a, name=n)) for n, a in BUILTIN.items()}
-    if LIB.exists():
-        for p in sorted(LIB.glob("*.json")):
-            try:
-                out[p.stem] = validate(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)
-            except Exception as exc:              # a broken file never breaks a render
-                print(f"[anims] {p.name} skipped: {exc}")
+    extra = os.environ.get("ANIMLIB_EXTRA")        # animgen's check render: a candidate that isn't saved yet
+    files = sorted(LIB.glob("*.json")) if LIB.exists() else []
+    for p in files + ([Path(extra)] if extra and Path(extra).exists() else []):
+        try:
+            a = validate(json.loads(p.read_text(encoding="utf-8-sig")), p.stem)
+            out[a["name"] or p.stem] = a
+        except Exception as exc:              # a broken file never breaks a render
+            print(f"[anims] {p.name} skipped: {exc}")
     return out
 
 

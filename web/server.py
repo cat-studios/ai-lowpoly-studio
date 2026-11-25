@@ -787,6 +787,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not re.fullmatch(r"[\w-]+\.png", name):
                     return self.fail("not found", 404)
                 return self.send_file(ROOT / "assets" / "props" / name)
+            if method == "GET" and path.startswith("/animimg/"):         # animations' check pictures
+                import anims_web
+                return anims_web.picture(self, path[len("/animimg/"):], ROOT)
             if method == "GET" and path.startswith("/fxprev/"):
                 name = path[len("/fxprev/"):]
                 if not re.fullmatch(r"[\w-]+\.(mp4|jpg)", name):
@@ -1244,6 +1247,10 @@ class Handler(BaseHTTPRequestHandler):
         if head == "imported":       # imported real asset packs (web/imported_web.py, pipeline/imported.py)
             import imported_web
             return imported_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
+
+        if head == "anims":          # animations as data (web/anims_web.py, pipeline/animlib.py + animgen.py)
+            import anims_web
+            return anims_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
 
         if head == "actors":         # extra people for scenes (web/actors_web.py, pipeline/actors.py)
             import actors_web

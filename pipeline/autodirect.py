@@ -140,6 +140,7 @@ def parse_directions(line, marks):
     tokens = [t.replace("-", "_") for t in re.split(r"[,\s]+", inner.strip().lower()) if t]
     tokens = _take_cast(tokens, marks, d)
     late = []                              # actions named only by the AI's own words ("floating")
+    wants = []                             # unknown words that may be actions to make (animgen)
     for i, t in enumerate(tokens):
         joined = re.fullmatch(r"(walk_to|run_to|sneak_to)_(\w+)", t)   # AI often writes walk_to_center
         if joined and joined.group(2) in marks:
@@ -182,8 +183,14 @@ def parse_directions(line, marks):
             d.setdefault("expression", MOOD_WORDS[t])
         elif t in ANIM_WORDS:                       # "[floating]" - only when no real action was named
             late.append(ANIM_WORDS[t])
+        elif t.startswith("do:") and len(t) > 3:    # "[do:salute]": an action she can't do yet - made at render
+            d.setdefault("want", t[3:])
+        elif re.fullmatch(r"[a-z][a-z_]{2,23}", t):   # an unknown word: maybe an action ("[yawn]") - render decides
+            wants.append(t)
     if late and "action" not in d:
         d["action"] = late[0]
+    if wants and "want" not in d and "action" not in d:
+        d["want"] = wants[0]
     if "to" in d and d.get("action") == "point":
         d["at"] = d.pop("to")              # "[point counter]": point AT it, don't walk there
     elif "to" in d and d.get("action") not in catalog.MOVE_ANIMS:
@@ -213,6 +220,10 @@ MOOD_WORDS = {   # -> expression
     **dict.fromkeys("worried nervous afraid terrified panicked frightened anxious".split(), "scared"),
     **dict.fromkeys("upset gloomy disappointed sorry heartbroken".split(), "sad"),
     **dict.fromkeys("proud confident cocky sassy sly smirking".split(), "smug"),
+    **dict.fromkeys("smile smiling grin grinning beaming blush blushing wink winking".split(), "happy"),
+    **dict.fromkeys("frown frowning pout pouting sulk sulking teary".split(), "sad"),
+    **dict.fromkeys("glare glaring scowl scowling".split(), "angry"),
+    **dict.fromkeys("gasp gasping wide_eyed".split(), "surprised"),
 }
 ANIM_WORDS = {   # -> animation, used only when the brackets name no action of their own
     "floating": "float_up", "flying": "float_up", "hovering": "float_up", "dancing": "dance", "jumping": "jump",
@@ -278,6 +289,8 @@ def _stage_for_events(shot, d):
         shot["camera"] = "medium"     # only these cameras pull back to show the arrival beside her (a side shot lost the dog)
 
 
+GROUP_WORDS = set("army armies crowd crowds team group squad troops audience everyone everybody people herd "
+                  "flock swarm gang class family".split())
 ARRIVALS = ("enter", "crash_in", "appear", "fall", "fly_by", "run_to", "walk_to")
 SELF_WORDS = {"me", "i", "myself", "narrator", "main_character", "the_main_character", "she", "her", "speaker"}
 
@@ -294,6 +307,8 @@ def add_cast_plan(result, plan, skip=()):
         who = re.sub(r"[^a-z0-9_]+", "", str(name).lower().replace(" ", "_"))[:24]
         if not who or not isinstance(info, dict) or flat(who) in skip:
             continue
+        if set(who.split("_")) & GROUP_WORDS:
+            continue                         # "feline_army", "crowd": a group isn't one thing on screen
         cur = cast.get(who) or {}
         if not cur.get("looks") or cur.get("looks") == who.replace("_", " "):
             cur["looks"] = str(info.get("looks") or who.replace("_", " "))[:120]
@@ -643,7 +658,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             recent = [s.get("action") for s in shots[-2:]]
             action = next((a for a in HAPPY_ANIMS[i % len(HAPPY_ANIMS):] + HAPPY_ANIMS if a not in recent), "nod")
         shot = {}
-        if i == 0 and "action" not in d:
+        if i == 0 and "action" not in d and "want" not in d:
             # open by walking in, toward the camera so her face is seen (she may start further back)
             origin, dest = _opening_walk(sets, cur_set, marks, pos)
             if cur_set == set_name and origin in start_marks:
@@ -657,7 +672,8 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                 cam = next(c for c in CAM_CYCLE[i % len(CAM_CYCLE):] + CAM_CYCLE if c != prev_cam)
             shot.update(action=action, camera=cam, move=move, expression=expr)
             if walk_every and i % walk_every == walk_every - 1 and action in ("idle", "wave", "nod") \
-                    and "action" not in d and len(text.split()) > 2:      # not on a short "Nya!" / "Hsssss!"
+                    and "action" not in d and len(text.split()) > 2 \
+                    and d.get("camera") not in CLOSE_CAMS:   # not on a short "Nya!", nor in a close shot asked for
                 shot.update(action="walk_to", camera="medium", move="follow")     # a tracking shot as she walks
         shot.update(d)
         if shot.get("action") in catalog.MOVE_ANIMS and shot.get("camera") in CLOSE_CAMS and "camera" not in d:
@@ -723,6 +739,12 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                 shot["at"] = at
         else:
             shot.pop("to", None)
+        for who in re.findall(r"\+([a-z0-9_]+)", text, re.I):    # "Hi there, +tiny_dragon!" (outside the brackets)
+            who = who.lower()[:24]
+            if who not in cast and not any(e["who"] == who for s in shots for e in s.get("events", [])):
+                shot.setdefault("events", []).append({"who": who, "do": "enter"})
+                cast[who] = {"type": cast_kind(who), "looks": who.replace("_", " ")}
+        text = re.sub(r"\+([A-Za-z0-9_]+)", lambda m: m.group(1).replace("_", " "), text)   # said as "tiny dragon"
         shot["line"] = re.sub(r"\s{2,}", " ", re.sub(r"\[[^\]]*\]|\([^)]*\)", "", text)).strip() or text
         if "sfx" not in shot:
             # a trigger word always counts; the action's sound only on a line's first beat, and never the same

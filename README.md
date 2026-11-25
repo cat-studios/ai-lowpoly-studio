@@ -141,7 +141,10 @@ never.
 - **📦 Imported** - asset packs you upload as a zip of OBJ, FBX, BLEND or MDL models (folders inside are fine).
   Each model gets a picture. MDL files from Quake 1, Half-Life and Source are converted (not yet tried on real
   game files). Models are sorted into categories made from their own names (Vehicles, Animals, Furniture, Food...)
-  with search; the AI sorts names it doesn't recognise on every import (or press **🏷 Categorize**); 🗑 deletes one,
+  with search; the AI sorts names it doesn't recognise on every import (or press **🏷 Categorize**). A model that is
+  already imported (identical file), or the same model in several formats, is skipped on import; **🧹 Remove
+  duplicates** cleans up ones imported before. **✏️ Name & describe** has the picture model give generic names a
+  clear one ("fence" → "Wooden Farm Fence") and a description (the file name is kept). 🗑 deletes one,
   **☑ Select** deletes several at once (files go to the trash folder). Removing a whole
   pack is under **Packs** at the bottom. A prop or cast member whose name matches an imported model uses that
   model; with no exact match the closest one is used (a mail van → the ambulance, a dog → the pug, a police car →
@@ -207,7 +210,19 @@ brackets at the start of a line.
 ```
 Cameras, actions, expressions and sounds from the tables below can all go in the brackets.
 
-### Your own animations
+### Make a random video
+**🎲 Make a random video** on the Create page opens a little game: after a magic shuffle it deals three cards for
+where it happens, then three topics, a vibe, who drops in, the time of day and the length (🎲 Three more deals new
+cards, ← Back goes back). Last comes an optional note you can type. Then the studio writes the title and script,
+builds a new scene for your place, directs it and renders the video.
+
+## Props the studio makes
+When nothing you imported fits, the studio builds the prop from simple shapes (animals, insects and vehicles start
+from a body template). Every new one is rendered and the picture model checks that it looks like what it should; if
+not, the AI rebuilds it once, and if that still fails it becomes a drawn picture instead. A cutaway is skipped
+rather than showing shapes that don't look like the thing.
+
+## Your own animations
 An animation can be a small file in `assets/anims/<name>.json` that strings together ready-made poses
 (`pipeline/animlib.py` lists them: hand_to_chin, hand_at_mouth, palm_up_out, wave_up, hand_on_hip...). Its name
 then works like any action: `[shrug] Who knows?`. Example:
@@ -216,7 +231,10 @@ then works like any action: `[shrug] Who knows?`. Example:
  "keys": [{"t": 0, "both": "rest"}, {"t": 0.35, "both": "palm_up_out", "head": "head_tilt", "body": "shoulders_up"},
           {"t": 1.1, "both": "palm_up_out", "head": "head_tilt"}, {"t": 1.4, "both": "rest"}]}
 ```
-(Next: the AI will write these for you when a script asks for something she can't do yet.)
+When a script asks for something she can't do yet - `[salute]`, `[yawn]` or `[do:salute]` - the AI makes it while
+the video renders (from poses that are known to look right), renders a quick check and has the picture model rate
+it; it's saved for every later video. That takes about half a minute to two minutes per new action. Assets →
+**🕺 Animations** shows them with their check picture and score, makes one on request, and deletes (to the trash).
 
 ### Light and time of day
 `[sunset]`, `[night]`, `[dawn]` or `[day]` changes the light from that line on (until the next change) - for a

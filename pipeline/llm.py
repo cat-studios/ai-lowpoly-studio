@@ -371,6 +371,8 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         "parentheses, no title, no commentary.\n"
         "You MAY start a line with directions in square brackets, using ONLY these words:\n"
         f"cameras: {cams}\nactions: {anims}\nexpressions: {exprs}\n"
+        "An action that is NOT in that list can be written as do: and one word - [do:salute], [do:yawn], [do:flex] - "
+        "and it will be animated for you; use that only for clear body actions.\n"
         f"places to walk to (with walk_to/run_to/sneak_to): {marks}\n"
         f"sound effects (optional, at most one per line, only when it fits): {sfx_names}\n"
         "When another person or a thing actually shows up in the scene, bring it on screen with '+name verb' in "

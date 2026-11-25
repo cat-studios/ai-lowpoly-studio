@@ -8,6 +8,7 @@ Recipes embed the designs they use ("custom_props"), so a set keeps working on i
 import json
 import math
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -159,6 +160,8 @@ lamb goat bear cub rabbit bunny mouse mice rat hamster deer reindeer lion tiger 
 elephant donkey capybara panda koala otter hedgehog ferret llama alpaca camel moose zebra giraffe hippo rhino
 kangaroo monkey dinosaur dino""".split()),
     "fish": set("fish goldfish shark whale dolphin salmon tuna koi trout piranha orca".split()),
+    "bug": set("ant ants beetle ladybug ladybird bug bugs insect fly housefly cockroach cricket grasshopper "
+               "firefly mosquito termite weevil".split()),
 }
 ANIMAL_COLORS = {   # body, wing/back, beak/snout - when the description names no colour
     "pigeon": ("#8d93a3", "#6c7282", "#3a3c44"), "dove": ("#eceef2", "#c9ccd4", "#e8a050"),
@@ -177,20 +180,24 @@ ANIMAL_COLORS = {   # body, wing/back, beak/snout - when the description names n
     "mouse": ("#a8a4a0", "#8a8682", "#f2b8c0"), "rat": ("#8a8682", "#6e6a66", "#f2b8c0"),
     "frog": ("#5aa84a", "#3f8a3a", "#2a2a2a"), "elephant": ("#9a9aa2", "#85858d", "#9a9aa2"),
     "lion": ("#d8a050", "#a0682a", "#3a2a1a"), "tiger": ("#f08a30", "#2a2a2a", "#f4efe6"),
-    "goldfish": ("#f08a30", "#f2b060", "#f4efe6"), "shark": ("#7a8a99", "#5a6a78", "#f4f4f4"),
+    "goldfish": ("#f08a30", "#f2b060", "#f4efe6"), "ladybug": ("#d93a3a", "#1a1a1a", "#1a1a1a"),
+    "ladybird": ("#d93a3a", "#1a1a1a", "#1a1a1a"), "bee": ("#f2c230", "#2a2a2a", "#2a2a2a"),
+    "firefly": ("#5a4a3a", "#f2e050", "#1a1a1a"), "grasshopper": ("#6aa84a", "#4a8a3a", "#2a2a2a"), "shark": ("#7a8a99", "#5a6a78", "#f4f4f4"),
     "whale": ("#4a6a8a", "#3a5470", "#d8dde4"), "dolphin": ("#8a9aaa", "#6f7f8f", "#d8dde4"),
 }
-FAMILY_COLORS = {"bird": ("#9a8a7a", "#7a6a5a", "#e8a040"), "beast": ("#a07850", "#80603c", "#2a2a2a"),
+FAMILY_COLORS = {"bug": ("#3a2a22", "#2a1e18", "#1a1a1a"), "bird": ("#9a8a7a", "#7a6a5a", "#e8a040"),
+                 "beast": ("#a07850", "#80603c", "#2a2a2a"),
                  "fish": ("#5a8ab0", "#3f6a90", "#f4f4f4")}
-FAMILY_HEIGHT = {"bird": 0.35, "beast": 0.6, "fish": 0.5}       # without Ollama to ask (real_size)
+FAMILY_HEIGHT = {"bird": 0.35, "beast": 0.6, "fish": 0.5, "bug": 0.05}       # without Ollama to ask (real_size)
 
 
 def animal_family(kind, looks=""):
     """"bird" / "beast" / "fish" when the prop is an animal (by its name, else its description), else None.
     The name decides first: a "bird feeder" or "cat bed" isn't an animal."""
-    name = set(re.split(r"[^a-z]+", str(kind).lower().replace("_", " ")))
-    for fam, words in ANIMAL_FAMILIES.items():
-        if name & words and not name & THING_WORDS:
+    parts = [w for w in re.split(r"[^a-z]+", str(kind).lower().replace("_", " ")) if w]
+    name = set(parts)
+    for fam, words in ANIMAL_FAMILIES.items():     # the LAST word is the thing: "brown dog" yes, "ant farm" no
+        if parts and parts[-1] in words and not name & THING_WORDS:
             return fam
     if not str(looks).strip():
         return None
@@ -257,6 +264,20 @@ def animal_parts(fam, body, second, accent):
             _part("cylinder", (0.09, 0, 0.1), (0.04, 0.04, 0.2), accent),                   # legs
             _part("cylinder", (-0.09, 0, 0.1), (0.04, 0.04, 0.2), accent),
         ]
+    if fam == "bug":                                                                       # six legs
+        legs = []
+        for k, y in enumerate((-0.18, 0.0, 0.18)):
+            for sx in (1, -1):
+                legs.append(_part("cylinder", (sx * 0.3, y, 0.16), (0.05, 0.05, 0.36), second, (0, sx * 55, 0)))
+        return [
+            _part("sphere", (0, -0.42, 0.42), (0.3, 0.3, 0.28), body),                          # head
+            _part("sphere", (0, -0.1, 0.4), (0.3, 0.38, 0.28), body),                           # middle
+            _part("sphere", (0, 0.36, 0.44), (0.46, 0.6, 0.42), body),                          # back end
+            _part("sphere", (0.09, -0.55, 0.47), (0.07, 0.07, 0.07), "#141418"),                # eyes
+            _part("sphere", (-0.09, -0.55, 0.47), (0.07, 0.07, 0.07), "#141418"),
+            _part("cylinder", (0.08, -0.56, 0.68), (0.03, 0.03, 0.34), second, (25, 0, 15)),    # antennae
+            _part("cylinder", (-0.08, -0.56, 0.68), (0.03, 0.03, 0.34), second, (25, 0, -15)),
+        ] + legs
     if fam == "fish":
         return [
             _part("sphere", (0, 0, 0.32), (0.3, 0.9, 0.55), body),                          # body
@@ -298,7 +319,7 @@ def make_animal(d, kind, looks, fam):
         p["size"] = [round(max(0.01, v * f), 3) for v in p["size"]]
     radius = max(math.hypot(abs(p["pos"][0]) + p["size"][0] / 2, abs(p["pos"][1]) + p["size"][1] / 2) for p in parts)
     d.update(parts=parts, height=round(h0 * f, 2), radius=round(radius, 2), animal=fam,
-             complex=True)       # a drawn picture still wins when ComfyUI can make one
+             complex=False)        # the look check decides if it needs a drawn picture (fails twice -> sprite)
     return d
 
 
@@ -516,6 +537,12 @@ def imported_def(kind, looks="", setting="", log=print):
         except Exception as exc:
             log(f"[props] size of '{d['name']}' unknown ({exc.__class__.__name__}) - using its file's size")
     if d:
+        ws = set(re.findall(r"[a-z]+", f"{kind} {looks}".lower().replace("_", " ")))
+        f = 0.25 if ws & {"tiny", "mini", "miniature", "toy", "baby", "pocket"} else \
+            0.55 if ws & {"small", "little", "smol"} else 1.8 if ws & {"giant", "huge", "enormous", "massive"} else 1.0
+        if f != 1.0:
+            d = dict(d, height=round(max(0.08, d["height"] * f), 3), width=round(d["width"] * f, 3),
+                     radius=round(d["radius"] * f, 2))
         log(f"[props] using imported model '{d['name']}' for '{kind}' (from {d['pack']}"
             + (", the closest model there is)" if d.get("stand_in") else ")"))
     return d
@@ -544,6 +571,9 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         if ollama and not have.get("size_checked"):        # older library props get a real size...
             real_size(have, ollama, log)
             changed = have.get("size_checked", False)
+        if ollama and "checked" not in have and have.get("parts") and not have.get("complex")                 and have.get("source") != "imported":       # ...a look check (once)...
+            have = look_checked(have, kind, have.get("looks", ""), setting, ollama, log)
+            changed = True
         if comfy_cfg and not have.get("sprite") and needs_picture(have):   # ...and a picture if it needs one
             add_sprite(have, comfy_cfg, log)
             changed = changed or bool(have.get("sprite"))
@@ -573,11 +603,116 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         apply_template(d, kind, looks, tpl)
         log(f"[props] '{kind}' built as a {tpl[1]}")
     real_size(d, ollama, log)
+    if ollama and d.get("parts") and d.get("source") != "imported" and not d.get("complex"):
+        # every made prop - AI shapes or a body template (duck, van, ant) - is looked at; fails twice -> sprite
+        d = look_checked(d, kind, looks, setting, ollama, log)
     if needs_picture(d):                       # 3D first: a picture only for complicated or shapeless objects
         add_sprite(d, comfy_cfg, log)
     if save and (d.get("by") == "ollama" or d.get("sprite") or d.get("animal") or d.get("vehicle")):
         _save(d)
     return d
+
+
+# ----------------------------------------------------------------------------- does it look like what it is?
+PROP_PASS = 6                                  # vision score (1-10) that counts as "looks like it"
+
+
+def check_render(d, log=print):
+    """A picture of the prop as the cutaway camera frames it (blender_build straight, no video). Path or None."""
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    sys.path.insert(0, str(ROOT / "pipeline"))
+    import run_episode as R
+    import settings as S
+    cfg = S.load_settings()
+    tmp = Path(tempfile.mkdtemp(prefix="propcheck_"))
+    try:
+        who = d["kind"]
+        ep = {"title": "", "set": "cafe", "start": "center", "music": "", "ambience": "", "co_stars": [],
+              "_language": "en", "audio_lead": 0.0, "fps": 6, "render_res": [270, 480],
+              "cast": {who: {"type": "thing", "def": d, "looks": d.get("looks", "")}},
+              "shots": [{"action": "idle", "camera": "medium", "move": "static", "expression": "neutral",
+                         "duration": 0.7, "line": "", "talk": 0.0, "lead": 0.0,
+                         "events": [{"who": who, "do": "appear", "cutaway": True}]}]}
+        ep["character"] = R.resolve_character(ep, cfg)
+        (tmp / "ep.json").write_text(json.dumps(ep, default=str), encoding="utf-8")
+        (tmp / "frames").mkdir()
+        blender = os.environ.get("BLENDER", R.BLENDER_DEFAULT)
+        r = subprocess.run([blender, "-b", "--factory-startup", "--python", str(ROOT / "pipeline" / "blender_build.py"),
+                            "--", str(tmp / "ep.json"), str(tmp / "frames"), str(tmp / "scene.blend")],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        pngs = sorted((tmp / "frames").glob("f_*.png"))
+        if r.returncode != 0 or not pngs:
+            log(f"[props] look check: render failed for '{who}'")
+            return None
+        out = Path(tempfile.gettempdir()) / f"propcheck_{who}_{int(time.time())}.png"
+        shutil.copyfile(pngs[-1], out)
+        return out
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def look_score(d, ollama, log=print):
+    """(score 1-10 or None, what's wrong): the vision model looks at the check render."""
+    import base64
+    import llm
+    pic = check_render(d, log)
+    if not pic:
+        return None, ""
+    try:
+        r = llm.chat_json(ollama["url"], ollama.get("vision_model") or ollama["model"],
+                          "You check simple low-poly 3D props (built from a few boxes, cylinders and spheres) in a "
+                          "cartoon game. Be fair: chunky is fine, but someone must be able to tell what it is. Reply "
+                          'with JSON only: {"score": 1 to 10 (6 = clearly recognisable), "problem": "what is wrong '
+                          'or missing (empty if none)"}',
+                          f"It should be: {d['kind'].replace('_', ' ')} ({d.get('looks') or ''})", 0.1,
+                          images=[base64.b64encode(pic.read_bytes()).decode("ascii")])
+        return max(1, min(10, int(float(r.get("score", 0))))), str(r.get("problem") or "")[:240]
+    except Exception as exc:
+        log(f"[props] look check unavailable ({exc.__class__.__name__})")
+        return None, ""
+
+
+def look_checked(d, kind, looks, setting, ollama, log=print):
+    """Check an AI design's look; if it fails, the AI redesigns it once from the critique; if that fails too, it
+    becomes a drawn sprite (complex = True -> add_sprite). The best-scoring shape design is kept as the fallback."""
+    import llm
+    best = d
+    for attempt in (1, 2):
+        score, problem = look_score(d, ollama, log)
+        if score is None:                      # no vision model / render: keep it as it is
+            return best
+        d["look_score"] = score
+        log(f"[props] '{kind}' looks like it? {score}/10" + (f" - {problem}" if problem else ""))
+        if score >= best.get("look_score", 0):
+            best = d
+        if score >= PROP_PASS:
+            d["checked"] = True
+            return d
+        if attempt == 2:
+            break
+        user = (f"Object: {kind.replace('_', ' ')}\nWhat it looks like: {looks or kind.replace('_', ' ')}\n"
+                + (f"It is part of this place: {setting}\n" if setting else "")
+                + f"Your last design was checked and did NOT look like it: {problem or 'not recognisable'}. "
+                  "Build it again so it clearly reads as this object.")
+        try:
+            nd = clean(llm.chat_json(ollama["url"], ollama["model"], GUIDE, user, temperature=0.6), kind, looks)
+        except Exception:
+            nd = None
+        if not nd or len(nd["parts"]) < 2:
+            break
+        f = float(best.get("height", 1.0)) / max(0.05, float(nd["height"]))   # keep the real size already found
+        for part in nd["parts"]:
+            part["pos"] = [round(x * f, 3) for x in part["pos"]]
+            part["size"] = [round(max(0.01, x * f), 3) for x in part["size"]]
+        nd.update({k: best[k] for k in ("height", "width", "on", "size_checked", "place") if k in best})
+        nd["radius"] = round(min(4.0, float(nd["radius"]) * f), 2)
+        d = nd
+    best = dict(best, checked=False, complex=True)   # failed twice: a drawn picture reads better than shapes
+    log(f"[props] '{kind}' still doesn't look right - it gets a drawn picture (sprite) instead")
+    return best
 
 
 def redraw(kind, looks=None, log=print):

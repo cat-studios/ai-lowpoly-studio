@@ -417,6 +417,37 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 
 /* "Make a whole video": the die rolls while it works, and the bar fills step by step */
 .make-roll { display: inline-block; }
+/* "Make a whole video" wizard: a little magic show between the steps, then three cards to pick from */
+.mw-box { min-height: 300px; display: flex; align-items: center; justify-content: center; }
+.mw-magic { text-align: center; }
+.mw-magic p { margin: 14px 0 0; color: var(--muted); animation: mw-glow 1s ease-in-out infinite alternate; }
+.mw-orbit { position: relative; width: 140px; height: 140px; margin: 0 auto; animation: mw-spin 1.6s linear infinite; }
+.mw-orbit span { position: absolute; left: 50%; top: 50%; font-size: 22px; margin: -14px;
+  transform: rotate(calc(var(--i) * 72deg)) translateY(-58px); animation: mw-twinkle .8s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) * .15s); }
+.mw-wand { font-size: 40px; margin-top: -92px; height: 52px; animation: mw-wave .5s ease-in-out infinite alternate; }
+.mw-step { width: 100%; text-align: center; animation: mw-in .35s ease-out; }
+.mw-step h3 { margin: 10px 0 16px; font-size: 20px; }
+.mw-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+.mw-card { min-height: 96px; padding: 14px; font-size: 15px; font-weight: 650; border-radius: 14px; white-space: normal;
+  background: linear-gradient(160deg, var(--panel2), #2f2742); border: 1px solid var(--line);
+  animation: mw-deal .45s ease-out both; animation-delay: calc(var(--d) * .09s); transition: transform .12s, border-color .12s; }
+.mw-card:hover, .mw-card:focus-visible { transform: translateY(-3px) rotate(-1deg); border-color: var(--accent);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .35), 0 0 0 1px var(--accent); }
+.mw-dots { display: flex; gap: 6px; justify-content: center; }
+.mw-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.mw-dots i.done { background: var(--accent2); } .mw-dots i.on { background: var(--accent); transform: scale(1.3); }
+.mw-sum { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 0 0 12px; }
+.mw-sum span { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--panel2); border: 1px solid var(--line); }
+.mw-step textarea { width: 100%; margin-bottom: 12px; }
+@keyframes mw-spin { to { transform: rotate(360deg); } }
+@keyframes mw-twinkle { from { opacity: .35; } to { opacity: 1; } }
+@keyframes mw-wave { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+@keyframes mw-glow { from { opacity: .55; } to { opacity: 1; } }
+@keyframes mw-deal { from { opacity: 0; transform: translateY(14px) scale(.92) rotate(3deg); } to { opacity: 1; transform: none; } }
+@keyframes mw-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (max-width: 760px) { .mw-cards { grid-template-columns: 1fr; } .mw-card { min-height: 60px; } }
+@media (prefers-reduced-motion: reduce) { .mw-orbit, .mw-orbit span, .mw-wand, .mw-card, .mw-step, .mw-magic p { animation: none; } }
 .making .make-roll { animation: make-roll 0.9s steps(6, end) infinite; }
 @keyframes make-roll {
   0% { transform: rotate(0deg) scale(1); }

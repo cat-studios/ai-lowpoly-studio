@@ -254,6 +254,42 @@ Round 2b (v2 → `_v3`/`_v4`, same script directed again):
   category: Utensils, Containers...; spellings merged ignoring case) runs at the end of every import and from the
   🏷 Categorize button (`POST /api/imported/categorize` → job `imported.py categorize [--redo]`); answers are kept
   in the index as `category` and win over the word list.
+- Category-aware matching (`imported.match`): every model's category (`category_map`; a single outlier word in a
+  70 %+ one-category pack takes the pack's category - the food pack's "Fish"), the setting's categories
+  (`SETTING_CATS`: kitchen → Food, aquarium → Animals, street → Vehicles...) rank first, then the thing's own
+  category (`kind_category`); indoors (`INDOOR_WORDS`) a Vehicles/Street/Trees/Dinosaurs model is only used when
+  the thing asked for is one; words that disagree reject (plant pot ≠ CookingPot; `SYNONYMS` street~traffic); no
+  match by the old half-the-words rule (table lamp ≠ Table) - the studio generates instead.
+- Duplicates: every model has a SHA-1 `hash` (computed for older ones by `known_hashes`); import skips a file
+  already imported or twice in the zip, and one model in several formats (same file name: OBJ kept, then FBX,
+  BLEND - `FORMAT_PREF`), moving the copies to the pack's `_duplicates/`. 🧹 Remove duplicates (`find_duplicates`
+  / `remove_duplicates`, `GET /api/imported/duplicates`, `POST /api/imported/dedupe`): byte-identical copies and
+  same-name-other-format copies → trash (the user's Posed Background Humans pack: 28 models × 3 formats).
+  `delete_models` moves only the model's own file (+ an OBJ's .mtl) - not every file with that name.
+- ✏️ Name & describe (`describe_models`, job `imported.py describe [--redo]`): the vision model looks at each
+  preview and gives a clearer name (keeping the file name's words: "Bacon Burned" → "Burnt Bacon Strip") + a
+  one-line description; `original_name` kept, new name words join the tags (matching). ~4 s per model; the small
+  model sometimes guesses wrong ("Bacon Cooked" → "Burned..."), hence original_name.
+
+## Look check for made props (2026-11-25)
+Every prop the studio makes (AI shapes or a body template: duck, van, ant) gets `propgen.look_checked`: a check
+render (`check_render`: blender_build straight, the prop as a one-shot cutaway, 270x480) scored by the vision model
+(`look_score`, 1-10, `PROP_PASS` = 6); a fail → the AI redesigns it once from the critique (keeping the real size);
+a second fail → `complex: true` → a drawn sprite (ComfyUI + sprite_cut, so only where voice-venv exists - in dev
+it keeps the best shape, marked `checked: false`). Library props made before are checked once on their next use.
+Templates no longer force `complex` (they're checked like anything else). Mailbox: 4/10 twice → sprite (54 s);
+rubber duck via the bird template: 8/10 (19 s). `run_episode.drop_weak_cutaways`: a cutaway only shows a person,
+an imported model, a built-in prop, a sprite or a prop that didn't fail the check - "a feline army marching" (four
+boxes) filled the screen. The AI cast step skips groups (`autodirect.GROUP_WORDS`: army, crowd, team...). Insects
+have a body template (`bug`: ant, beetle, ladybug...); animals/vehicles are decided by the name's LAST word
+("ant farm" isn't an ant). An automatic walk is never added to a line whose brackets chose a close camera.
+Popup test round ("How big is the space for all your pasts?", haunted library): the wizard now writes the script
+for `new:<picked place>` (it said "Welcome to Legacy Cafe"); a `+name` the AI put mid-line is spoken as the name and
+is that person's entrance (it said "+tiny_dragon"); smile/frown/wink/glare... are expressions (`MOOD_WORDS`) and
+`animgen.IS_ACTION` excludes face-only things; animations that failed the check (< 5/10) aren't used or listed in
+`catalog.ANIMS`; size words scale imported models (tiny/baby 0.25, small 0.55, giant 1.8 - a "tiny dragon" was the
+3 m Dragon); cast members always count as blocking the camera (the "she stands at it" exception is only for
+furniture) - the dragon filled 14 shots; length cards: short 4-5 lines, medium 6-8, long 10-13 (12 lines ran 60 s).
 
 ## Animations as data (phase 1 done 2026-11-25; plan: generator → vision check → director hookup)
 - `pipeline/animlib.py`: pose vocabulary - `ARM` (one arm: arm/raise/rot/elbow; rest, slump, hand_to_chin,
@@ -265,10 +301,19 @@ Round 2b (v2 → `_v3`/`_v4`, same script directed again):
 - `blender_build` registers every library animation in `ANIMS` (`_anim_player`: arms go to the pose, head/body
   are added, `env` ramp); `catalog.ANIMS` lists them (not `x_`), so `[shrug]` works in scripts and the UI.
   `x_facepalm/x_sneeze/x_blow_kiss` render the same as the hand-coded ones.
-- Next (phase 2-4): `animgen.py` (Ollama writes this format from `describe_for_ai()` + the x_ examples), a vision
-  check (render a strip, ask qwen3.5 "does this look like X?", retry with the critique), Assets → Animations tab,
-  director: unknown action words → make the animation (user still to decide: automatic or a button; ~30 s each);
-  pick a camera that fits arms-out poses (a closeup crops a shrug).
+- Phases 2-4 (done): `pipeline/animgen.py` - `write()` (Ollama, GUIDE = the pose list + the x_ examples, format
+  errors fed back), `check_render()` (blender_build straight, 270x480 @ 12 fps, closeup + medium, candidate passed
+  with env `ANIMLIB_EXTRA`, the REAL character via `run_episode.resolve_character` - the stand-in body made every
+  pose look wrong), `vision_check()` (qwen3.5 scores 1-10, `PASS` = 6; yes/no turned down everything), best try kept,
+  up to 3 tries, saved with its check picture `assets/anims/<name>.png`. `ensure(word, line)`: exists → reuse; else
+  `is_action()` (Ollama) → make; non-actions are remembered in `assets/anims/.not_actions.json`. Salute: 61 s, 9/10.
+  `hand_to_forehead` pose added (checked: reads as a salute). The user chose automatic making (~30-100 s each).
+- Director: unknown bracket words (`[yawn]`) and `[do:salute]` set shot `"want"` (the shot keeps its mood action as
+  the fallback); `run_episode.resolve_animations` makes/reuses them before Blender and moves `needs_room`
+  animations (arms out) out of close cameras. The script writer is told it may write `[do:<verb>]`.
+- Assets → Animations tab (`web/anims_web.py`: `GET /api/anims`, `POST /api/anims/make` job, `DELETE` → .trash,
+  pictures at `/animimg/`). Ideas: more poses (both hands on head, hands together/praying, arms crossed tight, hug
+  self, cover ears) - each must be checked in a render (scratch tool: temporary ARM entries + check_render).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
@@ -454,8 +499,12 @@ Round 2b (v2 → `_v3`/`_v4`, same script directed again):
 - Built-in Legacy Cafe / Legacy Park (`catalog.SETS`, hand-placed in `blender_build.set_cafe/set_park`) can't be
   regenerated; they keep their ids because old videos use them.
 
-**Create page "Make a whole video"** (🎲): random title idea → random new set → AI script → directed shots, using
-the character selected on the Create page; the user reviews, then renders.
+**Create page "Make a whole video"** (🎲 Make a random video): `openMakeWizard()` - a popup with a little magic
+animation (`mwMagic`) between steps and three random cards per step (🎲 Three more, ← Back): place, topic, vibe
+(the script tone), guest, time ("day turning into night" asks for [sunset]/[night] changes), length (lines), then an
+optional typed note. `MW_STEPS` holds the card lists, `MW_LIGHT` maps the time to the set's light. Then: titles
+(theme = topic) → script (tone + extra = place/guest/time/note) → a new set (idea = place + title) → direct →
+render. CSS `.mw-*` in style.css (respects prefers-reduced-motion).
 
 ## Gotchas learned the hard way
 **Tooling / Windows**

@@ -224,6 +224,41 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
     log(f"[import] {pack_name or zip_path.stem}: {len(found)} models, {kept_other} textures kept, "
         f"{skipped} other files ignored")
 
+    # the same model file twice (already imported, or twice in this zip) is skipped: identical bytes = same model
+    known = known_hashes(idx)
+    fresh, dupes = [], 0
+    for p in found:
+        h = file_hash(p)
+        if h in known:
+            (dest / "_duplicates").mkdir(exist_ok=True)       # kept aside, not deleted
+            p.replace(dest / "_duplicates" / p.name)
+            dupes += 1
+            log(f"[import] {p.name}: already imported as '{known[h]}' - skipped")
+            continue
+        known[h] = p.stem
+        fresh.append((p, h))
+    # the same model saved in several formats (Female_Hairstyle_1 .fbx + .blend + .obj): one is enough
+    by_stem = {}
+    for p, h in fresh:
+        by_stem.setdefault(p.stem.lower(), []).append((p, h))
+    fresh = []
+    for group in by_stem.values():
+        fmts = [MODEL_FORMATS[p.suffix.lower()] for p, _ in group]
+        if len(group) > 1 and len(set(fmts)) == len(fmts):
+            group.sort(key=lambda ph: FORMAT_PREF.index(MODEL_FORMATS[ph[0].suffix.lower()]))
+            for p, _ in group[1:]:
+                (dest / "_duplicates").mkdir(exist_ok=True)
+                p.replace(dest / "_duplicates" / p.name)
+                dupes += 1
+            group = group[:1]
+        fresh += group
+    found = sorted(p for p, _ in fresh)
+    hashes = {str(p): h for p, h in fresh}
+    if dupes:
+        log(f"[import] {dupes} duplicate model(s) skipped")
+    if not found:
+        raise SystemExit("every model in this zip is already imported")
+
     # MDL files are converted to OBJ first (pipeline/mdl_convert.py), then measured like any other model
     converted = {}                                   # original .mdl path -> (obj path or None, note)
     for p in found:
@@ -259,7 +294,7 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
                "file": str((PACKS / pid / rel).relative_to(ROOT)).replace("\\", "/"), "format": fmt,
                "folder": "/".join(rel.parts[:-1]), "size_mb": round(p.stat().st_size / 1048576, 2),
                "tags": sorted(words(p.stem) | words("/".join(rel.parts[:-1]))),
-               "height": None, "width": None, "depth": None}
+               "height": None, "width": None, "depth": None, "hash": hashes.get(str(p))}
         if fmt == "mdl":
             obj, note = converted[str(p)]
             rec["flavour"] = mdl_flavour(p)
@@ -322,7 +357,11 @@ def delete_models(ids):
                 keep.append(m)
                 continue
             f = ROOT / m["file"]
-            for sib in (f.parent.glob(f.stem + ".*") if f.parent.exists() else []):
+            # only this model's own file (+ an OBJ's .mtl): the same name in another format may be the copy we keep
+            own = [f] + ([f.with_suffix(".mtl")] if f.suffix.lower() == ".obj" else [])
+            if m.get("source_file"):
+                own.append(ROOT / m["source_file"])
+            for sib in [x for x in own if x.exists()]:
                 rel = sib.relative_to(PACKS) if PACKS in sib.parents else Path(pack["id"]) / sib.name
                 (dest / rel).parent.mkdir(parents=True, exist_ok=True)
                 sib.replace(dest / rel)
@@ -334,6 +373,126 @@ def delete_models(ids):
         pack["models"] = keep
     save_index(idx)
     return n
+
+
+# ----------------------------------------------------------------------------- duplicates
+def file_hash(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _model_file(m):
+    return ROOT / (m.get("source_file") or m["file"])     # an MDL's original, not its converted OBJ
+
+
+def known_hashes(idx):
+    """hash -> model name for everything imported (hashes worked out and stored for older models)."""
+    out, changed = {}, False
+    for pack in idx["packs"]:
+        for m in pack.get("models", []):
+            if not m.get("hash"):
+                f = _model_file(m)
+                if not f.exists():
+                    continue
+                m["hash"], changed = file_hash(f), True
+            out.setdefault(m["hash"], m["name"])
+    if changed:
+        save_index(idx)
+    return out
+
+
+FORMAT_PREF = ["obj", "fbx", "blend", "mdl"]          # which copy of a model saved in several formats is kept
+
+
+def find_duplicates():
+    """[[kept model, duplicate, ...]]: models whose files are byte-for-byte the same (the first imported is kept),
+    and one model saved in several formats in the same pack (same file name, a different format each - OBJ kept,
+    then FBX, then BLEND)."""
+    idx = load_index()
+    known_hashes(idx)
+    groups, seen = [], set()
+    by_hash = {}
+    for pack in idx["packs"]:                      # packs are in import order: the first copy is the original
+        for m in pack.get("models", []):
+            if m.get("hash"):
+                by_hash.setdefault(m["hash"], []).append({"id": m["id"], "name": m["name"], "pack": pack["name"],
+                                                          "format": m.get("format")})
+    for g in by_hash.values():
+        if len(g) > 1:
+            groups.append(g)
+            seen |= {x["id"] for x in g}
+    for pack in idx["packs"]:
+        by_stem = {}
+        for m in pack.get("models", []):
+            if m["id"] not in seen:
+                by_stem.setdefault(Path(m.get("source_file") or m["file"]).stem.lower(), []).append(m)
+        for g in by_stem.values():
+            fmts = [x.get("format") for x in g]
+            if len(g) > 1 and len(set(fmts)) == len(fmts):
+                g = sorted(g, key=lambda x: FORMAT_PREF.index(x.get("format")) if x.get("format") in FORMAT_PREF else 9)
+                groups.append([{"id": x["id"], "name": x["name"], "pack": pack["name"], "format": x.get("format")}
+                               for x in g])
+    return groups
+
+
+def remove_duplicates():
+    """Every copy after the first goes to the trash (delete_models). Returns how many were removed."""
+    extra = [m["id"] for g in find_duplicates() for m in g[1:]]
+    return delete_models(extra) if extra else 0
+
+
+# ----------------------------------------------------------------------------- names and descriptions
+DESCRIBE = ("You name 3D models for an asset library from a picture of the model and its file name. KEEP every "
+            "meaningful word of the file name (Burned, Empty, Large, Autumn, a number) unless the picture clearly "
+            "shows it's wrong, and ADD what the name is missing - the material, style or setting that tells it "
+            "apart: \"fence\" -> \"Wooden Farm Fence\" or \"Sci-Fi Space Fence\", \"Bacon Burned\" -> \"Burned "
+            "Bacon Strip\", \"Tree4\" -> \"Round Green Tree\". Reply with JSON only: {\"name\": \"2-5 words, Title "
+            "Case\", \"description\": \"one short sentence about how it looks (shape, colours) and where you'd "
+            "find it - not what games it suits\"}")
+
+
+def describe_models(ollama, log=print, redo=False, limit=None):
+    """The vision model looks at each model's picture and gives it a clear name + a one-line description. The
+    file's name is kept as "original_name"; the new name's words join the model's tags, so matching finds it
+    ("space fence"). Returns how many were described."""
+    if not ollama:
+        return 0
+    import base64
+    import llm
+    model = ollama.get("vision_model") or ollama["model"]
+    idx = load_index()
+    todo = [(p, m) for p in idx["packs"] for m in p.get("models", [])
+            if m.get("status") == "ok" and (redo or not m.get("description")) and (PREVIEWS / f"{m['id']}.png").exists()]
+    if limit:
+        todo = todo[:limit]
+    done = 0
+    for i, (pack, m) in enumerate(todo):
+        progress.report(0.05 + 0.9 * i / max(1, len(todo)), f"Naming models ({i + 1}/{len(todo)})")
+        b64 = base64.b64encode((PREVIEWS / f"{m['id']}.png").read_bytes()).decode("ascii")
+        orig = m.get("original_name") or m["name"]
+        try:
+            r = llm.chat_json(ollama["url"], model, DESCRIBE,
+                              f"File name: {orig}\nPack: {pack['name']}\nFolder: {m.get('folder') or '-'}",
+                              0.2, images=[b64])
+        except Exception as exc:
+            log(f"[import] couldn't describe '{orig}' ({exc.__class__.__name__})")
+            continue
+        name = re.sub(r"\s+", " ", str(r.get("name") or "")).strip()[:40]
+        desc = re.sub(r"\s+", " ", str(r.get("description") or "")).strip()[:200]
+        if not name or not re.search(r"[A-Za-z]", name):
+            continue
+        m["original_name"] = orig
+        m["name"], m["description"] = name, desc
+        m["tags"] = sorted(set(m.get("tags") or []) | words(name))
+        done += 1
+        log(f"[import] {orig} -> {name}: {desc}")
+        if done % 10 == 0:
+            save_index(idx)
+    save_index(idx)
+    return done
 
 
 # ----------------------------------------------------------------------------- categories (Assets page)
@@ -421,19 +580,36 @@ def ai_categorize(ollama, log=print, redo=False):
     return done
 
 
+def _pack_categories(pack):
+    """[(model, category)] for one pack. A name that says nothing takes the pack's main category, and in a pack
+    that is mostly one thing (70 %+) a word from another category loses to it: the food pack's "Fish" and
+    "Mushroom" are Food, not Animals/Nature. The AI's own answers (m["category"]) are kept as they are."""
+    named = [(m, _name_category(m)) for m in pack.get("models", [])]
+    counts = {}
+    for _, c in named:
+        if c:
+            counts[c] = counts.get(c, 0) + 1
+    main = max(counts, key=counts.get) if counts else "Other"
+    total = sum(counts.values()) or 1
+    strong = counts and counts[main] >= 0.7 * total
+    # only a real outlier gives way (one "Fish" among 100 foods) - not a group (the traffic signs and cone in the
+    # Public Transport pack are 30 % of it and stay Street & traffic)
+    outlier = lambda c: c and counts.get(c, 0) < 0.15 * total    # noqa: E731
+    return [(m, main if (not c or (strong and outlier(c) and not m.get("category"))) else c) for m, c in named]
+
+
+def category_map():
+    """model id -> category (the same categories the Assets page shows)."""
+    return {m["id"]: c for pack in packs() for m, c in _pack_categories(pack)}
+
+
 def categorised():
     """Every model with a "category" (and its pack's name/license), for the Assets page."""
     out = []
     for pack in packs():
-        named = [(m, _name_category(m)) for m in pack.get("models", [])]
-        counts = {}
-        for _, c in named:
-            if c:
-                counts[c] = counts.get(c, 0) + 1
-        fallback = max(counts, key=counts.get) if counts else "Other"
-        for m, c in named:
+        for m, c in _pack_categories(pack):
             pv = PREVIEWS / f"{m['id']}.png"
-            out.append({**m, "category": c or fallback, "pack_id": pack["id"], "pack": pack["name"],
+            out.append({**m, "category": c, "pack_id": pack["id"], "pack": pack["name"],
                         "license": pack.get("license", ""), "real_height": real_height(m),
                         "preview_v": int(pv.stat().st_mtime) if pv.exists() else 0})   # a redrawn picture shows
     return out
@@ -502,37 +678,86 @@ def _ordered_words(text):
     return out
 
 
+# Where it is decides between categories: a "fish" in a kitchen is food, in an aquarium an animal.
+SETTING_CATS = [
+    ("kitchen restaurant cafe bakery diner market supermarket picnic food dinner lunch breakfast pizzeria buffet "
+     "canteen cafeteria grocery", ["Food", "Utensils", "Containers", "Condiments"]),
+    ("farm barn zoo ocean sea aquarium underwater pond lake river jungle safari reef stable", ["Animals"]),
+    ("forest park garden woods meadow beach island mountain camp campsite field valley desert", ["Nature", "Trees"]),
+    ("street city road town parking highway garage traffic intersection crossing downtown", ["Vehicles",
+                                                                                           "Street & traffic"]),
+    ("room bedroom living house home office school classroom library hotel apartment studio hall lobby",
+     ["Furniture"]),
+    ("dungeon castle cave haunted graveyard crypt tomb lair", ["Fantasy & creatures"]),
+    ("museum prehistoric jurassic dinosaur", ["Dinosaurs"]),
+]
+INDOOR_WORDS = set(("room kitchen cafe office shop store school house home inside indoor restaurant bakery library "
+                    "hall bedroom classroom museum apartment hotel lobby post diner bar gym studio basement attic "
+                    "garage hospital").split())
+OUTDOOR_ONLY = {"Vehicles", "Street & traffic", "Trees", "Dinosaurs"}     # never a set's prop inside a room
+SYNONYMS = {"street": {"traffic", "road"}, "road": {"traffic", "street"}, "traffic": {"street", "road"},
+            "sofa": {"couch"}, "couch": {"sofa"}, "kitty": {"cat"}, "doggy": {"dog"}, "lorry": {"truck"}}
+
+
+def kind_category(kind):
+    """The category a thing's own name puts it in (its main word first), or None."""
+    for w in reversed(_ordered_words(kind)):
+        for name, cw in _CAT_WORDS:
+            if w in cw:
+                return name
+    return None
+
+
+def _setting_cats(setting):
+    ws = set(re.findall(r"[a-z]+", str(setting or "").lower()))
+    return {c for wl, cats in SETTING_CATS if ws & set(wl.split()) for c in cats}, bool(ws & INDOOR_WORDS)
+
+
 def match(kind, looks="", setting=""):
     """The imported model for `kind`, as a prop definition (same shape as propgen's), or None.
-    The LAST word of the name is the thing itself ("mail van", "police car", "ice cream truck"): when any model is
-    that thing or a stand-in for it (NEAREST: a van -> the ambulance), the best of those is used, scored over all
-    the words (police car -> Cop, not SportsCar). Otherwise the old rule: at least half the words in its name."""
+    - The LAST word of the name is the thing itself ("mail van", "police car", "ice cream truck"): a model must be
+      that thing or a stand-in for it (NEAREST: a van -> the ambulance). Scored over all the words (police car ->
+      Cop, not SportsCar).
+    - Words that disagree reject a model: a "plant pot" isn't the CookingPot (both have a describing word the other
+      lacks), a "table lamp" isn't a table (no lamp = no match, it gets generated).
+    - Categories (category_map): the setting's categories first (a kitchen's fish is the food one), then the
+      category the thing's own name is in; inside a room a street/vehicle/tree model is only used when the thing
+      asked for is one (a van crashing into a shop is fine, a "light" in a cafe is not the traffic light)."""
     kw = _ordered_words(kind)
     if not kw:
         return None
     head, lt = kw[-1], words(looks)
+    cats = category_map()
+    want_cats, indoor = _setting_cats(setting)
+    kcat = kind_category(kind)
     best, best_key = None, None
     for pack in packs():
         for m in pack.get("models", []):
             if m.get("status") != "ok":
                 continue
-            tags = set(m.get("tags") or [])
+            tags = set(m.get("tags") or []) - {w for w in (m.get("tags") or []) if w.isdigit()}
             hs = _word_score(head, tags)
             if hs <= 0:
                 continue
+            mcat = cats.get(m["id"])
+            if indoor and mcat in OUTDOOR_ONLY and kcat != mcat:
+                continue
+            unmatched = [w for w in kw if _word_score(w, tags) <= 0]
+            expanded = set(kw) | {x for w in kw for x in SYNONYMS.get(w, ())} |                 {t for w in kw for t in NEAREST.get(w, [])}
+            extra = [t for t in tags if t not in expanded and len(t) > 2]
+            if unmatched and extra and not set(unmatched) & {x for t in extra for x in SYNONYMS.get(t, ())}:
+                continue                    # "plant pot" vs CookingPot: each has a word the other doesn't
             score = sum(_word_score(w, tags) for w in kw) / len(kw)
-            key = (score, hs, len(lt & tags), -len(tags), m["id"])
+            key = (mcat in want_cats, kcat is not None and mcat == kcat, score, hs, len(lt & tags), -len(tags),
+                   m["id"])
             if best_key is None or key > best_key:
                 best, best_key = (pack, m), key
-    if best:
-        d = match_model(*best, kind, looks)
-        if best_key[1] < 1.0:
-            d["stand_in"] = True           # not the thing itself: the closest model there is
-        return d
-    hit, _ = _best(kind, looks)
-    if not hit:
-        return None
-    return match_model(*hit, kind, looks)
+    if not best:
+        return None                         # nothing is that thing: the studio makes its own
+    d = match_model(*best, kind, looks)
+    if best_key[3] < 1.0:
+        d["stand_in"] = True               # not the thing itself: the closest model there is
+    return d
 
 
 def model_def(model_id, kind="", looks=""):
@@ -632,6 +857,9 @@ if __name__ == "__main__":
     p_imp.add_argument("--source", help="the zip's original file name (shown on the Assets page)")
     sub.add_parser("list")
     sub.add_parser("previews", help="draw a picture for every model that has none")
+    p_desc = sub.add_parser("describe", help="the vision model names and describes models from their pictures")
+    p_desc.add_argument("--redo", action="store_true")
+    sub.add_parser("dedupe", help="move byte-identical copies of models to the trash")
     p_cat = sub.add_parser("categorize", help="the AI sorts models the name list doesn't place")
     p_cat.add_argument("--redo", action="store_true", help="ask again for ones it already sorted")
     p_del = sub.add_parser("delete")
@@ -643,6 +871,12 @@ if __name__ == "__main__":
         print(f"IMPORTED={pack['id']} ok={ok} total={len(pack['models'])}", flush=True)
     elif a.cmd == "list":
         print(json.dumps(packs(), indent=1))
+    elif a.cmd == "describe":
+        import settings as S
+        n = describe_models(S.load_settings().get("ollama"), print, redo=a.redo)
+        print(f"DESCRIBED={n}", flush=True)
+    elif a.cmd == "dedupe":
+        print(f"REMOVED={remove_duplicates()}", flush=True)
     elif a.cmd == "categorize":
         import settings as S
         progress.report(0.1, "Sorting the models into categories")

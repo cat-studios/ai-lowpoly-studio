@@ -46,7 +46,8 @@ MOVE_ANIMS = {k for k, (_, moves) in ANIMS.items() if moves}
 try:
     import animlib as _animlib
     for _n, _a in _animlib.library().items():
-        if not _n.startswith("x_") and _n not in ANIMS:
+        usable = _a.get("checked") is not False or (_a.get("score") or 0) >= 5   # not ones that failed the check
+        if not _n.startswith("x_") and _n not in ANIMS and usable:
             ANIMS[_n] = (_a["description"] or _n.replace("_", " "), False)
 except Exception as _exc:          # a broken library never stops the studio
     print(f"[catalog] animations library skipped: {_exc}")

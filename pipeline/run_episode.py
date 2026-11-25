@@ -578,6 +578,51 @@ CUT_SKIP = set("a an the of in on at to into with and its their his her some lot
                "little very slowly quickly just".split())
 
 
+def resolve_animations(ep, log=print):
+    """Shots whose script asked for an action she can't do yet ("want": "salute") get it made now (animgen: Ollama
+    writes it from checked poses, a quick render is checked by the vision model) - or reuse it when it exists. A
+    word that isn't a body action ("messy") keeps the shot's own action. Arms-out animations don't stay in close
+    shots (they'd be cropped)."""
+    wants = {s["want"] for s in ep["shots"] if s.get("want")}
+    if not wants:
+        return
+    import animgen
+    import animlib
+    made = {}
+    for w in sorted(wants):
+        report(0.03, f"Making the animation '{w}'")
+        line = next((s.get("line", "") for s in ep["shots"] if s.get("want") == w), "")
+        made[w] = animgen.ensure(w, line, log=lambda m: log("  " + m))
+    lib = animlib.library()
+    for s in ep["shots"]:
+        name = made.get(s.get("want"))
+        if not name:
+            continue
+        s["action"] = name
+        if (lib.get(name) or {}).get("needs_room") and s.get("camera") in ("closeup", "macro", "dramatic"):
+            s["camera"] = "medium"
+        log(f"  shot '{s.get('line', '')[:30]}': {name}")
+
+
+def drop_weak_cutaways(ep, log=print):
+    """A cutaway only shows something you can recognise: an imported model, a built-in prop, a drawn picture, a person,
+    or a made prop that passed the look check (propgen.look_checked). A blocky shape that failed it (and got no
+    picture) would fill the screen with boxes - "a feline army marching" - so she stays on screen instead."""
+    cast = ep.get("cast") or {}
+    for s in ep["shots"]:
+        for e in [e for e in s.get("events") or [] if e.get("cutaway")]:
+            info = cast.get(e.get("who")) or {}
+            d = info.get("def") or {}
+            if info.get("type") == "person" or info.get("prop") or d.get("model") or d.get("sprite")                     or d.get("checked") is not False:
+                continue
+            s["events"].remove(e)
+            s.pop("cutaway", None)
+            log(f"  cutaway '{e['who']}' skipped - its shape doesn't look like it (and it has no picture)")
+    used = {e["who"] for s in ep["shots"] for e in s.get("events") or []}
+    for who in [w for w in cast if w not in used]:
+        cast.pop(who)
+
+
 def resolve_cutaways(ep, log=print):
     """Shots with "cutaway": "<what to show>" show that instead of her (her line plays as a voice-over). The
     subject becomes a cast member (reused if the script already has it) with a matching move, flagged so Blender
@@ -1021,7 +1066,9 @@ def main():
     resolve_scenes(ep, args.episode)
     embed_set(ep)
     resolve_cutaways(ep)
+    resolve_animations(ep)
     resolve_cast(ep, cfg)
+    drop_weak_cutaways(ep)
     ep["_language"] = out_language(ep, cfg)
     if ep["_language"] != "en":
         report(0.05, "Translating")
