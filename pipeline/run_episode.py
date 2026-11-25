@@ -917,7 +917,7 @@ def resolve_scenes(ep, ep_path=None, log=print):
             report(0.02, f"Making the set: {idea[:40]}")
             quiet(True)
             try:
-                sid = make_set.create_set(idea, log=lambda m: log("    " + m))["id"]
+                sid = make_set.create_set(idea, log=lambda m: log("    " + m), style=ep.get("set_style"))["id"]
             finally:
                 quiet(False)
         ep["set"] = sid
@@ -944,7 +944,7 @@ def resolve_scenes(ep, ep_path=None, log=print):
         report(0.03, f"Making a set: {idea[:40]}")
         quiet(True)
         try:
-            rec = make_set.create_set(idea, log=lambda m: log("    " + m))
+            rec = make_set.create_set(idea, log=lambda m: log("    " + m), style=ep.get("set_style"))
         finally:
             quiet(False)
         made[idea] = rec["id"]

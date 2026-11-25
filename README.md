@@ -116,6 +116,13 @@ its file.
 
 ### Sets
 A gallery of every scene, newest first, with a preview and its walkable places.
+- **How it's made** (also in Custom Video's Scenes step and Settings → AI tools):
+  🏛 **Hand-built base** (the default) - one of 12 rooms and outdoor places built by hand in the Legacy Cafe/Park
+  style (a dressed back wall, lamps, a layout made for the vertical frame, one palette); the AI only picks the base,
+  the colours and the things in it. 🎨 **Palette** - the free AI layout with one palette, flat colours, a dressed
+  wall and lamps. ⚖️ **Judged** - the free AI layout, checked against the Legacy sets' pictures and redesigned if
+  it falls short. 🎲 **Classic** - the free AI layout. Random videos pick one of the first three by chance; series
+  always use hand-built bases.
 - **Generate** a new set: from an idea ("haunted bakery"), from a **picture** (the vision model builds a matching
   scene and takes its colours and ground from the photo), or fully random. Options: inside/outside, time of day,
   theme, room size (small / medium / large), ground, AI on/off, textures, seed.

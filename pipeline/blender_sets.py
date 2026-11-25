@@ -611,7 +611,7 @@ def p_custom(r, p, d):
         return p_sprite(r, p, d)
     if d.get("explainer"):
         return p_explainer(r, p, d)
-    f = RNG.uniform(0.9, 1.1)
+    f = 1.0 if d.get("exact") else RNG.uniform(0.9, 1.1)    # a base's hand-made pieces keep their exact colours
     for i, part in enumerate(d.get("parts", [])):
         kind, kw = SHAPE_PRIM.get(part.get("shape"), SHAPE_PRIM["box"])
         sx, sy, sz = (max(0.01, v / 2) for v in part.get("size", (0.5, 0.5, 0.5)))

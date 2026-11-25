@@ -190,11 +190,22 @@ def all_sets():
     return out
 
 
+# how a new set is made (make_set.create_set style=): the Create popup and Sets page let you pick; a random video
+# picks one of base / palette / judged by chance; a series always uses base
+SET_STYLES = {
+    "base": "🏛 Hand-built base, dressed by the AI (Legacy quality)",
+    "palette": "🎨 Free AI layout + one palette, flat colours, dressed walls",
+    "judged": "⚖️ Free AI layout, judged against Legacy Cafe/Park",
+    "classic": "🎲 Classic free AI layout",
+}
+
+
 def as_dict():
     """JSON-friendly catalog for the web app."""
     import templates
     return {
         "templates": templates.as_list(),     # kinds of video (pacing/content - never the look)
+        "set_styles": SET_STYLES,
         "anims": {k: {"description": d, "moves": m} for k, (d, m) in ANIMS.items()},
         "expressions": EXPRESSIONS,
         "cameras": CAMERAS,

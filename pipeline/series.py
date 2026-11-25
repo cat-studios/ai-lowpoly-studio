@@ -70,7 +70,8 @@ def main(spec_path):
                                                    "character": spec.get("character") or "", "title": title,
                                                    "scene_policy": "reuse", "template": tpl_id})
         ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],
-              "template": tpl_id, "series": {"id": sid, "idea": idea, "part": i, "of": len(titles)}}
+              "template": tpl_id, "series": {"id": sid, "idea": idea, "part": i, "of": len(titles)},
+              "set_style": "base"}          # a series' new places are always hand-built bases (set style A)
         if spec.get("character"):
             ep["character"] = spec["character"]
         if d.get("cast"):

@@ -468,6 +468,36 @@ camera.
   `" qwen3-coder-next:latest"` typed in, his server answered 404 (no such model) and the log said "not reachable"
   (`propgen.design_call` now says which).
 
+## Set styles (2026-11-25): A hand-built bases, B palette, C judged, classic
+The user asked why the Legacy Cafe/Park (hand-written in `blender_build.set_cafe/set_park`) still beat AI sets:
+one primitive style, a small palette with matching fog/sun, a layout made for the 9:16 wide shot (signature piece at
+the back, furniture groups, lamps in the top of the frame, corner framing) and a dressed back wall. Every way of
+making a set is now a style (`catalog.SET_STYLES`, `make_set.create_set(style=)`, `--style`, Settings
+`sets.style` default "base"):
+- **A `base`** (`pipeline/set_bases.py`): 12 hand-built bases (`BASES`: shop, kitchen, bedroom, living_room,
+  classroom, office, scifi, hall, street, park, beach, forest), each with 2-3 palettes, fixed pieces built from
+  parts in the palette (`WALL` back-wall pieces: window, board, whiteboard, shelf, pictures, clock, neon, porthole,
+  banners, torches; `lamps()`; outdoor backdrops `o_buildings`/`o_sea`/tree rows; `HANDMADE` pieces like the
+  throne) and SLOTS (`IN_SLOTS`/`OUT_SLOTS`: hero, side, group_a, group_b, corner) with built-in defaults. `dress()`
+  = one AI call (base, palette, light, what fills each slot, the two wall pieces); `_Picker` resolves slot things:
+  built-in prop > imported (ONE pack per set) > made 3D prop told the palette colours. A table gets seats
+  (`GROUPS`). Pieces are custom props with `"exact": True` (no colour wobble in `p_custom`) and `source: "base"`.
+  No ComfyUI textures (flat colours, like the Legacy sets), no look check. Not for air sets or picture sets
+  (those fall back to classic). `pick_base()` = words, else the AI's pick.
+- **B `palette`**: the free AI layout + `set_bases.palette_pass` (made props' colours pulled 35% toward the
+  palette, no textures, inside: two wall pieces replace the poster/window wall props + hanging lamps) and one
+  imported pack per set (`imported.PACK_LOCK` / `PACK_PREFER`: the first match picks the pack).
+- **C `judged`**: the free AI layout + `make_set.legacy_judge` (the vision model compares the preview with
+  `sets/_cafe.png` / `_park.png`; the lower of the two scores and its fix drive the redesign; one extra try).
+- **classic**: the free AI layout as before.
+Who picks: the Sets page and Regenerate popup (`#g-style`, `#rg-style`), the Custom Video Scenes step (cards when a
+place is new; `ep.set_style` for places made at render - `run_episode` passes it to `create_set`), random videos
+pick one of A/B/C by chance, series always `base` (`series.py` sets `set_style`). Set cards show 🏛/🎨/⚖️.
+NOT yet seen in a render: the bases were written blind (the user wants test scenes in production) - generate one
+of each in production and adjust positions/sizes from the previews.
+- Also fixed: the random video threw "Cannot set properties of null" at the end when you had left the Create page
+  (its status line was gone); `watchJob` accepts a missing box and the random flow works from `CS` state.
+
 ## Series review (2026-11-25, "What if cats ruled the world?", 4 mini-story episodes rendered in production)
 - Walking: no automatic walks in any template (`walk_every` 0) and `autodirect.MAX_WALKS` 2 per video, the opening
   walk-in included (later walks become standing shots, `follow` -> `push_in`); the writer may walk ONCE.

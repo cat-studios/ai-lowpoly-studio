@@ -894,6 +894,9 @@ def _setting_cats(setting):
     return {c for wl, cats in SETTING_CATS if ws & set(wl.split()) for c in cats}, bool(ws & INDOOR_WORDS)
 
 
+PACK_LOCK, PACK_PREFER = False, None     # make_set (style B): models for one set come from one pack
+
+
 def match(kind, looks="", setting=""):
     """The imported model for `kind`, as a prop definition (same shape as propgen's), or None.
     - The LAST word of the name is the thing itself ("mail van", "police car", "ice cream truck"): a model must be
@@ -935,6 +938,8 @@ def match(kind, looks="", setting=""):
             extra = [t for t in tags if t not in expanded and len(t) > 2]
             if unmatched and extra and not set(unmatched) & {x for t in extra for x in SYNONYMS.get(t, ())}:
                 continue                    # "plant pot" vs CookingPot: each has a word the other doesn't
+            if PACK_LOCK and PACK_PREFER and pack["id"] != PACK_PREFER:
+                continue                    # set style B: every model from the set's one pack (styles don't clash)
             score = sum(_word_score(w, tags) for w in kw) / len(kw)
             key = (mcat in want_cats, kcat is not None and mcat == kcat, score, hs, len(lt & tags), -len(tags),
                    m["id"])
@@ -942,6 +947,9 @@ def match(kind, looks="", setting=""):
                 best, best_key = (pack, m), key
     if not best:
         return None                         # nothing is that thing: the studio makes its own
+    global PACK_PREFER
+    if PACK_LOCK and not PACK_PREFER:
+        PACK_PREFER = best[0]["id"]         # the first match decides the set's pack
     d = match_model(*best, kind, looks)
     if best_key[3] < 1.0:
         d["stand_in"] = True               # not the thing itself: the closest model there is

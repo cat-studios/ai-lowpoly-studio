@@ -51,6 +51,7 @@ const COMFY_MODES = { required: "Required (always)", auto: "Only when needed", o
 
 /* ------------------------------------------------------------------ jobs */
 function watchJob(job, box, onDone) {
+  box = box || document.createElement("div");      // its page was left: keep following the job, show it nowhere
   box.innerHTML = `<div><span class="status ${job.status}">${job.status}</span> · ${esc(job.title)}</div><pre class="log"></pre>`;
   const pre = $("pre", box), st = $(".status", box);
   let from = 0;
@@ -572,7 +573,7 @@ async function pageCreate() {
   }));
 
   const directNow = async (ask = true) => {
-    const script = $("#script").value;
+    const script = $("#script")?.value ?? CS.scriptDraft ?? "";
     if (!script.trim()) throw new Error("Write a script first");
     if (ask && CS.ep.shots.length && !(await uiConfirm("Replace the current shots with new ones from the script? Changes you made to the shots are lost.", { title: "Direct shots", ok: "Replace shots" }))) return;
     const castAI = $("#cast-ai")?.checked;
@@ -583,7 +584,7 @@ async function pageCreate() {
     CS.ep.shots = r.shots; CS.ep.start = r.start; CS.ep.script = script;
     if (r.set && r.set !== CS.ep.set) CS.ep.set = r.set;
     if (r.cast && Object.keys(r.cast).length) CS.ep.cast = r.cast; else delete CS.ep.cast;
-    refreshScene(); renderShots();
+    if ($("#script")) { refreshScene(); renderShots(); }      // the page may have been left meanwhile
     const n = Object.keys(r.cast || {}).length;
     const scenes = new Set(r.shots.map((s) => s.set || CS.ep.set)).size;
     const fresh = new Set(r.shots.filter((s) => String(s.set || "").startsWith("new:")).map((s) => s.set)).size;
@@ -613,7 +614,7 @@ async function pageCreate() {
     if (!CS.keepId && CS.rendered && JSON.stringify(CS.ep) !== CS.rendered) CS.id = "";
     const id = await save();
     CS.rendered = JSON.stringify(CS.ep);
-    const job = await api("POST", "/api/render", { id, fresh_voice: $("#fresh").checked, reuse_frames: reuse });
+    const job = await api("POST", "/api/render", { id, fresh_voice: !!$("#fresh")?.checked, reuse_frames: reuse });
     watchJob(job, $("#job"), (j) => {
       if (j.status === "done") { showResult(j.result.video + "?t=" + Date.now(), j.result.sheet + "?t=" + Date.now()); toast("Video ready!"); }
       else toast("Render failed - see the log", true);
@@ -645,21 +646,24 @@ async function pageCreate() {
     $("#make-fill").style.width = "4%";
     try { await busy(btnEl, "🎲 Making…", async () => {
     // the status line and the bar move on together: step n of 4 fills (n - 1) quarters and a bit more
+    // you may be on another page by now (the render takes minutes): "Cannot set properties of null" at the end
     const status = (t) => {
-      $("#make-status").textContent = t;
+      const st = $("#make-status"), fill = $("#make-fill");
+      if (st) st.textContent = t;
       const n = Number((t.match(/^(\d)\/5/) || [])[1]);
-      if (n) $("#make-fill").style.width = ((n - 1) * 20 + 10) + "%";
-      if (t.startsWith("Done")) $("#make-fill").style.width = "100%";
+      if (n && fill) fill.style.width = ((n - 1) * 20 + 10) + "%";
+      if (t.startsWith("Done") && fill) fill.style.width = "100%";
     };
+    const setVal = (sel, v) => { const el = $(sel); if (el) el.value = v; };
     const pick = (a) => a[Math.floor(Math.random() * a.length)];
     status("1/5 Thinking up an idea…");
     const kind = (META.catalog.templates || []).find((t) => `${t.icon} ${t.name}` === picks.kind);
     CS.ep.template = kind?.id || "what_if";
     if ($("#ep-tpl")) $("#ep-tpl").value = CS.ep.template;
-    const tr = await api("POST", "/api/ai/titles", { theme: picks.topic, character: $("#ep-char").value, model: CS.model, template: CS.ep.template });
+    const tr = await api("POST", "/api/ai/titles", { theme: picks.topic, character: $("#ep-char")?.value || "", model: CS.model, template: CS.ep.template });
     if (!tr.titles?.length) throw new Error("No idea came back - try again");
     CS.ep.title = pick(tr.titles);
-    $("#ep-title").value = CS.ep.title;
+    setVal("#ep-title", CS.ep.title);
     // the length card picks the number of lines; music, ambience and look use their defaults, not a random pick
     // lines -> seconds: each line is ~4-5 s once split into beats (a 12-line "medium" video ran 60 s)
     const [lo, hi] = picks.length.startsWith("short") ? [4, 5] : picks.length.startsWith("long") ? [10, 13] : [6, 8];
@@ -669,19 +673,21 @@ async function pageCreate() {
     const when = /turning into/.test(picks.time) ? `Time: ${picks.time} - change the light along the way with [sunset], [night] or [dawn]. ` : `Time: ${picks.time}. `;
     CS.extra = `Place: ${picks.scene}. ${guest}${when}${picks.note ? "Also: " + picks.note : ""}`.trim();
     for (const k of ["music", "ambience", "look_preset"]) delete CS.ep[k];
-    $("#ep-music").value = "";
-    $("#ep-amb").value = "";
-    $("#ep-look").value = "";
+    setVal("#ep-music", ""); setVal("#ep-amb", ""); setVal("#ep-look", "");
     status("2/5 Writing the script…");
     // the script is written for the picked place (the set is made after it) - not for whatever set was selected
-    const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: "new:" + picks.scene, scene_policy: "reuse", character: $("#ep-char").value,
+    const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: "new:" + picks.scene, scene_policy: "reuse", character: $("#ep-char")?.value || "",
       model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template });
-    $("#script").value = r.script; CS.scriptDraft = r.script;
+    setVal("#script", r.script); CS.scriptDraft = r.script;
     // the scene comes from the title and the script, not the other way round
     status("3/5 Making a scene that fits the script (a few minutes)…");
     const idea = `${picks.scene}. ${CS.ep.title}. ${(r.lines || []).slice(0, 2).join(" ")}`.slice(0, 300);
     const firstLight = picks.time.split(/\W+/).map((w) => MW_LIGHT[w]).find(Boolean);       // the first light word
-    const done = await waitJob(await api("POST", "/api/sets/generate", { idea, where: "", light: firstLight || "" }), $("#make-job"));
+    // the set style is a random pick of the three (A hand-built base / B palette / C judged against Legacy)
+    const setStyle = ["base", "palette", "judged"][Math.floor(Math.random() * 3)];
+    status(`3/5 Making a scene that fits the script - ${(META.catalog.set_styles || {})[setStyle] || setStyle} (a few minutes)…`);
+    CS.ep.set_style = setStyle;
+    const done = await waitJob(await api("POST", "/api/sets/generate", { idea, where: "", light: firstLight || "", style: setStyle }), $("#make-job"));
     await refreshMeta();
     CS.ep.set = done.result.set;
     CS.ep.start = "front";
@@ -690,7 +696,7 @@ async function pageCreate() {
     status("5/5 Rendering the video (a few minutes)…");
     const id = await save();
     CS.rendered = JSON.stringify(CS.ep);
-    const job = await api("POST", "/api/render", { id, fresh_voice: $("#fresh").checked, reuse_frames: false });
+    const job = await api("POST", "/api/render", { id, fresh_voice: !!$("#fresh")?.checked, reuse_frames: false });
     const fin = await new Promise((res, rej) => watchJob(job, $("#job"), (j) => (j.status === "done" ? res(j) : rej(new Error("render failed - see the log")))));
     showResult(fin.result.video + "?t=" + Date.now(), fin.result.sheet + "?t=" + Date.now());
     status("Done - the video is ready below.");
@@ -869,7 +875,8 @@ function cwFromEpisode(ep, id) {
     cap: Number(caps.group) === 1 ? ((caps.cycle || []).length ? "one-colour" : "one-white") : "two-colour",
     beats: ep.shots.some((s) => s.beat_group != null), length: "medium", tone: "", places: "auto", note: "",
     script: ep.script || ep.shots.map((s) => s.line || "").join("\n"), start: ep.set, castAI: true, fresh: false,
-    set: ep.set, shots: ep.shots, cast: ep.cast || {}, translations: ep.translations, scenes: null };
+    set: ep.set, shots: ep.shots, cast: ep.cast || {}, translations: ep.translations, scenes: null,
+    setStyle: ep.set_style || META.settings.sets.style || "base" };
   W.directScript = W.script;
   W.shotsFor = cwKey(W);
   return W;
@@ -887,7 +894,8 @@ async function openCustomWizard() {
   const setInfo = (id) => sets.find((s) => s.id === id) || { id, name: cat.sets[id]?.name || id };
   const fresh = () => ({ step: 0, max: 0, template: "what_if", title: "", topic: "", ideas: [], character: "", co_stars: [],
     look: "", language: "", music: "__default", ambience: "__default", cap: capStyleOf(), beats: true, length: "medium",
-    tone: "", places: "auto", note: "", script: "", start: "auto", castAI: true, fresh: false });
+    tone: "", places: "auto", note: "", script: "", start: "auto", castAI: true, fresh: false,
+    setStyle: META.settings.sets.style || "base" });
   if (!CS.wiz) CS.wiz = fresh();
   const W = CS.wiz;
   const tpl = () => tpls.find((t) => t.id === W.template) || tpls[0] || { tone: "funny", lines: [6, 8] };
@@ -1096,6 +1104,9 @@ async function openCustomWizard() {
           };
           box.innerHTML = frame(W.scenes.length > 1 ? `Your story has ${W.scenes.length} places` : "Where does it happen?", `
             <p class="muted small" style="margin-top:-6px">Pick one of your sets for each place, or make a brand-new one.</p>
+            ${W.scenes.some((sc) => String(sc.choice).startsWith("new:")) ? `<p class="cw-label">How new places are made</p>
+              ${cwCards(Object.entries(META.catalog.set_styles || {}).map(([k, v]) => ({ v: k, label: v.split(" ")[0] + " " + ({ base: "Hand-built", palette: "Palette", judged: "Judged", classic: "Classic" }[k] || k),
+                sub: v.split(" ").slice(1).join(" ") })), W.setStyle, "sstyle", "four")}` : ""}
             ${W.scenes.map((sc, i) => {
               const isNew = String(sc.choice).startsWith("new:"), line = (W.script.split("\n")[sc.line] || "").replace(/\[[^\]]*\]\s*/g, "");
               return `<div class="cw-scene" style="--d:${i}">
@@ -1119,6 +1130,7 @@ async function openCustomWizard() {
             W.directScript = lines.join("\n");
             W.set = W.scenes[0].choice;
           });
+          pick("sstyle", (v) => { W.setStyle = v; });
           $$("[data-set]", box).forEach((b) => b.onclick = () => {
             const sc = W.scenes[Number(b.dataset.scene)];
             sc.choice = b.dataset.set === "new" ? "new:" + (sc.idea || sc.place) : b.dataset.set;
@@ -1137,7 +1149,7 @@ async function openCustomWizard() {
           $$("[data-make]", box).forEach((b) => b.onclick = guard(async () => {
             const i = Number(b.dataset.make), sc = W.scenes[i];
             W.making[i] = true; b.disabled = true; b.textContent = "🪄 Making it…";
-            const job = await api("POST", "/api/sets/generate", { idea: `${sc.idea || sc.place}. ${W.title}`.slice(0, 300), where: "", light: "" });
+            const job = await api("POST", "/api/sets/generate", { idea: `${sc.idea || sc.place}. ${W.title}`.slice(0, 300), where: "", light: "", style: W.setStyle });
             watchJob(job, $(`#cw-job${i}`, box), guard(async (j) => {
               W.making[i] = false;
               if (j.status !== "done" || !j.result?.set) { toast("The set couldn't be made - see the log", true); if (W.step === 5) STEPS[5](); return; }
@@ -1239,6 +1251,7 @@ async function openCustomWizard() {
             if (W.ambience !== "__default") ep.ambience = W.ambience === "__none" ? "" : W.ambience;
             if (W.cast && Object.keys(W.cast).length) ep.cast = W.cast;
             if (W.translations) ep.translations = W.translations;
+            if ((W.scenes || []).some((sc) => String(sc.choice).startsWith("new:"))) ep.set_style = W.setStyle;   // made at render
             return ep;
           };
           const finish = (how) => {
@@ -1454,6 +1467,8 @@ async function pageSets() {
         <div><button class="primary" id="sp-go">🖼 Choose a picture…</button><input type="file" id="sp-file" accept="image/png,image/jpeg,image/webp" hidden></div></div>
       <div class="inline-job" id="sp-job"></div></div>
     <div class="panel"><p class="muted small" style="margin-top:0">Every new set is made from scratch. With <b>Ollama</b> on, the AI invents the place (name, mood, colours, props, pools of water/lava/slime, pictures, background sound) and designs brand-new 3D props when the place needs something we don't have yet - give it an idea or leave it empty to be surprised. With <b>Pure random</b>, everything is rolled by dice.</p>
+      <label style="margin-bottom:8px">How it's made <span class="muted small">- 🏛 hand-built bases look like Legacy Cafe/Park; the others are the free AI layout with extras</span>
+        <select id="g-style">${options(Object.keys(META.catalog.set_styles || {}), META.settings.sets.style || "base", META.catalog.set_styles || {})}</select></label>
       <div class="row" style="align-items:end">
       <label style="flex:2">Idea (optional)<input type="text" id="g-idea" placeholder="e.g. haunted bakery, underwater office, cat café on the moon"></label>
       <label>Designer<select id="g-ai">${options(["auto", "off"], META.settings.sets.use_ollama ? "auto" : "off", { auto: "🤖 Ollama", off: "🎲 Pure random" })}</select></label>
@@ -1478,7 +1493,7 @@ async function pageSets() {
       <div class="setcard">
         ${s.preview ? `<img src="${esc(s.preview)}" alt="" loading="lazy" decoding="async">` : `<div class="noimg">no preview</div>`}
         <div class="title">${esc(s.name)}</div>
-        <div class="muted small">${LIGHT_ICON[s.light] || ""} ${esc(s.where)}${s.props ? ` · ${s.props} props` : ""}${s.textures.length ? " · 🖼 textured" : ""}</div>
+        <div class="muted small">${s.builtin ? "" : ({ base: "🏛 ", palette: "🎨 ", judged: "⚖️ " }[s.style] || "")}${LIGHT_ICON[s.light] || ""} ${esc(s.where)}${s.props ? ` · ${s.props} props` : ""}${s.textures.length ? " · 🖼 textured" : ""}</div>
         <div class="muted small" title="Places she can walk to">📍 ${esc(s.marks.join(", "))}</div>
         <div class="btns"><button data-use="${esc(s.id)}">Use</button><button data-prev="${esc(s.id)}">↻ Preview</button>
           ${s.builtin ? "" : `<button data-regen="${esc(s.id)}" title="Build this set again with other settings">🔄 Regenerate</button>
@@ -1498,7 +1513,7 @@ async function pageSets() {
     }));
   });
   $("#g-go").onclick = guard(async () => {
-    const job = await api("POST", "/api/sets/generate", { idea: $("#g-idea").value, ai: $("#g-ai").value, where: $("#g-where").value, light: $("#g-light").value, name: $("#g-name").value, comfy: $("#g-comfy").value, theme: $("#g-theme").value });
+    const job = await api("POST", "/api/sets/generate", { idea: $("#g-idea").value, ai: $("#g-ai").value, where: $("#g-where").value, light: $("#g-light").value, name: $("#g-name").value, comfy: $("#g-comfy").value, theme: $("#g-theme").value, style: $("#g-style").value });
     watchJob(job, $("#g-job"), guard(async (j) => {
       if (j.status !== "done") return toast("Set generation failed", true);
       await refreshMeta(); toast("New set ready"); pageSets();
@@ -1930,6 +1945,7 @@ const S_TABS = {
       ["ollama.design_model", "Model on the big server", "ollamapick", { from: "ollama.design_url", big: true, first: "Same as the default model" }, "The models that server already has (🔄 after changing the address). Nothing is ever downloaded there."],
       ["ollama.design_scope", "Use the big server for", "select", { options: ["3d", "text"], labels: { "3d": "Only building 3D props & explainer models", text: "All the AI's writing too (scripts, titles, sets, cast, translations, captions)" } }, "Picture checks, drawings and voices always run on this PC."],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
+      ["sets.style", "How new sets are made", "select", { options: () => Object.keys(META.catalog.set_styles || {}), labels: () => META.catalog.set_styles || {} }, "The default for new places in videos and on the Sets page (you can pick another each time). Random videos pick one of the first three by chance; series always use hand-built bases."],
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
       ["sets.look_check", "Check that new sets look like the place", "bool", {}, "The picture model looks at each new set and the AI fixes ones that read as another place (adds a few minutes)."],
       ["sets.prop_check", "Check that new props look right", "bool", {}, "Each new prop is looked at; one that fails is rebuilt, then drawn as a picture (about a minute per new prop)."],
@@ -2817,6 +2833,7 @@ document.addEventListener("click", (e) => {
 function openRegenerate(s, themes) {
   const opt = (pairs, cur) => pairs.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`).join("");
   const body = `
+    <label>How it's made<select id="rg-style">${options(Object.keys(META.catalog.set_styles || {}), s.style || META.settings.sets.style || "base", META.catalog.set_styles || {})}</select></label>
     <label>Describe the place<textarea id="rg-idea" rows="3" placeholder="e.g. a cosy cafe with wooden tables and a counter">${esc(s.description || "")}</textarea></label>
     <div class="row">
       <label>Name<input type="text" id="rg-name" value="${esc(s.name)}"></label>
@@ -2843,7 +2860,7 @@ function openRegenerate(s, themes) {
         const val = (id) => $(`#${id}`, m).value;
         const job = await api("POST", `/api/sets/${s.id}/regenerate`, {
           idea: val("rg-idea"), name: val("rg-name"), where: val("rg-where"), room: val("rg-room"),
-          floor: val("rg-floor"), theme: val("rg-theme"), light: val("rg-light"), ai: val("rg-ai"), comfy: val("rg-comfy"), seed: val("rg-seed") });
+          floor: val("rg-floor"), theme: val("rg-theme"), light: val("rg-light"), ai: val("rg-ai"), comfy: val("rg-comfy"), seed: val("rg-seed"), style: val("rg-style") });
         watchJob(job, $("#rg-job", m), (j) => {
           if (j.status === "done") { toast("Set regenerated ✓"); pageSets(); }
           else toast("Regeneration failed - the old set is backed up in sets/.trash", true);

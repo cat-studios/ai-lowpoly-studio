@@ -11,6 +11,7 @@ ComfyUI modes: required = always make textures (picture props + floor + walls/sk
 """
 import argparse
 import json
+import random
 import re
 import shutil
 import subprocess
@@ -152,6 +153,32 @@ def judge_picture(pic, place, ollama, log=print):
         return None, ""
 
 
+import catalog  # noqa: E402
+STYLES = catalog.SET_STYLES   # how a new set is made (A base / B palette / C judged / classic)
+
+
+def legacy_judge(pic, indoor, ollama, log=print):
+    """Style C: (score 1-10 or None, what to change) - the vision model compares the new set with the Legacy Cafe
+    (inside) or Park (outside) picture, the quality bar."""
+    import base64
+    ref = ROOT / "sets" / ("_cafe.png" if indoor else "_park.png")
+    if not ref.exists():
+        return None, ""
+    try:
+        r = llm.chat_json(ollama["url"], ollama.get("vision_model") or ollama["model"],
+                          "Two pictures of low-poly 3D sets for a vertical cartoon video. Picture 1 is the quality "
+                          "target. Judge picture 2 against it: a clear focal piece, things grouped and framed for a "
+                          "tall frame, a small palette of colours that go together, a dressed back wall, not "
+                          "cluttered or empty. Reply with JSON only: {\"score\": 1 to 10 (10 = as good as picture 1), "
+                          "\"fix\": \"what to add, remove or change in picture 2 (empty if nothing)\"}",
+                          "Picture 1 is the target, picture 2 is the new set.", 0.1,
+                          images=[base64.b64encode(p.read_bytes()).decode("ascii") for p in (ref, Path(pic))])
+        return max(1, min(10, int(float(r.get("score", 0))))), str(r.get("fix") or "")[:300]
+    except Exception as exc:
+        log(f"[set] Legacy comparison skipped ({exc.__class__.__name__})")
+        return None, ""
+
+
 def set_look(recipe, place, ollama, log=print):
     """(score 1-10 or None, what's wrong): the set's quick preview (no textures yet), judged by judge_picture."""
     try:
@@ -213,13 +240,31 @@ def _final_id(recipe, keep_id):
 
 
 def create_set(idea="", where=None, light=None, seed=None, name=None, ai=None, comfy_mode=None, log=print,
-               with_preview=True, image=None, keep_id=None, room=None, floor=None, theme=None):
+               with_preview=True, image=None, keep_id=None, room=None, floor=None, theme=None, style=None):
     """Make and save a brand-new set; returns its recipe. where: inside / outside / air / None (AI decides).
     theme: auto / random / generated / a theme id (see setgen.theme_for).
-    image: a picture to copy the place from (needs the vision model, see settings ollama.vision_model)."""
+    image: a picture to copy the place from (needs the vision model, see settings ollama.vision_model).
+    style: STYLES - base (A: a hand-built base the AI dresses), palette (B), judged (C), classic; default
+    Settings sets.style."""
     from progress import report
     cfg = S.load_settings()
     recipe = None
+    style = style if style in STYLES else (cfg["sets"].get("style") or "base")
+    if style == "base" and (where == "air" or image):
+        style = "classic"                        # no base for sky/space/underwater or a copied picture
+    log(f"[set] style: {STYLES[style]}")
+    if style == "base":
+        import set_bases
+        use_ai = (ai or ("auto" if cfg["sets"]["use_ollama"] else "off")) == "auto"
+        report(0.05, "Dressing a hand-built base")
+        cm = comfy_mode or cfg["comfy"]["mode"]
+        recipe = set_bases.create(idea, where, light, seed, name, ollama=cfg["ollama"] if use_ai else None, log=log,
+                                  comfy_cfg=cfg["comfy"] if cm != "off" else None)
+        comfy_mode = "off"                       # flat colours like the Legacy sets: no AI textures
+    if style in ("palette", "judged"):
+        import imported
+        imported.PACK_PREFER = None              # one pack per set: the first imported match picks it (palette)
+        imported.PACK_LOCK = style == "palette"
     theme_id = theme
     if theme == "generated":                      # the AI writes a new theme for this place and saves it
         o = cfg["ollama"]
@@ -255,7 +300,7 @@ def create_set(idea="", where=None, light=None, seed=None, name=None, ai=None, c
             make_ambience(recipe, o)
     use_ai = (ai or ("auto" if cfg["sets"]["use_ollama"] else "off")) == "auto"
     checked_id, best, feedback = None, None, ""
-    for attempt in range(1, SET_TRIES + 1):
+    for attempt in range(1, SET_TRIES + (1 if style == "judged" else 0) + 1):
         if not (use_ai and recipe is None):
             break
         o = cfg["ollama"]
@@ -293,13 +338,25 @@ def create_set(idea="", where=None, light=None, seed=None, name=None, ai=None, c
                     recipe["name"] = name
                 setgen.save(recipe)
                 report(0.4 + 0.1 * attempt, f"Checking the set looks right (try {attempt})")
+                if style == "palette":           # B: dress it before it's judged
+                    import set_bases
+                    set_bases.palette_pass(recipe, random.Random(recipe.get("seed", 1)), log)
+                    setgen.save(recipe)
                 score, problem = set_look(recipe, place, o, log)
                 if score is not None:
                     recipe["look_score"] = score
                     log(f"[set] looks like '{place[:60]}'? {score}/10" + (f" - {problem}" if problem else ""))
+                if style == "judged":            # C: and is it as good as the Legacy sets?
+                    ls, fix = legacy_judge(ROOT / "sets" / f"{recipe['id']}.png", recipe.get("indoor"), o, log)
+                    if ls is not None:
+                        log(f"[set] as good as Legacy {'Cafe' if recipe.get('indoor') else 'Park'}? {ls}/10"
+                            + (f" - {fix}" if fix else ""))
+                        if score is None or ls < score:
+                            score, problem = ls, (fix or problem)
+                        recipe["look_score"] = score
                 if best is None or (score or 0) > best.get("look_score", 0):
                     best = recipe
-                if score is not None and score < SET_PASS and attempt < SET_TRIES:
+                if score is not None and score < SET_PASS and attempt < SET_TRIES + (1 if style == "judged" else 0):
                     feedback, recipe = problem or "it doesn't look like this place", None
                     continue
             if best is not None:
@@ -314,6 +371,14 @@ def create_set(idea="", where=None, light=None, seed=None, name=None, ai=None, c
                   else setgen.generate_random(seed, where, light, name))
     elif name:
         recipe["name"] = name
+    if style == "palette":
+        import set_bases
+        set_bases.palette_pass(recipe, random.Random(recipe.get("seed", 1)), log)     # no-op if already done
+        comfy_mode = "off"                       # flat colours, not AI textures
+    if style in ("palette", "judged"):
+        import imported
+        imported.PACK_PREFER, imported.PACK_LOCK = None, False
+    recipe["style"] = style
     kinds = sorted({p["kind"] for p in recipe["props"]})
     kind = "in the air (" + recipe["air"] + ")" if recipe.get("air") else ("inside" if recipe["indoor"] else "outside")
     log(f"[set] {recipe['name']}: {kind}, {recipe['light']}, {recipe['floor']} floor, {len(recipe['props'])} props "
@@ -351,13 +416,15 @@ def main():
     ap.add_argument("--room", choices=["small", "medium", "large"])
     ap.add_argument("--floor", help="force the ground type (grass, sand, snow, road, stone, dirt...)")
     ap.add_argument("--theme", help="auto (from the words), random (free layout), generated (the AI writes a new theme), or a theme id")
+    ap.add_argument("--style", choices=list(STYLES), help="base (hand-built, A), palette (B), judged (C), classic")
     args = ap.parse_args()
     if args.replace:
         backup_set(args.replace)
     try:
         recipe = create_set(args.idea, None if args.where == "any" else args.where,
                             None if args.light == "any" else args.light, args.seed, args.name, args.ai, args.comfy,
-                            image=args.image, keep_id=args.replace, room=args.room, floor=args.floor, theme=args.theme)
+                            image=args.image, keep_id=args.replace, room=args.room, floor=args.floor, theme=args.theme,
+                            style=args.style)
     except Exception as exc:
         sys.exit(f"[set] failed: {exc}")
     print(f"SET_ID={recipe['id']}")

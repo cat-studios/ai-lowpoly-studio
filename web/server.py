@@ -508,7 +508,7 @@ def list_sets():
                     "has_3d": (SETS_DIR / f"{sid}.glb").exists(),
                     "preview": f"/setimg/{img.name}?v={int(img.stat().st_mtime)}" if img.exists() else None,
                     "props": len(rec.get("props", [])), "textures": list((rec.get("textures") or {}).keys()),
-                    "where": "inside" if indoor else "outside", "light": light,
+                    "where": "inside" if indoor else "outside", "light": light, "style": rec.get("style") or "classic",
                     "updated": rec.get("created") or (js.stat().st_mtime if js.exists() else 0)})
     out.sort(key=lambda s: -s["updated"])
     return out
@@ -976,6 +976,8 @@ class Handler(BaseHTTPRequestHandler):
                     args += ["--comfy", b["comfy"]]
                 if b.get("theme") and re.fullmatch(r"[a-z0-9_]{1,40}", str(b["theme"])):
                     args += ["--theme", str(b["theme"])]          # auto / random / generated / a theme id
+                if b.get("style") in ("base", "palette", "judged", "classic"):
+                    args += ["--style", b["style"]]               # how it's made (set styles A, B, C, classic)
                 title = f"New set: {b['idea'][:30]}" if b.get("idea") else "New random set"
                 return self.send_json(submit(set_job(args, title)).to_dict())
             if not re.fullmatch(r"[a-z0-9_]{1,80}", arg or ""):
@@ -1004,7 +1006,7 @@ class Handler(BaseHTTPRequestHandler):
                 args = ["--replace", arg]
                 for key, flag in (("idea", "--idea"), ("name", "--name"), ("room", "--room"), ("floor", "--floor"),
                                   ("where", "--where"), ("light", "--light"), ("ai", "--ai"), ("comfy", "--comfy"),
-                                  ("theme", "--theme")):
+                                  ("theme", "--theme"), ("style", "--style")):
                     val = str(b.get(key) or "").strip()
                     if val and val not in ("any", "auto-room"):
                         args += [flag, val[:200]]

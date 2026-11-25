@@ -74,7 +74,8 @@ DEFAULTS = {
                "design_url": "",                     # another Ollama just for that ("" = "url"; unreachable = "url")
                "design_scope": "3d"},                # "3d" = only 3D design goes there; "text" = all the AI's writing
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
-    "sets": {"use_ollama": True,           # let Ollama design new sets (falls back to pure random)
+    "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic
+             "use_ollama": True,           # let Ollama design new sets (falls back to pure random)
              "look_check": True,           # the picture model checks new sets (and redesigns ones that don't fit)
              "prop_check": True},          # ...and new props (a redesign, then a drawn picture) - slower, better
     # Postiz (self-hosted or cloud): finished videos are sent as DRAFTS only
