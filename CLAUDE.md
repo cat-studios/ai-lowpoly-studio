@@ -276,7 +276,7 @@ Round 2b (v2 → `_v3`/`_v4`, same script directed again):
 Every prop the studio makes (AI shapes or a body template: duck, van, ant) gets `propgen.look_checked`: a check
 render (`check_render`: blender_build straight, the prop as a one-shot cutaway, 270x480) scored by the vision model
 (`look_score`, 1-10, `PROP_PASS` = 5 - was 6, too slow); a fail → the AI redesigns it once from the critique (keeping the real size);
-a second fail → `complex: true` → a drawn sprite (ComfyUI + sprite_cut, so only where voice-venv exists - in dev
+a second fail scoring under 3 → `complex: true` → a drawn sprite (since the 3D-first change, see Prop priority) (ComfyUI + sprite_cut, so only where voice-venv exists - in dev
 it keeps the best shape, marked `checked: false`). Library props made before are checked once on their next use.
 Templates no longer force `complex` (they're checked like anything else). Mailbox: 4/10 twice → sprite (54 s);
 rubber duck via the bird template: 8/10 (19 s). `run_episode.drop_weak_cutaways`: a cutaway only shows a person,
@@ -644,9 +644,18 @@ camera.
   imported kinds get the key `imp_<kind>` so the built-in of the same name isn't used - and `resolve_cast`).
   Matching: at least half of the kind's words must be in the model's file or folder name. Imported props render
   through `p_model` (normalised to their height, on the ground).
-- Generated props: the design guide asks for `"complex": true` only for things too detailed for primitives. Only
-  `needs_picture` props get a ComfyUI picture. `p_custom` uses the parts; the sprite (billboarded per shot camera
-  with LOCKED_TRACK) only when there are no parts or it's complex. Small "table" things go on tables/counters.
+- Generated props are a 3D model OR a 2D sprite, never both (the user, 2026-11-25): `propgen.shown_as_sprite` /
+  `needs_picture` = no parts, or `complex` (= sprite form). `complex` is set ONLY by a clear look-check fail
+  (`look_checked`: best score after the redesign < `SPRITE_BELOW` 3 - a 3-4 "bit off" stays 3D; the 4B judge gives
+  most fine props 3-4, which had made 45 of 60 dev props flat) or the Assets page (🖼 Make it a sprite = `redraw`
+  sets `complex` + `form: "sprite"`; 🧊 Use the 3D model = PUT `form: "3d"`). The AI's own "complex" guess is
+  ignored (`clean()`), and `library()` turns old guessed / 3-4-score ones back into 3D on load. Only sprite-form
+  props get a ComfyUI drawing (cast things, old set props and cutaways no longer get one; cutaways no longer swap a
+  3D model for its drawing). Explainers: a closed drawing only when its look score < 3. `p_custom` uses the parts;
+  the sprite (billboarded per shot camera with LOCKED_TRACK) only for sprite form. Library form changes reach sets
+  (`embed_set`) and older episodes' cast copies (`resolve_cast`). The look check's render is kept as the 3D prop's
+  picture (`assets/props/<kind>.3d.png`, `/propimg/`). Assets has two tabs: 🧊 Props (3D) / 🖼 Sprites (2D)
+  (`prop_info["form"]`). Small "table" things go on tables/counters.
 - Library edits (Assets → Props) win over the copies embedded in sets (`run_episode.embed_set`).
 - Imported packs: `assets/imported/packs/<pack>/` (originals), `_converted/` (MDL → OBJ), `previews/<id>.png`.
   Deleting a pack moves its folder to `packs/.trash`.

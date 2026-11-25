@@ -327,13 +327,19 @@ def import_model_job(cid, vrm):
 
 
 def prop_info(kind, d, used=None):
-    img = ROOT / "assets" / "props" / f"{kind}.png"
+    """A made prop is a 3D model OR a 2D sprite (propgen.shown_as_sprite): "form", and the picture that shows it -
+    the drawing for a sprite, the look check's render (<kind>.3d.png) for a 3D model."""
+    import propgen
+    img, img3 = ROOT / "assets" / "props" / f"{kind}.png", ROOT / "assets" / "props" / f"{kind}.3d.png"
+    sprite = propgen.shown_as_sprite(d) and img.exists()
     return {"kind": kind, "name": d.get("name") or kind.replace("_", " "), "looks": d.get("looks", ""),
             "height": d.get("height"), "width": d.get("width"), "on": d.get("on") or "floor",
             "place": d.get("place"), "parts": len(d.get("parts", [])), "by": d.get("by", ""),
-            "created": d.get("created") or 0,
-            "needs_picture": bool(d.get("complex") or not d.get("parts")),
-            "sprite": f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}" if d.get("sprite") and img.exists() else None,
+            "created": d.get("created") or 0, "explainer": bool(d.get("explainer")),
+            "form": "sprite" if propgen.needs_picture(d) else "3d",
+            "needs_picture": propgen.needs_picture(d),
+            "sprite": f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}" if sprite else None,
+            "preview3d": f"/propimg/{kind}.3d.png?v={int(img3.stat().st_mtime)}" if img3.exists() else None,
             "used_in": used if used is not None else []}
 
 
@@ -379,8 +385,11 @@ def _def_preview(kind, d):
     if d.get("model"):
         mid = d["model"].get("id", "")
         return f"/impimg/{mid}.png" if mid and (ROOT / "assets" / "imported" / "previews" / f"{mid}.png").exists() else None
-    img = ROOT / "assets" / "props" / f"{kind}.png"
-    return f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}" if d.get("sprite") and img.exists() else None
+    import propgen
+    img, img3 = ROOT / "assets" / "props" / f"{kind}.png", ROOT / "assets" / "props" / f"{kind}.3d.png"
+    if propgen.shown_as_sprite(d) and img.exists():
+        return f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}"
+    return f"/propimg/{kind}.3d.png?v={int(img3.stat().st_mtime)}" if img3.exists() else None
 
 
 def layout_choices():
@@ -642,6 +651,8 @@ class Handler(BaseHTTPRequestHandler):
                 if b.get("on") in ("floor", "table", "wall"):
                     d["on"] = b["on"]
                     d["size_checked"] = True
+                if b.get("form") == "3d" and d.get("parts"):      # back to its 3D shapes (Assets: Use the 3D model)
+                    d["complex"], d["form"] = False, "3d"
                 propgen._save(d)
                 return self.send_json({"ok": True, "prop": prop_info(sub, d)})
             if method == "POST" and sub == "missing":    # pictures for every prop that has none yet
@@ -787,7 +798,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(OUTPUT / name)
             if method == "GET" and path.startswith("/propimg/"):
                 name = path[len("/propimg/"):]
-                if not re.fullmatch(r"[\w-]+\.png", name):
+                if not re.fullmatch(r"[\w-]+(\.3d)?\.png", name):     # the drawing, or a 3D prop's check render
                     return self.fail("not found", 404)
                 return self.send_file(ROOT / "assets" / "props" / name)
             if method == "GET" and path.startswith("/animimg/"):         # animations' check pictures
@@ -923,7 +934,11 @@ class Handler(BaseHTTPRequestHandler):
                 f = propgen.LIB / f"{arg}.json"
                 if f.exists():        # sets that already use it keep their own copy
                     (propgen.LIB / ".trash").mkdir(exist_ok=True)
-                    f.replace(propgen.LIB / ".trash" / f"{arg}-{stamp()}.json")
+                    st = stamp()
+                    f.replace(propgen.LIB / ".trash" / f"{arg}-{st}.json")
+                    # its 3D picture goes with it (the drawing stays: sets using it point at that file)
+                    if (propgen.LIB / f"{arg}.3d.png").exists():
+                        (propgen.LIB / f"{arg}.3d.png").replace(propgen.LIB / ".trash" / f"{arg}-{st}.3d.png")
                 return self.send_json({"ok": True})
 
         if head == "sets":

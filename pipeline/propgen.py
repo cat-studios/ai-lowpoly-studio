@@ -30,9 +30,6 @@ GUIDE = (
     "(a 1 m tall box on the ground has z=0.5). The front faces -y (towards the camera). size is the full "
     "width (x), depth (y) and height (z). rot is in degrees (optional). glow=true for things that give off "
     "light (fire, lava, screens, lamps, magic) - they ignore shading. rock = a lumpy faceted blob.\n"
-    'Also reply "complex": true ONLY when the object is too detailed to build from simple boxes, cylinders and '
-    "spheres (a person or animal, a face, text, a detailed machine); otherwise false. Simple things (a table, a "
-    "tree, a cup, a rock, a car) are false.\n"
     "Use 2 to 14 parts. Keep it chunky and readable from far away: few big parts, bold distinct colours, no "
     "tiny details. Real-world scale: a person is 1.6 m tall.\n"
     "Build it like a sculpture: start with the biggest part on the ground at x=0, y=0, then attach each other "
@@ -89,6 +86,11 @@ def library():
             try:
                 d = json.loads(p.read_text(encoding="utf-8-sig"))
                 if d.get("parts"):
+                    if d.get("complex") and d.get("form") != "sprite" and (
+                            d.get("checked") is not False or (d.get("look_score") or 0) >= SPRITE_BELOW):
+                        # made before 3D-first: "complex" was the AI's guess or a 3-4/10 check - it's a 3D prop
+                        # again (unchecked ones are checked on their next use; only a clear fail is a sprite)
+                        d["complex"] = False
                     out[d.get("kind", p.stem)] = d
             except Exception:
                 continue
@@ -180,7 +182,9 @@ def clean(raw, kind, looks="", by="ollama", settle=True):
         place = "far" if height > 3 else ("scatter" if radius < 0.4 else "near")
     return {"kind": kind, "name": kind.replace("_", " "), "looks": str(looks)[:200], "place": place,
             "radius": round(min(radius, 4.0), 2), "height": round(height, 2), "parts": parts,
-            "complex": bool(raw.get("complex")),
+            # always 3D first: only a failed look check (look_checked) or your choice on the Assets page makes
+            # it a 2D sprite - the AI's own "too complex" guess made most props flat pictures
+            "complex": False,
             "by": by, "created": time.time()}
 
 
@@ -466,6 +470,13 @@ def apply_template(d, kind, looks, tpl):
     return (make_vehicle if tpl[0] == "vehicle" else make_animal)(d, kind, looks, tpl[1])
 
 
+def shown_as_sprite(d):
+    """A made prop is EITHER a 3D model (its parts) OR a 2D sprite (its drawing) - never both. It's a sprite only
+    when it has no shape parts, or its shapes failed the look check (complex): imported > 3D > sprite.
+    blender_sets.p_custom uses the same rule."""
+    return bool(d.get("sprite") and (ROOT / d["sprite"]).exists() and needs_picture(d))
+
+
 def needs_picture(d):
     """Only objects too detailed for simple 3D shapes (or with no shape at all) get a 2D picture.
     Priority: imported model > generated 3D model > 2D picture."""
@@ -678,6 +689,8 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
 
 # ----------------------------------------------------------------------------- does it look like what it is?
 PROP_PASS = 5                                  # vision score (1-10) that counts as "looks like it" (forgiving)
+SPRITE_BELOW = 3       # a 3D design that still scores under this after its redesign becomes a 2D sprite - the small
+                       # vision model gives most fine 3D props 3-4, which made nearly everything a flat picture
 
 
 def check_render(d, log=print):
@@ -717,13 +730,20 @@ def check_render(d, log=print):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def look_score(d, ollama, log=print):
-    """(score 1-10 or None, what's wrong): the vision model looks at the check render."""
+def look_score(d, ollama, log=print, preview=None):
+    """(score 1-10 or None, what's wrong): the vision model looks at the check render. The render is also kept as
+    the 3D prop's picture for the Assets page (assets/props/<preview or kind>.3d.png)."""
     import base64
+    import shutil
     import llm
     pic = check_render(d, log)
     if not pic:
         return None, ""
+    try:
+        LIB.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(pic, LIB / f"{slug(preview or d['kind'])}.3d.png")
+    except OSError:
+        pass
     try:
         r = llm.chat_json(ollama["url"], ollama.get("vision_model") or ollama["model"],
                           "You check simple low-poly 3D props (built from a few boxes, cylinders and spheres) in a "
@@ -781,8 +801,12 @@ def look_checked(d, kind, looks, setting, ollama, log=print):
         nd.update({k: best[k] for k in ("height", "width", "on", "size_checked", "place") if k in best})
         nd["radius"] = round(min(4.0, float(nd["radius"]) * f), 2)
         d = nd
-    best = dict(best, checked=False, complex=True)   # failed twice: a drawn picture reads better than shapes
-    log(f"[props] '{kind}' still doesn't look right - it gets a drawn picture (sprite) instead")
+    if (best.get("look_score") or 0) < SPRITE_BELOW:     # clearly not the thing, even redesigned: a 2D sprite
+        best = dict(best, checked=False, complex=True)
+        log(f"[props] '{kind}' still doesn't look like it ({best.get('look_score')}/10) - it becomes a 2D sprite")
+    else:                                              # "a bit off" stays 3D: sprites are the rare exception
+        best = dict(best, checked=False, complex=False)
+        log(f"[props] '{kind}' is a bit off ({best.get('look_score')}/10) but stays a 3D model")
     return best
 
 
@@ -1056,7 +1080,7 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
     have = library().get(key)
     if reuse and have and have.get("explainer"):
         log(f"[props] reusing explainer '{kind}' from the prop library")
-        if comfy_cfg and not have.get("sprite"):
+        if comfy_cfg and not have.get("sprite") and (have.get("look_score") or 10) < SPRITE_BELOW:     # its 3D didn't read: drawn when closed
             have = add_sprite(dict(have, looks=have.get("looks") or kind.replace("_", " ")), comfy_cfg, log)
             if have.get("sprite") and save:
                 _save(have)
@@ -1097,7 +1121,7 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
             f"cover, moves: {', '.join(m['part'] + ' ' + m['do'] for m in d['moves']) or 'none'}")
         score, problem = (None, "")
         if _prop_check_on():
-            score, problem = look_score(dict(d, kind=kind), ollama, log)
+            score, problem = look_score(dict(d, kind=kind), ollama, log, preview=key)
         if score is not None:
             d["look_score"] = score
             log(f"[props] explainer '{kind}' looks like it? {score}/10" + (f" - {problem}" if problem else ""))
@@ -1111,9 +1135,10 @@ def design_explainer(kind, looks="", lines=(), ollama=None, log=print, save=True
         d.update(explainer=True, moves=[], kind=key)
         return d
     best["checked"] = (best.get("look_score") or PROP_PASS) >= PROP_PASS
-    if comfy_cfg:
-        # closed, it's a drawn picture of the real thing (recognisable at a glance); "open" swaps in the cut-away
-        # model with its moving parts (blender_sets.p_explainer / blender_cast.explain_moves)
+    if comfy_cfg and (best.get("look_score") or 10) < SPRITE_BELOW:
+        # 3D first: only when the closed model doesn't look like the real thing is it shown closed as a drawn
+        # picture; "open" always swaps in the cut-away model with its moving parts (blender_sets.p_explainer /
+        # blender_cast.explain_moves)
         best = add_sprite(best, comfy_cfg, log)
     if save:
         _save(best)
@@ -1142,6 +1167,8 @@ def redraw(kind, looks=None, log=print):
     report(0.95, "Saving")
     if not d.get("sprite"):
         raise SystemExit("ComfyUI couldn't draw it (is ComfyUI running?) - the old picture is in assets/props/.trash")
+    if d.get("parts") and not d.get("explainer"):
+        d["complex"], d["form"] = True, "sprite"   # you asked for a drawing: a 2D sprite from now on (Assets can switch back)
     _save(d)
     log(f"[props] redrew '{kind}'")
 

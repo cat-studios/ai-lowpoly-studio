@@ -344,9 +344,6 @@ def debris(name, at, colors, f_hit, count=12):
 
 def animate_thing(who, info, side):
     d = info.get("def")
-    is_cut = any(e.get("cutaway") for s in B.SHOTS for e in s.get("events", []) or [] if e.get("who") == who)
-    if is_cut and d and d.get("sprite") and d.get("parts"):
-        d = dict(d, complex=True)     # a cutaway fills the frame: its drawn picture reads better than a few blocks
     root = B.blender_sets.make_thing(who, info.get("prop", who), d, B.types.SimpleNamespace(
         prim=B.prim, empty=B.empty, mat=B.mat, add_fog=B.add_fog, hexcol=B.hexcol, FOG=B.FOG,
         setup_world=B.setup_world, add_sun=B.add_sun, scene=B.scene))
@@ -472,7 +469,7 @@ def animate_thing(who, info, side):
         shadow["r"] = max(0.2, r * 0.8) * max(sc, 1e-4)
         B.write_shadow(shadow, loc if vis else AWAY, fr, base_z=0.0 if vis else AWAY.z)
     # what it really looks like on screen: a sprite's drawn height and width, else the shape's size
-    if d and d.get("sprite"):
+    if d and d.get("sprite") and (not d.get("parts") or d.get("complex")):     # shown as its 2D sprite
         asp = float(d.get("sprite_aspect", 1.0))
         hs = max(0.2, min(6.0, height))
         if d.get("width"):

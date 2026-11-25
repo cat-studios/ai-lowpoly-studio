@@ -954,7 +954,7 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
     for k, d in list(defs.items()):            # older library props get a real size and a drawing now
         if d.get("source") == "imported":      # real models are used as they are
             continue
-        if (comfy_cfg and not d.get("sprite")) or (ollama and not d.get("size_checked")):
+        if (comfy_cfg and not d.get("sprite") and propgen.needs_picture(d)) or (ollama and not d.get("size_checked")):
             defs[k] = propgen.design(k, d.get("looks", ""), setting, ollama, log, comfy_cfg=comfy_cfg)
     use_custom(defs, indoor)
     wanted = [(k, n, pl or (defs[k].get("place") or "" if k in defs else "")) for k, n, pl in wanted

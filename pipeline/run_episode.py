@@ -828,8 +828,13 @@ def resolve_cast(ep, cfg, log=print):
                 info["def"] = propgen.design(kind, info.get("looks") or who.replace("_", " "), setting,
                                              cfg.get("ollama"), log=lambda m: log("  " + m), comfy_cfg=comfy_cfg,
                                              use_imported=not wants_generated)
-        elif comfy_cfg and not info["def"].get("sprite") and info["def"].get("source") != "imported":
-            info["def"] = propgen.add_sprite(dict(info["def"]), comfy_cfg, log=lambda m: log("  " + m))
+        else:
+            lib_d = propgen.library().get(info["def"].get("kind") or "")
+            if lib_d and info["def"].get("source") != "imported":    # 3D model or 2D sprite: the library decides
+                info["def"] = dict(info["def"], complex=bool(lib_d.get("complex")))
+            if (comfy_cfg and not info["def"].get("sprite") and info["def"].get("source") != "imported"
+                    and propgen.needs_picture(info["def"])):   # a 3D model stays 3D - only sprite-form props get drawn
+                info["def"] = propgen.add_sprite(dict(info["def"]), comfy_cfg, log=lambda m: log("  " + m))
         cast[who] = info
     ep["cast"] = cast
     # people don't "crash in", "fall" or "fly by" (things' verbs the AI sometimes gives them): they run in - a
@@ -996,10 +1001,12 @@ def embed_set(ep):
         cfg = S.load_settings()
         comfy_cfg = cfg["comfy"] if cfg["comfy"].get("mode", "auto") != "off" else None
         for k, d in list(recipe["custom_props"].items()):
-            if lib.get(k, {}).get("sprite"):          # edits made on the Assets page reach every set using it
-                recipe["custom_props"][k] = {**d, **{f: lib[k][f] for f in ("sprite", "sprite_aspect", "height", "width",
-                                                                            "on", "looks") if f in lib[k]}}
-            elif comfy_cfg and not d.get("sprite") and d.get("source") != "imported" and propgen.needs_picture(d):
+            if k in lib and lib[k].get("source") != "imported":   # Assets page edits reach every set using it,
+                # including 3D model <-> 2D sprite (complex)
+                recipe["custom_props"][k] = d = {**d, "complex": bool(lib[k].get("complex")),
+                                                 **{f: lib[k][f] for f in ("sprite", "sprite_aspect", "height", "width",
+                                                                           "on", "looks") if f in lib[k]}}
+            if comfy_cfg and not d.get("sprite") and d.get("source") != "imported" and propgen.needs_picture(d):
                 nd = propgen.add_sprite(dict(lib.get(k) or d), comfy_cfg)
                 if nd.get("sprite"):
                     propgen._save(nd)

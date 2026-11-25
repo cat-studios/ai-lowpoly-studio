@@ -137,11 +137,14 @@ pictures) and fails if ComfyUI is off · **Only when needed** only draws picture
 never.
 
 ### Assets
-- **🧱 Props** - every object made for your sets and scripts. Click one to see it big, fix its description, size or
-  where it sits (floor / table / wall), 🎨 **Redraw** it with ComfyUI, or 🗑 delete it (moved to
-  `assets/props/.trash`). Edits apply to every set that uses it on its next render. Props are used in this order:
-  an imported model, then a generated 3D model (simple shapes), then a 2D picture (only for things too detailed for
-  simple shapes).
+- **🧊 Props (3D)** and **🖼 Sprites (2D)** - every object made for your sets and scripts is EITHER a 3D model built
+  from simple shapes OR a flat 2D picture drawn by ComfyUI, never both. Things are used in this order: one of your
+  imported models, then a made 3D model, then - rarely - a sprite: only when the made 3D model still clearly doesn't
+  look like the thing after a redesign (the picture model's look check). A 3D prop shows the look check's picture.
+  Click one to see it big, fix its description, size or where it sits (floor / table / wall), or 🗑 delete it
+  (moved to `assets/props/.trash`). A 3D prop can be turned into a sprite (🖼 **Make it a sprite**) and a sprite
+  back into its 3D model (🧊 **Use the 3D model**); sprites can be 🎨 **Redrawn**. Edits apply to every set and
+  video that uses it on its next render.
 - **📦 Imported** - asset packs you upload as a zip of OBJ, FBX, BLEND or MDL models (folders inside are fine).
   Each model gets a picture. MDL files from Quake 1, Half-Life and Source are converted (not yet tried on real
   game files). Models are sorted into categories made from their own names (Vehicles, Animals, Furniture, Food...)

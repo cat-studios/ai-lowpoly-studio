@@ -668,8 +668,9 @@ def p_explainer(r, p, d):
     moves = d.get("moves") or []
     info = {"groups": {}, "cover": None, "closed": None, "diagram": None}
     holder = r
-    if d.get("sprite") and (PROJECT / d["sprite"]).exists():
-        # closed it's the drawn picture of the real thing; the cut-away model takes its place when it opens
+    if d.get("sprite") and (PROJECT / d["sprite"]).exists() and (d.get("look_score") or 10) < 3:   # propgen.SPRITE_BELOW
+        # only when the closed 3D model failed its look check is it shown closed as the drawn picture of the real
+        # thing; the cut-away model takes its place when it opens
         info["closed"] = H.empty(f"{p['kind']}__closed", r, (0, 0, 0))
         p_sprite(info["closed"], p, d)
         holder = info["diagram"] = H.empty(f"{p['kind']}__diagram", r, (0, 0, 0))

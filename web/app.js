@@ -2224,17 +2224,20 @@ async function pageAssets(tab) {
   const [props, fx, music, imp, actors, anims] = await Promise.all([api("GET", "/api/assets/props"), api("GET", "/api/assets/fx"), api("GET", "/api/music"), api("GET", "/api/imported"), api("GET", "/api/actors"), api("GET", "/api/anims")]);
   const nSfx = Object.keys(META.sfx || {}).length;
   const nImp = imp.packs.reduce((n, p) => n + p.models.length, 0);
-  const tabs = [["props", "🧱", "Props", props.length], ["imported", "📦", "Imported", nImp], ["actors", "🧍", "Actors", actors.actors.length],
+  // a made prop is a 3D model OR a 2D sprite, never both (propgen.shown_as_sprite): two tabs
+  const props3d = props.filter((p) => p.form === "3d"), sprites = props.filter((p) => p.form === "sprite");
+  const tabs = [["props", "🧊", "Props (3D)", props3d.length], ["sprites", "🖼", "Sprites (2D)", sprites.length], ["imported", "📦", "Imported", nImp], ["actors", "🧍", "Actors", actors.actors.length],
                 ["anims", "🕺", "Animations", anims.filter((a) => !a.builtin).length], ["fx", "✨", "Effects", fx.length], ["music", "🎵", "Music", music.length], ["sfx", "🔊", "Sounds", nSfx]];
   app.innerHTML = `
     <div class="assets-head">
-      <div><h2>Assets</h2><p class="muted small">Everything the studio made for you or you added - props drawn for your sets and scripts, particle effects, music and sounds.</p></div>
+      <div><h2>Assets</h2><p class="muted small">Everything the studio made for you or you added - 3D props and 2D sprites for your sets and scripts, particle effects, music and sounds.</p></div>
     </div>
     <div class="seg" role="tablist">${tabs.map(([k, ic, label, n]) => `<button role="tab" class="seg-btn ${k === AS_TAB ? "on" : ""}" data-astab="${k}"><span class="seg-ic">${ic}</span>${label}<span class="seg-n">${n}</span></button>`).join("")}</div>
     <div id="as-body"></div>`;
   $$("[data-astab]").forEach((b) => b.onclick = () => { AS_TAB = b.dataset.astab; location.hash = "#assets"; pageAssets(); });
   const body = $("#as-body");
-  if (AS_TAB === "props") return assetsProps(body, props);
+  if (AS_TAB === "props") return assetsProps(body, props3d, "3d");
+  if (AS_TAB === "sprites") return assetsProps(body, sprites, "sprite");
   if (AS_TAB === "imported") return assetsImported(body);
   if (AS_TAB === "actors") return assetsActors(body, actors);
   if (AS_TAB === "anims") return assetsAnims(body, anims);
@@ -2292,11 +2295,12 @@ function assetsAnims(box, anims) {
 }
 
 /* ---- props */
+const propPic = (p) => (p.form === "sprite" ? p.sprite : p.preview3d);
 function propCard(p) {
   const used = p.used_in.length;
   return `<div class="asset-card" data-prop="${esc(p.kind)}" tabindex="0" title="${esc(p.looks)}">
-    <div class="asset-thumb checker">${p.sprite ? `<img src="${esc(p.sprite)}" alt="${esc(p.name)}" loading="lazy">`
-      : `<div class="asset-noimg"><span>🧱</span><small>shapes only</small></div>`}</div>
+    <div class="asset-thumb checker">${propPic(p) ? `<img src="${esc(propPic(p))}" alt="${esc(p.name)}" loading="lazy">`
+      : `<div class="asset-noimg"><span>${p.form === "3d" ? "🧊" : "🖼"}</span><small>${p.form === "3d" ? "3D model - picture after its next look check" : "not drawn yet"}</small></div>`}</div>
     <div class="asset-info">
       <div class="asset-name">${esc(titleCase(p.name))}</div>
       <div class="asset-meta">
@@ -2307,38 +2311,41 @@ function propCard(p) {
     </div>
     <div class="asset-actions">
       <button data-pa="edit" title="View & edit">✏️</button>
-      <button data-pa="redraw" title="Draw it again">🎨</button>
+      ${p.form === "sprite" ? '<button data-pa="redraw" title="Draw it again">🎨</button>' : ""}
       <button data-pa="del" class="danger" title="Delete">🗑</button>
     </div></div>`;
 }
 
-function assetsProps(box, props) {
-  const filters = { all: "All", drawn: "Drawn", shapes: "Shapes only", unused: "Not in a set" };
+function assetsProps(box, props, form) {
+  const filters = { all: "All", unused: "Not in a set" };
+  if (!filters[AS_FILTER]) AS_FILTER = "all";
   const keep = (p) => (!AS_Q || `${p.kind} ${p.looks}`.toLowerCase().includes(AS_Q.toLowerCase()))
-    && (AS_FILTER === "all" || (AS_FILTER === "drawn" && p.sprite) || (AS_FILTER === "shapes" && !p.sprite)
-        || (AS_FILTER === "unused" && !p.used_in.length));
-  const missing = props.filter((p) => !p.sprite && p.needs_picture).length;
+    && (AS_FILTER === "all" || (AS_FILTER === "unused" && !p.used_in.length));
+  const missing = form === "sprite" ? props.filter((p) => !p.sprite).length : 0;
   box.innerHTML = `
     ${missing ? `<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-      <span style="flex:1">${missing} prop${missing > 1 ? "s have" : " has"} no picture yet. New props get theirs automatically; this draws the rest.</span>
+      <span style="flex:1">${missing} sprite${missing > 1 ? "s aren't" : " isn't"} drawn yet. New sprites get theirs automatically; this draws the rest.</span>
       <button class="primary" id="pr-missing">🎨 Draw ${missing} missing picture${missing > 1 ? "s" : ""}</button><div class="inline-job" id="pr-missing-job" style="width:100%"></div></div>` : ""}
     <div class="asset-toolbar">
-      <div class="search"><span>🔍</span><input type="text" id="as-q" placeholder="Search props…" value="${esc(AS_Q)}"></div>
+      <div class="search"><span>🔍</span><input type="text" id="as-q" placeholder="Search ${form === "3d" ? "props" : "sprites"}…" value="${esc(AS_Q)}"></div>
       <div class="chips-row">${Object.entries(filters).map(([k, v]) => `<button class="chip-btn ${k === AS_FILTER ? "on" : ""}" data-af="${k}">${v}</button>`).join("")}</div>
       <span class="muted small" id="as-count"></span>
     </div>
     <div class="asset-grid" id="as-grid"></div>
-    <p class="muted small asset-foot">Props are drawn by ComfyUI the first time a set or script needs them, then reused. Edits here apply to every set that uses the prop on its next render.</p>`;
+    <p class="muted small asset-foot">${form === "3d"
+      ? "3D props are built by the AI from simple shapes when a set or script needs one (your imported models are used first), then reused. Each is looked at by the picture model; one that doesn't look like the real thing becomes a 2D sprite."
+      : "Sprites are flat 2D pictures drawn by ComfyUI - used only for things a 3D prop couldn't show well, or that you chose to draw."} Edits here apply to every set that uses it on its next render.</p>`;
   const draw = () => {
     const list = props.filter(keep);
     $("#as-count").textContent = `${list.length} of ${props.length}`;
-    $("#as-grid").innerHTML = list.map(propCard).join("") || `<div class="empty"><div class="empty-ic">🧱</div><p>${props.length ? "Nothing matches." : "No props yet - generate a set with an idea, or bring something into a script with +name."}</p></div>`;
+    $("#as-grid").innerHTML = list.map(propCard).join("") || `<div class="empty"><div class="empty-ic">${form === "3d" ? "🧊" : "🖼"}</div><p>${props.length ? "Nothing matches."
+      : form === "3d" ? "No 3D props yet - generate a set with an idea, or bring something into a script with +name." : "No sprites - every made prop is a 3D model so far."}</p></div>`;
     $$(".asset-card", $("#as-grid")).forEach((card) => {
       const p = props.find((x) => x.kind === card.dataset.prop);
       card.onclick = (e) => { if (!e.target.closest("button")) editProp(p); };
       card.onkeydown = (e) => { if (e.key === "Enter") editProp(p); };
       $("[data-pa=edit]", card).onclick = () => editProp(p);
-      $("[data-pa=redraw]", card).onclick = () => redrawProp(p);
+      if ($("[data-pa=redraw]", card)) $("[data-pa=redraw]", card).onclick = () => redrawProp(p);
       $("[data-pa=del]", card).onclick = guard(() => deleteProp(p));
     });
   };
@@ -2365,7 +2372,7 @@ async function redrawProp(p, looks) {
     buttons: [{ label: "Close", primary: true }],
     onOpen: (m, close) => watchJob(job, $("[data-rj]", m), (j) => {
       toast(j.status === "done" ? `${titleCase(p.name)} redrawn` : "Redraw failed - see the log", j.status !== "done");
-      if (j.status === "done") { close(); pageAssets(); }
+      if (j.status === "done") { close(); pageAssets("sprites"); }      // a drawing makes it a 2D sprite
     }) });
 }
 
@@ -2373,7 +2380,7 @@ function editProp(p) {
   const used = p.used_in.length ? p.used_in.map((s) => `<span class="chip">${esc(s.name)}</span>`).join("") : `<span class="muted small">Not used in a saved set yet.</span>`;
   return openModal({ title: titleCase(p.name), wide: true,
     body: `<div class="prop-edit">
-      <div class="prop-big checker">${p.sprite ? `<img src="${esc(p.sprite)}" alt="">` : `<div class="asset-noimg"><span>🧱</span><small>No drawing yet - built from shapes. Redraw to give it a picture.</small></div>`}</div>
+      <div class="prop-big checker">${propPic(p) ? `<img src="${esc(propPic(p))}" alt="">` : `<div class="asset-noimg"><span>${p.form === "3d" ? "🧊" : "🖼"}</span><small>${p.form === "3d" ? "A 3D model built from shapes - its picture appears after its next look check." : "Not drawn yet - press 🎨 Redraw."}</small></div>`}</div>
       <div class="prop-form">
         <label class="modal-field">Description <span class="muted">(what it looks like - used when it's drawn)</span>
           <textarea rows="3" data-f="looks">${esc(p.looks)}</textarea></label>
@@ -2383,11 +2390,17 @@ function editProp(p) {
           <label class="modal-field">Sits on<select data-f="on">${options(["floor", "table", "wall"], p.on, ON_ICON)}</select></label>
         </div>
         <div class="modal-field"><span class="label">Used in</span><div class="chips-row">${used}</div></div>
-        <p class="muted small">ID <code>${esc(p.kind)}</code> · ${p.sprite ? "drawn sprite" : "shape model"} · ${p.parts} shape parts${p.created ? " · made " + ago(p.created) : ""}</p>
+        <p class="muted small">ID <code>${esc(p.kind)}</code> · ${p.form === "sprite" ? "🖼 2D sprite" : "🧊 3D model"} · ${p.parts} shape parts${p.created ? " · made " + ago(p.created) : ""}</p>
       </div></div>`,
     buttons: [
       { label: "🗑 Delete", danger: true, left: true, onClick: () => deleteProp(p) },
-      { label: "🎨 Redraw", left: true, onClick: (m) => redrawProp(p, $("[data-f=looks]", m).value.trim() || p.looks) },
+      ...(p.form === "sprite" ? [{ label: "🎨 Redraw", left: true, onClick: (m) => redrawProp(p, $("[data-f=looks]", m).value.trim() || p.looks) }] : []),
+      ...(p.form === "sprite" && p.parts ? [{ label: "🧊 Use the 3D model", left: true, onClick: async () => {
+        await api("PUT", `/api/assets/props/${p.kind}`, { form: "3d" });
+        toast(`${titleCase(p.name)} is a 3D prop again`); pageAssets("props"); } }] : []),
+      ...(p.form === "3d" && !p.explainer ? [{ label: "🖼 Make it a sprite", left: true, onClick: async (m) => {
+        if (!(await uiConfirm("Draw it as a flat 2D picture instead of its 3D shapes? You can switch back any time.", { title: "Make it a sprite", ok: "🖼 Draw it" }))) return false;
+        return redrawProp(p, $("[data-f=looks]", m).value.trim() || p.looks); } }] : []),
       { label: "Cancel", value: null },
       { label: "💾 Save", primary: true, onClick: async (m) => {
           const val = (k) => $(`[data-f=${k}]`, m).value;
