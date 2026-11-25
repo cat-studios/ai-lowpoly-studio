@@ -1726,10 +1726,11 @@ async function audioSfx(box) {
     toast("New sound generated"); audioSfx(box);
   }));
   $("#amb-new").onclick = guard(async (e) => {
+    const btn = e.currentTarget;             // gone from the event after the await
     const desc = await uiPrompt("✨ New background ambience", { label: "Describe the ambience", placeholder: "e.g. busy café chatter, rain on a tin roof, spaceship engine hum", ok: "✨ Generate" });
     if (!desc) return;
     const name = desc.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 22) || "ambience";
-    await busy(e.currentTarget, "✨ Generating…", async () => {
+    await busy(btn, "✨ Generating…", async () => {
       await api("POST", "/api/sfx/slots", { name, label: "Ambience: " + desc.slice(0, 40), words: "", kind: "ambience", description: desc, generate: true });
     });
     await refreshMeta(); toast("New ambience added"); audioSfx(box);
@@ -1823,8 +1824,9 @@ async function pageIdeas() {
   });
   $("#id-new").onkeydown = (e) => { if (e.key === "Enter") $("#id-add").click(); };
   $("#id-fetch").onclick = guard(async (e) => {
+    const btn = e.currentTarget;             // gone from the event after the await
+    btn.disabled = true;
     const job = await api("POST", "/api/ideas/fetch");
-    e.currentTarget.disabled = true;
     watchJob(job, $("#id-job"), (j) => { toast(j.status === "done" ? "New ideas are in" : "Couldn't get the trends - see the log", j.status !== "done"); if (location.hash === "#ideas") pageIdeas(); });
   });
   if (d.fetching) {                         // started by this visit (the ideas were old): look again shortly
