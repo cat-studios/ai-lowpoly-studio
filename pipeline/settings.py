@@ -71,7 +71,9 @@ DEFAULTS = {
                "temperature": 0.85,
                "vision_model": "qwen3.5:4b"},        # reads pictures (scene from a picture); must support images
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
-    "sets": {"use_ollama": True},          # let Ollama design new sets (falls back to pure random)
+    "sets": {"use_ollama": True,           # let Ollama design new sets (falls back to pure random)
+             "look_check": True,           # the picture model checks new sets (and redesigns ones that don't fit)
+             "prop_check": True},          # ...and new props (a redesign, then a drawn picture) - slower, better
     # Postiz (self-hosted or cloud): finished videos are sent as DRAFTS only
     "postiz": {"url": "", "api_key": "", "channels": {}, "youtube_privacy": "public", "made_with_ai": False,
                "extra_hashtags": "#catgirl #animation #lowpoly"},

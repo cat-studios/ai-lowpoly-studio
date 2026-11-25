@@ -291,6 +291,25 @@ is that person's entrance (it said "+tiny_dragon"); smile/frown/wink/glare... ar
 3 m Dragon); cast members always count as blocking the camera (the "she stands at it" exception is only for
 furniture) - the dragon filled 14 shots; length cards: short 4-5 lines, medium 6-8, long 10-13 (12 lines ran 60 s).
 
+## Look check for sets (2026-11-25)
+`make_set.create_set` (AI sets from an idea, with a preview): after the layout the set is saved and previewed
+untextured and judged BLIND (`judge_picture`: the vision model says what place it sees + the things in it, NOT
+told the target; the text model compares that with the idea → score 1-10, `SET_PASS` = 6, + what to add/remove).
+Told the target, qwen3.5:4b scored two near-identical empty rooms 4 and 8; blind it called the post office "a cozy
+living room (piano)" and a library set "a classroom (blackboard, easel)". A fail → `fix_plan` turns the critique into concrete changes (Ollama: add
+[{kind, count, looks}] placed in `showcase` - in the wide shot -, remove [kinds], also from wall_pictures/new_props;
+the retry uses theme "random" so a theme can't put them back) and the designer is asked again with the critique
+(`llm.design_set(feedback=)`); things it asks to add carry `"generate": True` (setgen skips the imported
+stand-in - the user's imported bookshelf is an empty frame - and propgen designs + look-checks one); up to `SET_TRIES` = 3, the best-scoring try is kept, then textures + the final
+preview. Re-asking with the critique alone repeated the same set 3 times (a "haunted library" with a chalkboard
+and no bookshelves, 4/10 each, 12 min). Military parade ground: 4/10 (a park) → 8/10.
+- `propgen.squeeze_to_width`: a made prop far wider than the real thing (real width from `real_size`, allowing
+  25 % of its height for bits that stick out) is squeezed sideways - a 6 m "flagpole" was 8 m wide and filled a
+  set's preview; 8 of 20 library props in dev were too wide (fixed on their next use, also in production).
+- Cost: each try can design new props, and each new prop gets its own look check (~50 s) - a set can take
+  5-12 min when it needs retries. Settings → AI tools has two switches (both on by default): `sets.look_check`
+  (the set check) and `sets.prop_check` (`propgen._prop_check_on`, the prop check + sprite fallback).
+
 ## Animations as data (phase 1 done 2026-11-25; plan: generator → vision check → director hookup)
 - `pipeline/animlib.py`: pose vocabulary - `ARM` (one arm: arm/raise/rot/elbow; rest, slump, hand_to_chin,
   hand_at_mouth, hand_over_eyes (+0.2 nod), arm_forward, reach_forward, point_side, wave_up, arm_up_high,

@@ -842,7 +842,7 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
         if not any(propgen.slug(_kind(e.get("kind"))) == k for e in entries):
             entries.append({"kind": k, "count": n or rng.randint(2, 5), "place": pl})
     entries.sort(key=lambda e: propgen.slug(_kind(e.get("kind"))) not in looks)
-    wanted, new_kinds = [], []
+    wanted, new_kinds, gen_kinds = [], [], set()
     real_defs = {}                                   # imported models matched for this set (see imported.py)
     plan_setting = f"{plan.get('name', '')}: {plan.get('description', '')}".strip(": ")
     for e in entries:
@@ -853,7 +853,9 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
             n = 1
         # real imported models come first: if one matches this prop, use it and generate nothing
         k_slug = propgen.slug(kind)
-        if k_slug and k_slug not in banned and k_slug not in LIQUIDS and k_slug not in propgen.SHAPES:
+        if e.get("generate"):                    # make_set's look check asked for it: designed, not an imported
+            gen_kinds.add(k_slug)                # stand-in (the user's imported bookshelf is an empty frame)
+        if k_slug and k_slug not in banned and k_slug not in LIQUIDS and k_slug not in propgen.SHAPES                 and not e.get("generate"):
             real = propgen.imported_def(k_slug, looks.get(k_slug, ("", 0, ""))[0], plan_setting, log)
             if real:
                 key = "imp_" + k_slug                   # its own name, so the built-in prop of the same name isn't used
@@ -868,7 +870,7 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
         kind = propgen.slug(kind)
         if not kind or kind in banned or kind in LIQUIDS or kind in propgen.SHAPES or any(k == kind for k, _, _ in wanted):
             continue
-        if kind not in lib and kind not in new_kinds:
+        if (kind not in lib or kind in gen_kinds) and kind not in new_kinds:
             if len(new_kinds) >= MAX_NEW_PROPS:
                 continue
             new_kinds.append(kind)
@@ -878,7 +880,7 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
     setting = f"{plan.get('name', '')}: {plan.get('description', '')}".strip(": ")
     for k in new_kinds:
         defs[k] = propgen.design(k, looks.get(k, ("", 0, ""))[0] or k.replace("_", " "), setting, ollama, log,
-                                 comfy_cfg=comfy_cfg)
+                                 comfy_cfg=comfy_cfg, use_imported=k not in gen_kinds)
     for k, d in list(defs.items()):            # older library props get a real size and a drawing now
         if d.get("source") == "imported":      # real models are used as they are
             continue
@@ -983,7 +985,7 @@ def generate_from_plan(plan, seed=None, where=None, light=None, ollama=None, log
     for slot in ("floor", "walls", "sky"):
         if isinstance(tex.get(slot), str) and tex[slot].strip():
             base["texture_prompts"][slot] = tex[slot].strip()[:200]
-    used = {p["kind"] for p in placed}
+    used = {p["kind"] for p in placed} | {p["kind"][4:] for p in placed if p["kind"].startswith("imp_")}
     asked = [propgen.slug(_kind(e.get("kind"))) for e in entries]
     missing = [k for k in asked if k and k not in used and k not in banned]
     if missing:

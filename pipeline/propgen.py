@@ -483,15 +483,34 @@ def real_size(d, ollama, log=print):
             p["pos"] = [round(x * f, 3) for x in p["pos"]]
             p["size"] = [round(max(0.01, x * f), 3) for x in p["size"]]
         d["height"] = round(h, 2)
+        d["radius"] = round(min(4.0, float(d.get("radius", 0.5)) * f), 2)
         if wdt > 0:
             d["width"] = round(wdt, 2)
-        d["radius"] = round(min(4.0, float(d.get("radius", 0.5)) * f), 2)
+            squeeze_to_width(d, log)
         d["on"] = on
         if on == "table":
             d["place"] = "scatter"
         d["size_checked"] = True
         log(f"[props] '{d['kind']}' is about {h:.2f} m tall, sits on the {on}")
     return d
+
+
+def squeeze_to_width(d, log=print):
+    """A made prop far wider than the real thing (a "flagpole" 6 m tall and 8 m wide filled a set's whole view) is
+    squeezed sideways to its real width (d["width"], from real_size); the height stays. True if it changed."""
+    wdt = float(d.get("width") or 0)
+    # the real width is often just the main body (a flagpole's pole): allow a quarter of the height for bits that
+    # stick out (the flag, a lamp's shade) - only shapes far past that are squeezed
+    wdt = max(wdt, 0.25 * float(d.get("height") or 0), 0.3) if wdt > 0 else 0
+    if not (wdt > 0 and d.get("parts") and 2 * float(d.get("radius", 0)) > wdt * 1.5) or d.get("model"):
+        return False
+    g = wdt / (2 * float(d["radius"]))
+    for p in d["parts"]:
+        p["pos"] = [round(p["pos"][0] * g, 3), round(p["pos"][1] * g, 3), p["pos"][2]]
+        p["size"] = [round(max(0.01, p["size"][0] * g), 3), round(max(0.01, p["size"][1] * g), 3), p["size"][2]]
+    d["radius"] = round(wdt / 2, 2)
+    log(f"[props] '{d.get('kind')}' was far too wide - squeezed to {wdt:.2f} m")
+    return True
 
 
 def add_sprite(d, comfy_cfg, log=print, force=False):
@@ -571,7 +590,9 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         if ollama and not have.get("size_checked"):        # older library props get a real size...
             real_size(have, ollama, log)
             changed = have.get("size_checked", False)
-        if ollama and "checked" not in have and have.get("parts") and not have.get("complex")                 and have.get("source") != "imported":       # ...a look check (once)...
+        if not have.get("animal") and not have.get("vehicle") and squeeze_to_width(have, log):
+            changed = True                                   # ...the real width (older ones could be 8 m wide)...
+        if ollama and _prop_check_on() and "checked" not in have and have.get("parts") and not have.get("complex")                 and have.get("source") != "imported":       # ...a look check (once)...
             have = look_checked(have, kind, have.get("looks", ""), setting, ollama, log)
             changed = True
         if comfy_cfg and not have.get("sprite") and needs_picture(have):   # ...and a picture if it needs one
@@ -603,7 +624,7 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         apply_template(d, kind, looks, tpl)
         log(f"[props] '{kind}' built as a {tpl[1]}")
     real_size(d, ollama, log)
-    if ollama and d.get("parts") and d.get("source") != "imported" and not d.get("complex"):
+    if ollama and d.get("parts") and d.get("source") != "imported" and not d.get("complex") and _prop_check_on():
         # every made prop - AI shapes or a body template (duck, van, ant) - is looked at; fails twice -> sprite
         d = look_checked(d, kind, looks, setting, ollama, log)
     if needs_picture(d):                       # 3D first: a picture only for complicated or shapeless objects
@@ -673,6 +694,14 @@ def look_score(d, ollama, log=print):
     except Exception as exc:
         log(f"[props] look check unavailable ({exc.__class__.__name__})")
         return None, ""
+
+
+def _prop_check_on():
+    try:
+        import settings as S
+        return bool(S.load_settings()["sets"].get("prop_check", True))
+    except Exception:
+        return True
 
 
 def look_checked(d, kind, looks, setting, ollama, log=print):

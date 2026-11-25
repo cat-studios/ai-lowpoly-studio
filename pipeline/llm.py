@@ -179,7 +179,7 @@ def make_theme(url, model, idea):
     return theme
 
 
-def design_set(url, model, idea="", where=None, light=None, temperature=1.0, image=None):
+def design_set(url, model, idea="", where=None, light=None, temperature=1.0, image=None, feedback=""):
     """Ask the model to invent a set. It may use ready-made props, props the AI made for earlier sets,
     and describe up to a few brand-new props (designed afterwards by propgen)."""
     import propgen
@@ -264,6 +264,9 @@ def design_set(url, model, idea="", where=None, light=None, temperature=1.0, ima
     user = (f"Idea: {idea}\nBuild this place as described - realistic and ordinary. Everything must belong together: "
             "a desert has no snow, a snowy place has no sand, the weather and ground match the place.\n" if idea
             else "Surprise me with an unusual place.\n") + " ".join(want)
+    if feedback:                               # make_set's look check: what was wrong with the last try
+        user += (f"\nA set built from your last design was looked at and it did NOT look like this place: {feedback}"
+                 "\nDesign it again so it clearly reads as this place: the props it needs, nothing that doesn't belong.")
     return make_coherent(chat_json(url, model, system, user, min(temperature, 0.6) if idea else temperature))
 
 

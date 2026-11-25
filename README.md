@@ -222,6 +222,13 @@ from a body template). Every new one is rendered and the picture model checks th
 not, the AI rebuilds it once, and if that still fails it becomes a drawn picture instead. A cutaway is skipped
 rather than showing shapes that don't look like the thing.
 
+## Sets the studio makes
+A new set from an idea is checked before it's finished: the picture model looks at a quick preview and scores how
+well it shows the place. If it doesn't (a "haunted library" that looks like a classroom), the AI adds what's
+missing and removes what doesn't belong, and tries again (up to three times; the best try is kept). This can make
+a new set take several minutes longer. Props that came out absurdly wide are squeezed to their real width.
+Both checks (sets and props) can be turned off in Settings → 🤖 AI tools when you're in a hurry.
+
 ## Your own animations
 An animation can be a small file in `assets/anims/<name>.json` that strings together ready-made poses
 (`pipeline/animlib.py` lists them: hand_to_chin, hand_at_mouth, palm_up_out, wave_up, hand_on_hip...). Its name

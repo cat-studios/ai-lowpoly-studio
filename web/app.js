@@ -1416,6 +1416,8 @@ const S_TABS = {
       ["ollama.model", "Default model", "ollama"],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
+      ["sets.look_check", "Check that new sets look like the place", "bool", {}, "The picture model looks at each new set and the AI fixes ones that read as another place (adds a few minutes)."],
+      ["sets.prop_check", "Check that new props look right", "bool", {}, "Each new prop is looked at; one that fails is rebuilt, then drawn as a picture (about a minute per new prop)."],
     ]],
     ["ComfyUI (set textures, prop pictures, music)", [
       ["comfy.mode", "Use ComfyUI", "select", { options: ["required", "auto", "off"], labels: { required: "Required - always texture sets (floor, walls/sky, pictures)", auto: "Only when needed - just picture props", off: "Off - never" } }],
