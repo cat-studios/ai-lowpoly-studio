@@ -638,7 +638,10 @@ def create(idea="", where=None, light=None, seed=None, name=None, ollama=None, l
         if want and default and not default.startswith("@") and \
                 propgen.slug(kind).split("_")[-1] == default.split("_")[-1]:
             kind, looks = default, ""            # a "cloud_bed" is still a bed: the hand-built one (it scored 4/10)
-        k, d, width = picker.get(kind, looks, design=(sid == "hero"))
+        # a newly designed thing only for the hero, and only when the idea names it ("volcano lab" -> a volcano):
+        # the AI's own "teacher_desk" was a blue-green slab next to the hand-built desk it replaced
+        named = set(propgen.slug(kind).split("_")) & set(re.findall(r"[a-z]+", str(idea).lower()))
+        k, d, width = picker.get(kind, looks, design=(sid == "hero" and bool(named)))
         if not k and want:                       # the AI's thing couldn't be made: the default
             k, d, width = picker.get(b["defaults"].get(sid) or "", "")
         if not k:
