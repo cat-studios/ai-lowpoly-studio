@@ -728,11 +728,24 @@ def resolve_cutaways(ep, log=print):
             continue
         low = text.lower()
         words = [w for w in re.findall(r"[a-z]+", low)]
+        # the subject is the words before the first "-ing" ("an elephant | bouncing high"), and the thing is the
+        # last of them ("a stretched rubber band" -> rubber_band; it was "elephant_high" / "stretched_rubber")
+        cut_at = next((k for k, w in enumerate(words) if w.endswith("ing") and len(w) > 4 and k), len(words))
+        subject = [w for w in words[:cut_at] if w not in CUT_SKIP] or \
+            [w for w in words if w not in CUT_SKIP and not w.endswith("ing")]
+        # it must show what the line is about: "[cutaway: a blue whale swimming] Scientists say it swells up..."
+        # (a whale as a comparison, in a video about sleep) - no shared word with the line = no cutaway
+        group = shot.get("beat_group")
+        said = " ".join(str(s.get("line_src") or s.get("line") or "") for s in ep["shots"]
+                        if s is shot or (group is not None and s.get("beat_group") == group)).lower()
+        said_w = {w.rstrip("s") for w in re.findall(r"[a-z]+", said)}
+        if subject and not any(w.rstrip("s") in said_w for w in subject if len(w) > 2):
+            shot.pop("cutaway", None)
+            log(f"  cutaway (shot {i + 1}) '{text}' skipped - the line doesn't talk about it")
+            continue
         who = next((w for w in words if w in cast), None)
         if not who:
-            verbs = {w for ws, _ in CUT_VERBS for w in ws}
-            nouns = [w for w in words if w not in CUT_SKIP and w not in verbs and not w.endswith("ing")]
-            who = re.sub(r"[^a-z0-9_]+", "", "_".join(nouns[:2]) or "thing")[:24] or "thing"
+            who = re.sub(r"[^a-z0-9_]+", "", "_".join(subject[-2:]) or "thing")[:24] or "thing"
             n = 2
             base = who
             while who in cast and cast[who].get("looks") != text:

@@ -254,6 +254,8 @@ MOVE_WORDS = {"zoom_in": "push_in", "zoom": "push_in", "dolly_in": "push_in", "z
               "handheld": "shake", "shaky": "shake"}
 JUNK_WORDS = set("angle shot cut scene camera cam pov frame focus beat pause transition fade still static_shot "
                  "background foreground center_frame mid_frame dreamy busy serious".split())
+BODY_PARTS = set("head heads hand hands arm arms leg legs foot feet eye eyes ear ears nose mouth face tooth teeth "
+                 "finger fingers toe toes body tummy belly stomach brain heart skin hair tongue".split())
 # things the AI's cast step sometimes calls people ("the sun crashed in" got a human body)
 NOT_PEOPLE = set("sun moon star stars cloud clouds rain storm wind lightning rainbow planet comet meteor sky "
                  "light shadow ghost_light clock alarm_clock tv phone robot_arm car bus truck van train plane".split())
@@ -356,7 +358,7 @@ def add_cast_plan(result, plan, skip=()):
         return result
     shots, cast = result["shots"], result.setdefault("cast", {})
     flat = lambda s: re.sub(r"[^a-z0-9]+", "", str(s).lower())    # noqa: E731 - "Cat girl" == "catgirl"
-    skip = {flat(s) for s in skip if s} | {flat(s) for s in SELF_WORDS}
+    skip = {flat(s) for s in skip if s} | {flat(s) for s in SELF_WORDS} | BODY_PARTS   # a "head" was cast (an imported celebrity head played it)
     for name, info in (plan.get("cast") or {}).items():
         who = re.sub(r"[^a-z0-9_]+", "", str(name).lower().replace(" ", "_"))[:24]
         if not who or not isinstance(info, dict) or flat(who) in skip:

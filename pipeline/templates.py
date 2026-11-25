@@ -41,9 +41,10 @@ TEMPLATES = {
         "title_starts": ["Why do", "Why is", "How big is", "How much", "How long", "Is it possible"],
         "title_hint": "a topic with surprising true facts",
         "script": ("Give 3 to 5 surprising TRUE facts about the topic, one fact per line, building up to the most "
-                   "amazing one last. Show each fact with a cutaway at the start of its line, e.g. "
-                   "[cutaway: a blue whale swimming] A blue whale's heart is as big as a car. Short, punchy lines; "
-                   "a one-line hook first."),
+                   "amazing one last. Show each fact with a cutaway at the start of its line - the cutaway shows "
+                   "the very thing that line names, about the video's topic, never a comparison or a joke picture "
+                   "(a line about the brain shows a brain, not a whale). Short, punchy lines; a one-line hook "
+                   "first."),
         "tone": "excited",
         "lines": (5, 7),
         "direct": {"beat_words": 3, "walk_every": 0, "move_every": 2, "wipe_every": 3},

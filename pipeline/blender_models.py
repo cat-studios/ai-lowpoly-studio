@@ -38,8 +38,35 @@ def load_model(path, fmt):
         raise RuntimeError(f"{fmt} files can't be loaded by Blender (convert to OBJ or FBX first)")
     new = [o for o in bpy.data.objects if o.name not in before and o.name in bpy.context.scene.objects]
     recolour_grey(new, path)
+    fix_invisible(new, path)
     names = {o.name for o in new}
     return [o for o in new if o.parent is None or o.parent.name not in names]
+
+
+def fix_invisible(objs, path=""):
+    """Some FBX files carry an opacity Blender reads as 0: every material of the Quaternius "Posed Background
+    Characters" came in with Alpha 0, so cast people rendered as just a blob shadow. A material whose alpha isn't
+    driven by a texture and is (nearly) 0 is made solid."""
+    fixed = 0
+    for o in objs:
+        if o.type != "MESH":
+            continue
+        for m in o.data.materials:
+            if not m or not m.node_tree:
+                continue
+            for n in m.node_tree.nodes:
+                if n.type == "BSDF_PRINCIPLED" and "Alpha" in n.inputs:
+                    a = n.inputs["Alpha"]
+                    if not a.is_linked and a.default_value < 0.05:
+                        a.default_value = 1.0
+                        fixed += 1
+                        try:
+                            m.blend_method = "OPAQUE"
+                        except Exception:
+                            pass
+    if fixed:
+        print(f"[models] {fixed} see-through material(s) made solid in {Path(str(path)).name}")
+    return fixed
 
 
 # Some packs lost their colours on export: every material is Blender's default grey (0.64) - the Public Transport

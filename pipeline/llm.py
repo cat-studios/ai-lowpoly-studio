@@ -359,7 +359,8 @@ def find_scenes(url, model, lines, start_place, sets, policy="reuse", temperatur
         + (f"Existing sets you should reuse when one really fits: {have}.\n" if policy == "reuse" and have else
            "Always answer new for set.\n")
         + "cutaways: at most 2, for lines that describe a specific object or creature better shown than told "
-        "(\"the plane was already 4000 metres up\" -> a plane flying past). She keeps talking over it.\n"
+        "(\"the plane was already 4000 metres up\" -> a plane flying past). Show exactly the thing that line names - "
+        "never a comparison or a joke picture. She keeps talking over it.\n"
         + "particles: ONLY for lines where weather or a visual effect is clearly happening (rain, snow, confetti, "
         "magic sparkles, falling through the air = speed_lines). Most lines have none. effect is one of: "
         + ", ".join(catalog.PARTICLES) + "."
@@ -465,6 +466,8 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         "Example line: [closeup, angry] Fine. I'll do it myself!\n"
         "Example line: [wide, surprised, boom] And then the oven exploded!\n"
         "Example line: [+mom enter, scared] Mom?! You weren't supposed to be home yet!\n"
+        "A [cutaway: ...] shows exactly the thing that line names (the volcano, the crumb) - never a comparison "
+        "or a joke picture; a line that compares (as big as a whale) gets no cutaway.\n"
         "Example line: [+truck crash_in from_left, surprised] WHY IS THERE A TRUCK IN THE KITCHEN?!"
     )
     user = (

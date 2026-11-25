@@ -190,6 +190,18 @@ def previews_all():
     """Pictures for every ready model that has none yet (also used by `imported.py previews`)."""
     idx = load_index()
     models = [m for p in idx["packs"] for m in p["models"] if m.get("status") == "ok"]
+    # blank pictures count as missing: models whose materials came in see-through (blender_models.fix_invisible)
+    # all rendered the same empty white picture - byte-for-byte identical files shared by several models
+    seen = {}
+    for m in models:
+        pv = PREVIEWS / f"{m['id']}.png"
+        if pv.exists():
+            seen.setdefault(hashlib.sha1(pv.read_bytes()).hexdigest(), []).append(pv)
+    blank = [p for ps in seen.values() if len(ps) >= 3 for p in ps]
+    for pv in blank:
+        pv.unlink()                                   # redrawn just below (a picture, not a user asset)
+    if blank:
+        print(f"[import] {len(blank)} blank picture(s) will be drawn again")
     make_previews(models, print)
     for p in idx["packs"]:
         for m in p["models"]:
@@ -894,7 +906,14 @@ def _setting_cats(setting):
     return {c for wl, cats in SETTING_CATS if ws & set(wl.split()) for c in cats}, bool(ws & INDOOR_WORDS)
 
 
-PACK_LOCK, PACK_PREFER = False, None     # make_set (style B): models for one set come from one pack
+# two words that make a different thing: a model named with one isn't the thing its last word says
+COMPOUNDS = ("hot dog", "corn dog", "dog house", "dog bowl", "dog bed", "dog toy", "cat food", "cat bed", "cat toy",
+             "fish food", "fish tank", "fish bowl", "bird house", "bird cage", "bird feeder", "horse shoe",
+             "rocking horse", "teddy bear", "gummy bear", "jelly fish", "star fish", "sea horse", "cow boy",
+             "bull dozer", "fire place", "fire truck", "fire hydrant", "lady bug", "butter fly", "dragon fly",
+             "egg plant", "pine apple", "light bulb", "light house", "moon cake", "sun flower", "snow man",
+             "car park", "house plant", "tree house", "bat ball", "duck tape")
+PACK_LOCK, PACK_PREFER = False, None    # make_set (style B): models for one set come from one pack
 
 
 def match(kind, looks="", setting=""):
@@ -924,6 +943,10 @@ def match(kind, looks="", setting=""):
             hs = _word_score(head, tags)
             if hs <= 0:
                 continue
+            seen_name = f"{m.get('name', '')} {m.get('original_name') or ''}".lower().replace("-", " ").replace("_", " ")
+            if any(head in cw.split() and cw in seen_name and cw not in kind.lower().replace("_", " ")
+                   for cw in COMPOUNDS):
+                continue                    # "Raw Hot Dog" is food, not a dog (it played the dog in a video)
             if m.get("original_name") and m.get("name"):
                 # renamed by the picture model (Name & describe): what it SEES wins over the file name - the file
                 # "building-structure" is a "Wooden Farm Fence" and was used as a city's buildings; and the thing is

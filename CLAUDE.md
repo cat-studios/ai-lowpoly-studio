@@ -468,6 +468,21 @@ camera.
   `" qwen3-coder-next:latest"` typed in, his server answered 404 (no such model) and the log said "not reachable"
   (`propgen.design_call` now says which).
 
+## Whales and invisible people (2026-11-25, 6 videos rendered in production)
+- Invisible people: the Quaternius "Posed Background Characters" FBX materials import with Principled Alpha 0
+  (HASHED) - cast people / crowds / cutaways rendered as only a blob shadow, and their Assets pictures were blank
+  white. `blender_models.fix_invisible` (in `load_model`) makes an unlinked alpha < 0.05 solid.
+  `imported.previews_all` treats a picture shared byte-for-byte by 3+ models as blank and draws it again
+  (`imported.py previews`; 126 blank in production).
+- Whales: the Quick facts template's own example was "[cutaway: a blue whale swimming]" and the writer copied it
+  into a sleep series as a comparison. The example is gone; the writer and `find_scenes` are told a cutaway shows
+  exactly the thing its line names; `resolve_cutaways` drops a cutaway whose subject shares no word with its line
+  (beat group). Subject = the words before the first "-ing", last two kept ("an elephant bouncing high" ->
+  elephant, was elephant_high; "a stretched rubber band" -> rubber_band).
+- Wrong models: "Raw Hot Dog" was categorised Animals and played a dog - `imported.COMPOUNDS` (hot dog, dog house,
+  teddy bear...) reject a model whose name has the compound when the thing asked for doesn't. The AI cast step
+  skips body parts (`autodirect.BODY_PARTS`: a "head" was played by an imported celebrity head).
+
 ## Set styles (2026-11-25): A hand-built bases, B palette, C judged, classic
 The user asked why the Legacy Cafe/Park (hand-written in `blender_build.set_cafe/set_park`) still beat AI sets:
 one primitive style, a small palette with matching fog/sun, a layout made for the 9:16 wide shot (signature piece at
