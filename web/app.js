@@ -1745,7 +1745,8 @@ async function audioSfx(box) {
 const IDEA_SRC = { google: "🔥 Google Trends", wikipedia: "📖 Wikipedia", onthisday: "📅 On this day",
   calendar: "🎉 Coming up", mine: "✍ Yours" };
 const IDEA_FILTERS = { new: "New", starred: "⭐ Starred", used: "Used", mine: "Yours", hidden: "Hidden", all: "All" };
-let IDEA_FILTER = "new", IDEA_REGION = "";
+let IDEA_FILTER = "new", IDEA_REGION = "", IDEA_SOURCE = "";
+const ideaSrc = (it) => (it.source === "calendar" ? "holidays" : it.source);      // older ideas said "calendar"
 const tplOf = (id) => (META.catalog.templates || []).find((t) => t.id === id) || {};
 // start the Custom Video popup from an idea (and maybe one of its titles)
 function customFromIdea(it, title) {
@@ -1762,12 +1763,17 @@ async function pageIdeas() {
       || (IDEA_FILTER === "starred" && it.starred) || (IDEA_FILTER === "used" && it.used.length)
       || (IDEA_FILTER === "mine" && it.source === "mine") || (IDEA_FILTER === "hidden" && it.hidden))
     && (IDEA_FILTER === "hidden" || IDEA_FILTER === "all" || !it.hidden)
-    && (!IDEA_REGION || it.region === IDEA_REGION || it.source === "mine");
+    && (!IDEA_REGION || it.region === IDEA_REGION || it.source === "mine")
+    && (!IDEA_SOURCE || ideaSrc(it) === IDEA_SOURCE);
+  const srcLabel = (it) => (d.sources || {})[ideaSrc(it)] || IDEA_SRC[it.source] || it.source;
+  const srcCount = {};
+  d.ideas.forEach((it) => { if (!it.hidden) srcCount[ideaSrc(it)] = (srcCount[ideaSrc(it)] || 0) + 1; });
   app.innerHTML = `
     <div class="assets-head"><div><h2>💡 Ideas</h2>
-      <p class="muted small">What's trending today - Google Trends in ${esc(Object.values(regions).join(", "))}, Wikipedia's most-read
-        pages and upcoming holidays - turned into family-friendly video ideas by your AI, plus your own. Tap a title to make it
-        a Custom Video. Ideas are never deleted: hide the ones you don't want.</p></div></div>
+      <p class="muted small">What's trending today - Google Trends and Google News (science, tech, health) in the US, UK and
+        Lithuania, Wikipedia, NASA, holidays, Bluesky, Hacker News and YouTube (with a key) - turned into family-friendly video
+        ideas by your AI, plus your own. Switch sources on or off in Settings → AI tools. Tap a title to make it a Custom
+        Video. Ideas are never deleted: hide the ones you don't want.</p></div></div>
     <div class="panel">
       <div class="row" style="align-items:end">
         <label style="flex:3">Your own idea<input type="text" id="id-new" placeholder="e.g. why cats knead blankets"></label>
@@ -1781,13 +1787,16 @@ async function pageIdeas() {
       <div class="chips-row"><button class="chip-btn ${IDEA_REGION ? "" : "on"}" data-ir="">🌍 Everywhere</button>${Object.entries(regions).map(([k, v]) =>
         `<button class="chip-btn ${k === IDEA_REGION ? "on" : ""}" data-ir="${k}">${esc(v)}</button>`).join("")}</div>
       <span class="muted small" id="id-count"></span></div>
+    <div class="chips-row id-sources"><span class="muted small">Source:</span>
+      <button class="chip-btn ${IDEA_SOURCE ? "" : "on"}" data-isrc="">All</button>${Object.entries(d.sources || {}).map(([k, v]) =>
+        `<button class="chip-btn ${k === IDEA_SOURCE ? "on" : ""}" data-isrc="${k}" ${srcCount[k] ? "" : 'disabled title="None yet - switched off in Settings, or nothing today"'}>${esc(v)}${srcCount[k] ? ` <span class="seg-n">${srcCount[k]}</span>` : ""}</button>`).join("")}</div>
     <div class="idea-grid" id="id-grid"></div>`;
   const list = d.ideas.filter(keep);
   $("#id-count").textContent = `${list.length} of ${d.ideas.length}`;
   const card = (it) => {
     const t = tplOf(it.template);
     return `<div class="idea-card" data-idea="${esc(it.id)}">
-      <div class="idea-top"><span>${IDEA_SRC[it.source] || esc(it.source)}${it.region && it.source !== "mine" ? " · " + esc(it.region === "GB" ? "UK" : it.region) : ""}</span>
+      <div class="idea-top"><span>${esc(srcLabel(it))}${it.region && it.source !== "mine" && it.region !== "WW" ? " · " + esc(it.region === "GB" ? "UK" : it.region) : ""}</span>
         <span title="${esc(t.name || "")}">${t.icon || ""}</span></div>
       <h4>${it.starred ? "⭐ " : ""}${esc(it.topic)}</h4>
       ${it.angle ? `<p class="muted small">${esc(it.angle)}</p>` : ""}
@@ -1805,6 +1814,7 @@ async function pageIdeas() {
     ? "Nothing here - try another filter." : d.fetching ? "Getting today's ideas…" : "No ideas yet - press 🔄 Get what's trending now, or add your own."}</p></div>`;
   $$("[data-if]").forEach((b) => b.onclick = () => { IDEA_FILTER = b.dataset.if; pageIdeas(); });
   $$("[data-ir]").forEach((b) => b.onclick = () => { IDEA_REGION = b.dataset.ir; pageIdeas(); });
+  $$("[data-isrc]").forEach((b) => b.onclick = () => { IDEA_SOURCE = b.dataset.isrc; pageIdeas(); });
   $("#id-add").onclick = guard(async () => {
     const topic = $("#id-new").value.trim();
     if (!topic) return toast("Write the idea first", true);
@@ -2088,6 +2098,20 @@ const S_TABS = {
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
       ["sets.look_check", "Check that new sets look like the place", "bool", {}, "The picture model looks at each new set and the AI fixes ones that read as another place (adds a few minutes)."],
       ["sets.prop_check", "Check that new props look right", "bool", {}, "Each new prop is looked at; one that fails is rebuilt, then drawn as a picture (about a minute per new prop)."],
+    ]],
+    ["Ideas (trending topics for the Ideas page)", [
+      ["ideas.google_trends", "🔥 Google Trends (US, UK, Lithuania)", "bool", {}],
+      ["ideas.google_news", "📰 Google News: science, technology, health", "bool", {}],
+      ["ideas.wikipedia", "📖 Wikipedia most-read pages", "bool", {}],
+      ["ideas.did_you_know", "💡 Wikipedia: Did you know…", "bool", {}],
+      ["ideas.on_this_day", "📅 Wikipedia: featured article and On this day", "bool", {}],
+      ["ideas.nasa", "🔭 NASA picture of the day", "bool", {}],
+      ["ideas.holidays", "🎉 Holidays and seasons", "bool", {}],
+      ["ideas.bluesky", "🦋 Bluesky trending topics", "bool", {}, "Busy and newsy - most of it gets filtered out."],
+      ["ideas.hackernews", "🧡 Hacker News front page", "bool", {}, "Tech and science links."],
+      ["ideas.youtube", "▶️ YouTube popular videos (needs the key below)", "bool", {}],
+      ["ideas.youtube_key", "YouTube API key", "password", {}, "Free: console.cloud.google.com → new project → enable “YouTube Data API v3” → Credentials → API key. Popular Science & Tech, Education, Pets & Animals and Gaming videos in each country."],
+      ["ideas.nasa_key", "NASA API key (optional)", "password", {}, "Empty = NASA's shared demo key, which is enough for one fetch a day. A free personal key: api.nasa.gov."],
     ]],
     ["ComfyUI (set textures, prop pictures, music)", [
       ["comfy.mode", "Use ComfyUI", "select", { options: ["required", "auto", "off"], labels: { required: "Required - always texture sets (floor, walls/sky, pictures)", auto: "Only when needed - just picture props", off: "Off - never" } }],

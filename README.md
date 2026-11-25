@@ -115,8 +115,10 @@ On the Videos page, ✏️ Edit → **🪄 Open in Custom Video** opens a video 
 its file.
 
 ### Ideas
-What's trending today - Google Trends in the US, UK and Lithuania, Wikipedia's most-read pages and upcoming
-holidays - turned into family-friendly video ideas by your AI (no real people, brands or film/game franchises),
+What's trending today - Google Trends and Google News (science, tech, health) in the US, UK and Lithuania,
+Wikipedia (most-read, Did you know, On this day), NASA's picture of the day, holidays, Bluesky, Hacker News and
+YouTube's popular videos (with a free API key: Settings → AI tools → Ideas, where every source can be switched
+off) - turned into family-friendly video ideas by your AI (no real people, brands or film/game franchises),
 plus your own ideas. The list refreshes by itself every 12 hours (or press 🔄). Per idea: ✨ Titles (tap a title to
 make it as a Custom Video), 🪄 Custom Video, 📺 Series, ☆ star, 🙈 hide. Ideas used for a video are marked used, so
 you don't repeat yourself. Trending ideas also show up in Custom Video's first step, among the random video's topic

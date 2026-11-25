@@ -29,7 +29,25 @@ ROOT = Path(__file__).resolve().parent.parent
 DIR = ROOT / "assets" / "ideas"
 DB = DIR / "ideas.json"
 UA = "LowPolyStudio/1.0 (trending topics for video ideas)"
-REGIONS = {"US": "United States", "GB": "United Kingdom", "LT": "Lithuania"}
+REGIONS = {"US": "United States", "GB": "United Kingdom", "LT": "Lithuania", "WW": "Worldwide"}
+TREND_REGIONS = ("US", "GB", "LT")          # the countries asked for by name (WW = sources without a country)
+# every source: settings switch (Settings -> AI tools -> Ideas), label + icon for the Ideas page's Source filter
+SOURCES = {
+    "google": ("google_trends", "🔥 Google Trends"),
+    "news": ("google_news", "📰 Google News: science, tech, health"),
+    "wikipedia": ("wikipedia", "📖 Wikipedia most-read"),
+    "dyk": ("did_you_know", "💡 Wikipedia: Did you know"),
+    "onthisday": ("on_this_day", "📅 On this day"),
+    "nasa": ("nasa", "🔭 NASA picture of the day"),
+    "holidays": ("holidays", "🎉 Holidays & seasons"),
+    "bluesky": ("bluesky", "🦋 Bluesky trending"),
+    "hackernews": ("hackernews", "🧡 Hacker News"),
+    "youtube": ("youtube", "▶️ YouTube popular"),
+    "mine": (None, "✍ Yours"),
+}
+NEWS_SECTIONS = ("SCIENCE", "TECHNOLOGY", "HEALTH")
+NEWS_LOCALE = {"US": "hl=en-US&gl=US&ceid=US:en", "GB": "hl=en-GB&gl=GB&ceid=GB:en", "LT": "hl=lt&gl=LT&ceid=LT:lt"}
+YOUTUBE_CATEGORIES = {"28": "Science & Technology", "27": "Education", "15": "Pets & Animals", "20": "Gaming"}
 # upcoming holidays/seasons by month (shown from the month before): (month, day, name)
 CALENDAR = [(1, 1, "New Year's Day"), (2, 14, "Valentine's Day"), (2, 16, "Lithuanian Independence Day"),
             (3, 17, "St Patrick's Day"), (3, 20, "the first day of spring"), (4, 1, "April Fools' Day"),
@@ -38,7 +56,8 @@ CALENDAR = [(1, 1, "New Year's Day"), (2, 14, "Valentine's Day"), (2, 16, "Lithu
             (9, 22, "the first day of autumn"), (10, 31, "Halloween"), (11, 1, "All Saints' Day"),
             (11, 27, "Thanksgiving"), (12, 21, "the shortest day of the year"), (12, 24, "Christmas Eve"),
             (12, 25, "Christmas"), (12, 31, "New Year's Eve")]
-STALE_HOURS = 12              # the Ideas page fetches again when the newest batch is older than this
+PER_SOURCE = 30               # trending items per source per fetch
+STALE_HOURS = 12             # the Ideas page fetches again when the newest batch is older than this
 
 # never a cute catgirl video: the AI filter checks too, this keeps the obvious ones from ever reaching it
 BLOCK = re.compile(r"\b(dies|died|dead|death|killed|kill|murder|shooting|shot|stabbed|crash|war|attack|bomb|"
@@ -102,6 +121,84 @@ def wikipedia_extras(lang="en", region="US"):
     return out
 
 
+def google_news(geo, section):
+    """Today's headlines in Google News' science / technology / health sections (not general news)."""
+    root = ET.fromstring(_get(f"https://news.google.com/rss/headlines/section/topic/{section}?{NEWS_LOCALE[geo]}"))
+    out = []
+    for it in list(root.iter("item"))[:15]:
+        title = re.sub(r"\s+-\s+[^-]+$", "", (it.findtext("title") or "").strip())     # "Headline - Source"
+        if title:
+            out.append({"text": title[:200], "context": section.lower(), "source": "news", "region": geo,
+                        "url": it.findtext("link")})
+    return out
+
+
+def did_you_know():
+    """Wikipedia's "Did you know..." facts on today's main page."""
+    data = json.loads(_get("https://en.wikipedia.org/w/api.php?action=parse&page=Template:Did_you_know"
+                           "&prop=text&format=json&formatversion=2"))
+    html = data.get("parse", {}).get("text", "")
+    out = []
+    for li in re.findall(r"<li>(.*?)</li>", html, flags=re.S):
+        txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", li)).replace("&#160;", " ").strip()
+        if txt.startswith("...") or txt.startswith("\u2026"):
+            out.append({"text": "Did you know " + txt.lstrip(".\u2026 ").rstrip(" ?") + "?", "context": "Wikipedia",
+                        "source": "dyk", "region": "WW"})
+    return out[:12]
+
+
+def nasa_apod(key=""):
+    d = json.loads(_get(f"https://api.nasa.gov/planetary/apod?api_key={key or 'DEMO_KEY'}"))
+    return [{"text": str(d.get("title") or "")[:120], "context": str(d.get("explanation") or "")[:300],
+             "source": "nasa", "region": "WW", "url": d.get("hdurl") or d.get("url")}] if d.get("title") else []
+
+
+def public_holidays(today=None):
+    """Real public holidays in the next 45 days for each country (Nager.Date)."""
+    today = today or dt.date.today()
+    out = []
+    for geo in TREND_REGIONS:
+        for h in json.loads(_get(f"https://date.nager.at/api/v3/NextPublicHolidays/{geo}")):
+            try:
+                days = (dt.date.fromisoformat(h["date"]) - today).days
+            except Exception:
+                continue
+            if 0 <= days <= 45:
+                out.append({"text": h.get("name") or h.get("localName"), "context": f"public holiday in {days} days",
+                            "source": "holidays", "region": geo})
+    return out
+
+
+def bluesky_trending():
+    d = json.loads(_get("https://public.api.bsky.app/xrpc/app.bsky.unspecced.getTrendingTopics?limit=25"))
+    return [{"text": str(t.get("displayName") or t.get("topic") or "")[:120], "context": "trending on Bluesky",
+             "source": "bluesky", "region": "WW"} for t in (d.get("topics") or []) if t.get("displayName") or t.get("topic")]
+
+
+def hackernews():
+    d = json.loads(_get("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30"))
+    return [{"text": str(h.get("title") or "")[:200], "context": "Hacker News front page", "source": "hackernews",
+             "region": "WW", "url": h.get("url")} for h in (d.get("hits") or []) if h.get("title")]
+
+
+def youtube_popular(key):
+    """The most popular videos per country in curious categories (needs a free YouTube Data API key)."""
+    out = []
+    for geo in TREND_REGIONS:
+        for cat, cname in YOUTUBE_CATEGORIES.items():
+            try:
+                d = json.loads(_get("https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular"
+                                    f"&regionCode={geo}&videoCategoryId={cat}&maxResults=8&key={key}"))
+            except Exception:
+                continue          # some categories have no chart in some countries
+            for v in d.get("items") or []:
+                sn = v.get("snippet") or {}
+                if sn.get("title"):
+                    out.append({"text": sn["title"][:150], "context": f"popular in {cname}", "source": "youtube",
+                                "region": geo, "url": f"https://www.youtube.com/watch?v={v.get('id')}"})
+    return out
+
+
 def calendar_items(today=None):
     """Holidays and seasons in the next 45 days (no internet)."""
     today = today or dt.date.today()
@@ -112,27 +209,58 @@ def calendar_items(today=None):
             when = dt.date(today.year + 1, m, d)
         days = (when - today).days
         if days <= 45:
-            out.append({"text": name, "context": f"in {days} days" if days else "today", "source": "calendar",
+            out.append({"text": name, "context": f"in {days} days" if days else "today", "source": "holidays",
                         "region": "LT" if "Lithuan" in name or "Jonin" in name else "US"})
     return out
 
 
-def gather(log=print):
-    """Every source that answers; one that fails is skipped (logged)."""
-    items = []
-    jobs = [(f"Google Trends {g}", lambda g=g: google_trends(g)) for g in REGIONS]
-    jobs += [("Wikipedia (en)", lambda: wikipedia_most_read("en", "US")),
-             ("Wikipedia (lt)", lambda: wikipedia_most_read("lt", "LT"))]
-    jobs += [("Wikipedia featured + on this day", lambda: wikipedia_extras("en", "US")),
-             ("Holidays and seasons", calendar_items)]
+def gather(log=print, cfg=None):
+    """Every source switched on in Settings that answers; one that fails is skipped (logged)."""
+    if cfg is None:
+        import settings as S
+        cfg = S.load_settings().get("ideas") or {}
+    on = lambda src: cfg.get(SOURCES[src][0], True)        # noqa: E731
+    items, jobs = [], []
+    if on("google"):
+        jobs += [(f"Google Trends {g}", lambda g=g: google_trends(g)) for g in TREND_REGIONS]
+    if on("news"):
+        jobs += [(f"Google News {g} {sec.lower()}", lambda g=g, sec=sec: google_news(g, sec))
+                 for g in TREND_REGIONS for sec in NEWS_SECTIONS]
+    if on("wikipedia"):
+        jobs += [("Wikipedia (en)", lambda: wikipedia_most_read("en", "US")),
+                 ("Wikipedia (lt)", lambda: wikipedia_most_read("lt", "LT"))]
+    if on("onthisday"):
+        jobs += [("Wikipedia featured + on this day", lambda: wikipedia_extras("en", "US"))]
+    if on("dyk"):
+        jobs += [("Wikipedia Did you know", did_you_know)]
+    if on("nasa"):
+        jobs += [("NASA picture of the day", lambda: nasa_apod(cfg.get("nasa_key", "")))]
+    if on("holidays"):
+        jobs += [("Public holidays", public_holidays), ("Holidays and seasons", calendar_items)]
+    if on("bluesky"):
+        jobs += [("Bluesky trending", bluesky_trending)]
+    if on("hackernews"):
+        jobs += [("Hacker News", hackernews)]
+    if on("youtube") and cfg.get("youtube_key"):
+        jobs += [("YouTube popular", lambda: youtube_popular(cfg["youtube_key"]))]
+    elif on("youtube"):
+        log("[ideas] YouTube popular: skipped (add a YouTube API key in Settings -> AI tools)")
     for name, fn in jobs:
         try:
             got = fn()
             items += got
             log(f"[ideas] {name}: {len(got)}")
         except Exception as exc:
-            log(f"[ideas] {name}: skipped ({exc.__class__.__name__}: {str(exc)[:80]})")
+            msg = re.sub(r"key=[\w-]+", "key=...", str(exc))[:80]       # never print an API key
+            log(f"[ideas] {name}: skipped ({exc.__class__.__name__}: {msg})")
     keep = [it for it in items if not BLOCK.search(f"{it['text']} {it.get('context', '')}")]
+    # at most PER_SOURCE items from one source (news alone gave 118): every source gets a say, and the AI pass
+    # stays a couple of minutes
+    import random
+    by_src = {}
+    for it in keep:
+        by_src.setdefault(it["source"], []).append(it)
+    keep = [it for lst in by_src.values() for it in (random.sample(lst, PER_SOURCE) if len(lst) > PER_SOURCE else lst)]
     log(f"[ideas] {len(items)} trending item(s), {len(keep)} after the word filter")
     return keep
 
@@ -158,7 +286,7 @@ def pick_ideas(items, ollama, log=print, batch=30):
     out = []
     for k in range(0, len(items), batch):
         chunk = items[k:k + batch]
-        listing = "\n".join(f"{i}. {it['text']}" + (f" ({it['context'][:120]})" if it.get("context") else "")
+        listing = "\n".join(f"{i}. [{it['source']}] {it['text']}" + (f" ({it['context'][:120]})" if it.get("context") else "")
                             for i, it in enumerate(chunk))
         try:
             r = llm.chat_json(ollama["url"], ollama["model"], PICK, f"Trending items:\n{listing}", 0.4)

@@ -590,3 +590,5 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .idea-titles .chip-btn { text-align: left; white-space: normal; }
 .idea-card .btns { margin-top: auto; }
 .cw-trend .chip-btn { white-space: normal; text-align: left; }
+.id-sources { flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; align-items: center; }
+.id-sources .chip-btn:disabled { opacity: .4; }

@@ -78,6 +78,10 @@ DEFAULTS = {
              "use_ollama": True,           # let Ollama design new sets (falls back to pure random)
              "look_check": True,           # the picture model checks new sets (and redesigns ones that don't fit)
              "prop_check": True},          # ...and new props (a redesign, then a drawn picture) - slower, better
+    # the Ideas page's trend sources (pipeline/ideas.py): each can be switched off; keys are optional
+    "ideas": {"google_trends": True, "google_news": True, "wikipedia": True, "did_you_know": True,
+              "on_this_day": True, "nasa": True, "holidays": True, "bluesky": True, "hackernews": True,
+              "youtube": True, "youtube_key": "", "nasa_key": ""},
     # Postiz (self-hosted or cloud): finished videos are sent as DRAFTS only
     "postiz": {"url": "", "api_key": "", "channels": {}, "youtube_privacy": "public", "made_with_ai": False,
                "extra_hashtags": "#catgirl #animation #lowpoly"},
@@ -163,17 +167,24 @@ MASK = "__saved__"   # stands in for secrets in anything sent to the browser
 def public_settings(data=None):
     """Settings for the web page: secrets replaced by MASK (or "" when not set)."""
     out = copy.deepcopy(data or load_settings())
-    pz = out.get("postiz") or {}
-    if pz.get("api_key"):
-        pz["api_key"] = MASK
+    for group, key in SECRETS:
+        g = out.get(group) or {}
+        if g.get(key):
+            g[key] = MASK
     return out
+
+
+SECRETS = [("postiz", "api_key"), ("ideas", "youtube_key"), ("ideas", "nasa_key")]   # never sent to the browser
 
 
 def save_settings(data):
     data = copy.deepcopy(data)
-    pz = data.get("postiz")
-    if isinstance(pz, dict) and pz.get("api_key") == MASK:     # unchanged secret: keep the stored one
-        pz["api_key"] = load_settings().get("postiz", {}).get("api_key", "")
+    stored = None
+    for group, key in SECRETS:
+        g = data.get(group)
+        if isinstance(g, dict) and g.get(key) == MASK:          # unchanged secret: keep the stored one
+            stored = stored or load_settings()
+            g[key] = (stored.get(group) or {}).get(key, "")
     write_json(SETTINGS_FILE, deep_merge(DEFAULTS, data))
 
 

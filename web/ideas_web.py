@@ -35,7 +35,8 @@ def handle(h, method, parts, *, submit, Job, root, jobs):
         if ideas.stale() and not _running(jobs):       # old (or none yet): get today's in the background
             start_fetch(submit, Job, root, jobs)
         return h.send_json({"ideas": db["ideas"], "fetched": db.get("fetched", 0), "fetching": bool(_running(jobs)),
-                            "regions": ideas.REGIONS})
+                            "regions": ideas.REGIONS,
+                            "sources": {k: label for k, (_switch, label) in ideas.SOURCES.items()}})
     if method == "GET" and arg == "fresh":
         q = parse_qs(urlparse(h.path).query)
         n = max(1, min(30, int((q.get("n") or ["6"])[0])))

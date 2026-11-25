@@ -487,6 +487,15 @@ camera.
   kind + ✨ Give me ideas); the random video's topic step deals one 🔥 trending card of three (its idea is marked
   used); the series popup shows trending chips and passes `idea_id` (`series.py` puts it on every episode).
   First dev test: 134 trending items -> 22 ideas in ~35 s (moon phases, why blood is red, solstice, lemurs...).
+- More sources (the user, 2026-11-25: "I like to have options"): `ideas.SOURCES` = source -> (Settings switch,
+  label): Google News science/technology/health RSS per country (`NEWS_LOCALE`), Wikipedia "Did you know"
+  (Template:Did_you_know via the parse API), NASA APOD (`ideas.nasa_key` or DEMO_KEY), public holidays
+  (Nager.Date, per country) + the offline calendar, Bluesky trending topics (public API), Hacker News front page
+  (Algolia API), YouTube mostPopular per country in categories 28/27/15/20 (`ideas.youtube_key`; skipped without).
+  Settings -> AI tools -> Ideas: a switch per source + the two keys (`settings.SECRETS`: masked like the Postiz key,
+  an API key is also blanked from logged errors). `PER_SOURCE` 30 items per source per fetch (news alone gave 118).
+  Region `WW` = worldwide sources. Ideas page: a Source chip row with counts (`ideaSrc`: old "calendar" ->
+  holidays). Dev test: 346 items -> 303 after the word filter -> +40 ideas from every source.
 
 ## Whales and invisible people (2026-11-25, 6 videos rendered in production)
 - Invisible people: the Quaternius "Posed Background Characters" FBX materials import with Principled Alpha 0
