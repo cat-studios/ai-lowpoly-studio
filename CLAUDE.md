@@ -489,7 +489,9 @@ camera.
   First dev test: 134 trending items -> 22 ideas in ~35 s (moon phases, why blood is red, solstice, lemurs...).
 - More sources (the user, 2026-11-25: "I like to have options"): `ideas.SOURCES` = source -> (Settings switch,
   label): Google News science/technology/health RSS per country (`NEWS_LOCALE`), Wikipedia "Did you know"
-  (Template:Did_you_know via the parse API), NASA APOD (`ideas.nasa_key` or DEMO_KEY), public holidays
+  (Template:Did_you_know via the parse API), NASA Image of the Day RSS (the APOD API timed out / gave 500 -
+  it is the backup, `ideas.nasa_key` or DEMO_KEY), On this day = the full onthisday/events list sorted by `CURIOUS`
+  words (the featured pick was all wars and deaths), the AI keeps the best 1-2 per source, batches shuffled; public holidays
   (Nager.Date, per country) + the offline calendar, Bluesky trending topics (public API), Hacker News front page
   (Algolia API), YouTube mostPopular per country in categories 28/27/15/20 (`ideas.youtube_key`; skipped without).
   Settings -> AI tools -> Ideas: a switch per source + the two keys (`settings.SECRETS`: masked like the Postiz key,

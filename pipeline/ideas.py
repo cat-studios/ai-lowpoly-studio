@@ -38,7 +38,7 @@ SOURCES = {
     "wikipedia": ("wikipedia", "📖 Wikipedia most-read"),
     "dyk": ("did_you_know", "💡 Wikipedia: Did you know"),
     "onthisday": ("on_this_day", "📅 On this day"),
-    "nasa": ("nasa", "🔭 NASA picture of the day"),
+    "nasa": ("nasa", "🔭 NASA image of the day"),
     "holidays": ("holidays", "🎉 Holidays & seasons"),
     "bluesky": ("bluesky", "🦋 Bluesky trending"),
     "hackernews": ("hackernews", "🧡 Hacker News"),
@@ -56,7 +56,10 @@ CALENDAR = [(1, 1, "New Year's Day"), (2, 14, "Valentine's Day"), (2, 16, "Lithu
             (9, 22, "the first day of autumn"), (10, 31, "Halloween"), (11, 1, "All Saints' Day"),
             (11, 27, "Thanksgiving"), (12, 21, "the shortest day of the year"), (12, 24, "Christmas Eve"),
             (12, 25, "Christmas"), (12, 31, "New Year's Eve")]
-PER_SOURCE = 30               # trending items per source per fetch
+CURIOUS = re.compile(r"\b(invent\w*|discover\w*|first|launch\w*|patent\w*|opens?|opened|founded|record|"
+                     r"invention|demonstrat\w*|unveil\w*|published|premiere\w*|lands?|landed|orbit\w*|telescope|"
+                     r"zoo|museum|bridge|tower|railway|subway|toy|game|animal|dinosaur|fossil|comet|planet)\b", re.I)
+PER_SOURCE = 30              # trending items per source per fetch
 STALE_HOURS = 12             # the Ideas page fetches again when the newest batch is older than this
 
 # never a cute catgirl video: the AI filter checks too, this keeps the obvious ones from ever reaching it
@@ -64,7 +67,9 @@ BLOCK = re.compile(r"\b(dies|died|dead|death|killed|kill|murder|shooting|shot|st
                    r"terror\w*|suicide|abuse|assault|rape|arrest\w*|court|trial|lawsuit|sentenced|prison|election|"
                    r"vote|voting|president|senator|minister|parliament|trump|biden|putin|israel|gaza|ukraine|"
                    r"russia|politic\w*|democrat\w*|republican\w*|nazi|porn\w*|sex\w*|drugs?|cocaine|overdose|"
-                   r"cancer|obituary|funeral|earthquake|hurricane|flood|wildfire|scandal|divorce|nfl|nba|"
+                   r"cancers?|obituar\w*|funerals?|earthquakes?|hurricanes?|floods?|flooding|wildfires?|fires?|famine|"
+                   r"massacre\w*|genocide|disasters?|explosions?|riots?|invasions?|secession|occup\w*|scandals?|"
+                   r"divorce|nfl|nba|"
                    r"premier league|vs\.?|odds|bet|betting|lottery|stock|stocks|crypto\w*|bitcoin|guns?|rifles?|sniper\w*|"
                    r"weapons?|missiles?|grenades?)\b", re.I)
 
@@ -113,11 +118,18 @@ def wikipedia_extras(lang="en", region="US"):
     if tfa.get("normalizedtitle"):
         out.append({"text": tfa["normalizedtitle"], "context": str(tfa.get("description") or "")[:300],
                     "source": "wikipedia", "region": region})
-    for ev in (data.get("onthisday") or [])[:25]:
-        txt = str(ev.get("text") or "").strip()
-        if txt:
-            out.append({"text": txt[:200], "context": f"on this day in {ev.get('year')}", "source": "onthisday",
-                        "region": region})
+    # "on this day": the FULL list of the date's events (the featured feed's short pick was mostly wars and deaths -
+    # all filtered out), the curious ones first: inventions, discoveries, launches, firsts, openings
+    try:
+        full = json.loads(_get(f"https://api.wikimedia.org/feed/v1/wikipedia/{lang}/onthisday/events/"
+                               f"{day:%m}/{day:%d}", timeout=20)).get("events") or []
+    except Exception:
+        full = data.get("onthisday") or []
+    events = [str(ev.get("text") or "").strip() for ev in full]
+    events = [(t, ev.get("year")) for t, ev in zip(events, full) if t and not BLOCK.search(t)]
+    events.sort(key=lambda te: not CURIOUS.search(te[0]))
+    for txt, year in events[:25]:
+        out.append({"text": txt[:200], "context": f"on this day in {year}", "source": "onthisday", "region": region})
     return out
 
 
@@ -148,7 +160,24 @@ def did_you_know():
 
 
 def nasa_apod(key=""):
-    d = json.loads(_get(f"https://api.nasa.gov/planetary/apod?api_key={key or 'DEMO_KEY'}"))
+    """NASA's Image of the Day feed (several space stories; the APOD API timed out / answered 500 on 2026-11-25),
+    else the APOD API."""
+    try:
+        root = ET.fromstring(_get("https://www.nasa.gov/feeds/iotd-feed/", timeout=20).decode("utf-8", "replace").strip())
+        out = [{"text": (it.findtext("title") or "").strip()[:120],
+                "context": re.sub(r"<[^>]+>", "", it.findtext("description") or "")[:300].strip(),
+                "source": "nasa", "region": "WW", "url": it.findtext("link")}
+               for it in list(root.iter("item"))[:6] if (it.findtext("title") or "").strip()]
+        if out:
+            return out
+    except Exception:
+        pass
+    url = f"https://api.nasa.gov/planetary/apod?api_key={key or 'DEMO_KEY'}"
+    try:                                     # the shared demo key is slow at times: wait longer, then once more
+        d = json.loads(_get(url, timeout=30))
+    except Exception:
+        time.sleep(3)
+        d = json.loads(_get(url, timeout=30))
     return [{"text": str(d.get("title") or "")[:120], "context": str(d.get("explanation") or "")[:300],
              "source": "nasa", "region": "WW", "url": d.get("hdurl") or d.get("url")}] if d.get("title") else []
 
@@ -261,6 +290,7 @@ def gather(log=print, cfg=None):
     for it in keep:
         by_src.setdefault(it["source"], []).append(it)
     keep = [it for lst in by_src.values() for it in (random.sample(lst, PER_SOURCE) if len(lst) > PER_SOURCE else lst)]
+    random.shuffle(keep)                     # every AI batch sees several sources (each keeps its best)
     log(f"[ideas] {len(items)} trending item(s), {len(keep)} after the word filter")
     return keep
 
@@ -276,6 +306,9 @@ PICK = (
     "company, film, TV show, game, book or franchise or its characters - the videos are original, so take the "
     "general idea behind it instead (a trending space film -> how black holes work; a car game -> why cars "
     "drift). Write topic and angle in ENGLISH even when the item is in another language. "
+    "Each item says its source in [brackets]: from every source in the list keep at least the best one or two "
+    "that could work with a general angle (an odd fact about a person -> the thing they did or made; a historic "
+    "first -> how that invention works), unless none can be family-friendly. "
     "Reply with JSON only: {\"ideas\": [{\"item\": number, "
     "\"topic\": \"2-6 words\", \"angle\": \"the video's angle in one short sentence\", \"template\": "
     "\"what_if|how_it_works|quick_facts|mini_story\"}]}")

@@ -1790,7 +1790,7 @@ async function pageIdeas() {
       <span class="muted small" id="id-count"></span></div>
     <div class="chips-row id-sources"><span class="muted small">Source:</span>
       <button class="chip-btn ${IDEA_SOURCE ? "" : "on"}" data-isrc="">All</button>${Object.entries(d.sources || {}).map(([k, v]) =>
-        `<button class="chip-btn ${k === IDEA_SOURCE ? "on" : ""}" data-isrc="${k}" ${srcCount[k] ? "" : 'disabled title="None yet - switched off in Settings, or nothing today"'}>${esc(v)}${srcCount[k] ? ` <span class="seg-n">${srcCount[k]}</span>` : ""}</button>`).join("")}</div>
+        `<button class="chip-btn ${k === IDEA_SOURCE ? "on" : ""} ${srcCount[k] ? "" : "src-empty"}" data-isrc="${k}" ${srcCount[k] ? "" : ' title="No ideas from it yet - switched off in Settings, unreachable, or nothing family-friendly there today"'}>${esc(v)} <span class="seg-n">${srcCount[k] || 0}</span></button>`).join("")}</div>
     <div class="idea-grid" id="id-grid"></div>`;
   const list = d.ideas.filter(keep);
   $("#id-count").textContent = `${list.length} of ${d.ideas.length}`;
@@ -2107,7 +2107,7 @@ const S_TABS = {
       ["ideas.wikipedia", "📖 Wikipedia most-read pages", "bool", {}],
       ["ideas.did_you_know", "💡 Wikipedia: Did you know…", "bool", {}],
       ["ideas.on_this_day", "📅 Wikipedia: featured article and On this day", "bool", {}],
-      ["ideas.nasa", "🔭 NASA picture of the day", "bool", {}],
+      ["ideas.nasa", "🔭 NASA image of the day", "bool", {}],
       ["ideas.holidays", "🎉 Holidays and seasons", "bool", {}],
       ["ideas.bluesky", "🦋 Bluesky trending topics", "bool", {}, "Busy and newsy - most of it gets filtered out."],
       ["ideas.hackernews", "🧡 Hacker News front page", "bool", {}, "Tech and science links."],
