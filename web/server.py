@@ -1220,7 +1220,7 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             pace = templates.pacing(b.get("template"), beats_on=bool(int(b.get("beat_words", 4) or 0)))
             res = autodirect.direct(b.get("script", ""), b.get("set", "cafe"), b.get("start"), b.get("cast"), policy,
-                                    speakers=speakers,
+                                    speakers=speakers, title=b.get("title") or "",
                                     beat_sets=[x for x in (b.get("beat_sets") or [])
                                                if x in catalog.all_sets() or str(x).startswith("new:")] or None,
                                     **pace)

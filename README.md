@@ -285,6 +285,10 @@ the camera instead: every few shots a new angle that circles, pushes in or pulls
 the camera, a camera ahead of her films her face; when she points at something behind her, the shot is from the
 side so you see the arm and the thing.
 
+### More ways to make videos (2026-11-26)
+- **Weather and time follow the story**: a sad line outdoors gets rain, a celebration gets confetti, and a
+  "day in the life" video goes from day to sunset to night - unless your script sets those itself.
+
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):
 - 💭 **What if…** - the classic: she imagines something silly and acts it out.

@@ -603,6 +603,62 @@ def add_scene_plan(result, plan, set_name, policy="reuse"):
 SPEAKER = re.compile(r"^\s*([A-Za-z][A-Za-z '-]{0,30}?)\s*:\s+")   # "Ethan: hey there" - a named speaker
 
 
+# a whole day in one video: the light goes day -> sunset -> night over the lines
+DAY_ARC = re.compile(r"\b(day in the life|all day|whole day|one day|from morning|morning (?:till|to|until) night|"
+                     r"24 hours|twenty-four hours|sunrise to sunset|dawn (?:till|to|until) dusk|my day)\b", re.I)
+INDOOR_IDS, OUTDOOR_IDS = {"cafe"}, {"park"}
+FESTIVE_FX = {"confetti", "hearts", "sparkles", "music_notes", "candy", "coins", "stars"}
+
+
+def _indoor(sid, sets):
+    if sid in INDOOR_IDS:
+        return True
+    if sid in OUTDOOR_IDS:
+        return False
+    rec = sets.get(sid) or {}
+    return rec.get("indoor") if rec else None              # None = not known (a place made at render)
+
+
+def story_weather(shots, text, set_name):
+    """Weather and time that follow the story, when the script didn't set them itself:
+    - sad lines outdoors: rain for that line (an indoor or unknown place gets none)
+    - a big celebration (celebrate / dance): confetti for that shot
+    - a whole day in one video ("a day in the life", "from morning to night"): the light goes day -> sunset ->
+      night over the lines (only when no shot sets a light)."""
+    sets = catalog.all_sets()
+    groups = {}
+    for k, s in enumerate(shots):
+        groups.setdefault(s.get("beat_group", f"s{k}"), []).append(k)
+    for idx in groups.values():
+        line = [shots[k] for k in idx]
+        sad = any(s.get("expression") == "sad" for s in line)
+        if sad:            # "Nobody came to my party": the word "party" gave a sad line confetti
+            for s in line:
+                if s.get("particles") and set(s["particles"]) <= FESTIVE_FX:
+                    s.pop("particles")
+        if any("particles" in s for s in line) or any(s.get("cutaway") for s in line):
+            continue
+        sid = line[0].get("set", set_name)
+        if sad and _indoor(sid, sets) is False:
+            for s in line:
+                s["particles"] = ["rain"]
+        for s in line:
+            if s.get("action") in ("celebrate", "dance") and "particles" not in s:
+                s["particles"] = ["confetti"]
+    if DAY_ARC.search(text or "") and not any(s.get("light") for s in shots):
+        order = list(groups.values())
+        n = len(order)
+        if n >= 3:
+            for j, idx in enumerate(order):
+                light = "day" if j < n * 0.45 else "sunset" if j < n * 0.8 else "night"
+                prev = shots[order[j - 1][0]].get("_arc") if j else "day"
+                shots[idx[0]]["_arc"] = light
+                if light != prev:
+                    shots[idx[0]]["light"] = light
+            for s in shots:
+                s.pop("_arc", None)
+
+
 CUTAWAY_MIN_WORDS = 4
 
 
@@ -701,7 +757,7 @@ def _pick_dest(marks, pos, visits):
 
 
 def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse", speakers=None, beat_words=0,
-           beat_sets=None, walk_every=0, wipe_every=0, move_every=0, opening="hook"):
+           beat_sets=None, walk_every=0, wipe_every=0, move_every=0, opening="hook", title="", story_fx=True):
     """walk_every: every Nth beat she walks, with the camera following her (0 = never), never within WALK_GAP shots
     of another walk. move_every: every Nth beat the camera moves instead (orbit / push in / pull out from a new
     angle) - she walked about too much when every 3rd beat was a walk.
@@ -1008,6 +1064,8 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         s.pop("to", None)
         if s.get("move") == "follow":
             s["move"] = "push_in"
+    if story_fx:
+        story_weather(shots, f"{title} {script}", set_name)
     _merge_cutaway_beats(shots)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     return {"start": start,

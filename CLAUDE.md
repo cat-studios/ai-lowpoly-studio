@@ -732,6 +732,13 @@ full size and only kept when it says the same - a small top-down shot was a fals
 gives `check`; the card shows ⚠️ N / ✓ checked (`.check-chip`, popup with 🎞 Show the shots); delete moves the json
 too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder).
 
+## Ideas round (2026-11-26): story weather, holding, faces, regulars' jokes, conversations, her room, reaction sounds, remixes, weekly plan, covers, stats
+- **Story weather** (`autodirect.story_weather`, end of `direct(title=, story_fx=True)`; the server passes the
+  title): a sad line outdoors gets `rain` (built-in `park` is outdoor, `cafe` indoor, a `new:` place unknown = none),
+  a sad line loses festive particles a word gave it (`FESTIVE_FX`: "nobody came to my party" got confetti),
+  celebrate/dance get `confetti`; `DAY_ARC` words in the title/script ("a day in the life", "from morning to night")
+  set the light day -> sunset (45 %) -> night (80 %) over the lines when no shot sets a light.
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and
