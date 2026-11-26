@@ -358,7 +358,7 @@ BASES = {
         }},
     "park": {
         "name": "Park / garden", "indoor": False, "floor": "grass", "ambience": "amb_birds", "backdrop": "trees",
-        "words": "park garden playground picnic farm field meadow lawn backyard yard zoo flowers outside spring "
+        "words": "park garden playground picnic farm field meadow lawn backyard yard zoo flowers outside spring savanna safari grassland prairie plains "
                  "summer camp",
         "defaults": {"hero": "tree", "side": "tree", "group_a": "bench", "group_b": "bush", "corner": "lamppost"},
         "palettes": {

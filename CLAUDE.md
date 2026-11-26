@@ -700,7 +700,8 @@ on their next use - also ones a bad check had made a sprite (not ones the user m
 a pass sets `complex: False`. The PROP_PASS/SPRITE_BELOW thresholds were lowered while the judge was wrong - worth
 revisiting once props are judged on themselves. Also from that video: a cutaway's subject skips describing "-ing"
 words ("a speeding car zooming by" was `car_by`; `ING_NOUNS` keep "building", "ring"...), a cast entry named like
-the subject is reused (`key`), more dog/antelope words.
+the subject is reused (`key`), more dog/antelope words. A "sandy savanna" was built as the beach base ("sandy" half-matched
+"sand"): the park base now has savanna, safari, grassland, prairie, plains.
 
 ## "Who and what appears" cards (2026-11-26)
 `pipeline/castcards.py` `cards(ep)` (`POST /api/castcards {episode}`): runs `resolve_cutaways` on a COPY (so
