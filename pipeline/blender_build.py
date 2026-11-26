@@ -678,7 +678,10 @@ class Smoother:
         self.x, self.v = {}, {}
 
     def apply(self, p):
-        dt = 1.0 / FPS / 4
+        # steps of at most 1/96 s whatever the frame rate: at 24 fps that's the old 4 per frame; a 2 fps storyboard
+        # took 1/8 s steps, the 7 Hz springs blew up and she flew off the screen (only her shadow was left)
+        steps = max(4, math.ceil(96 / FPS))
+        dt = 1.0 / FPS / steps
         for ch, (f, z) in SPRINGS.items():
             target = p[ch]
             if ch not in self.x:
@@ -689,7 +692,7 @@ class Smoother:
                 continue
             w = 2 * math.pi * f
             x, v = self.x[ch], self.v[ch]
-            for _ in range(4):
+            for _ in range(steps):
                 v += (w * w * (target - x) - 2 * z * w * v) * dt
                 x += v * dt
             self.x[ch], self.v[ch] = x, v
