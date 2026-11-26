@@ -710,7 +710,10 @@ CUT_VERBS = [   # words in a cutaway description -> how the subject moves
     (("spinning", "rotating", "turning"), "spin"), (("bouncing", "jumping", "hopping"), "bounce"),
     (("shaking", "trembling", "wobbling", "vibrating"), "shake"),
 ]
-CUT_SKIP = set("a an the of in on at to into with and its their his her some lots many tiny small big giant huge "
+# -ing words that are things, not doing words ("a tall building" was "tall")
+ING_NOUNS = set("""building ring king wing swing string spring painting ceiling pudding dumpling earring wedding
+stocking icing frosting filling clothing sling sibling viking duckling seedling herring lightning""".split())
+CUT_SKIP = set("a an the of in on at to into with and its their his her some lots many tiny small big giant huge by past "
                "little very slowly quickly just".split())
 
 
@@ -774,9 +777,14 @@ def resolve_cutaways(ep, log=print):
         words = [w for w in re.findall(r"[a-z]+", low)]
         # the subject is the words before the first "-ing" ("an elephant | bouncing high"), and the thing is the
         # last of them ("a stretched rubber band" -> rubber_band; it was "elephant_high" / "stretched_rubber")
-        cut_at = next((k for k, w in enumerate(words) if w.endswith("ing") and len(w) > 4 and k), len(words))
+        # an "-ing" word before any noun is a describing word ("a SPEEDING car zooming by" was "car_by")
+        verbish = lambda w: w.endswith("ing") and len(w) > 4 and w not in ING_NOUNS     # noqa: E731
+        cut_at = next((k for k, w in enumerate(words) if verbish(w)
+                       and any(x not in CUT_SKIP and not verbish(x) for x in words[:k])), len(words))
         subject = [w for w in words[:cut_at] if w not in CUT_SKIP] or \
             [w for w in words if w not in CUT_SKIP and not w.endswith("ing")]
+        # "speeding car" -> car, "running cheetah" -> cheetah (but "a building" stays a building)
+        subject = [w for w in subject if not verbish(w)] or subject
         # it must show what the line is about: "[cutaway: a blue whale swimming] Scientists say it swells up..."
         # (a whale as a comparison, in a video about sleep) - no shared word with the line = no cutaway
         group = shot.get("beat_group")
@@ -787,9 +795,11 @@ def resolve_cutaways(ep, log=print):
             shot.pop("cutaway", None)
             log(f"  cutaway (shot {i + 1}) '{text}' skipped - the line doesn't talk about it")
             continue
-        who = next((w for w in words if w in cast), None)
+        key = re.sub(r"[^a-z0-9_]+", "", "_".join(subject[-2:]) or "thing")[:24] or "thing"
+        # a cast entry for it already (the script's own, or a swap picked on Custom Video's cards) is reused
+        who = key if key in cast else next((w for w in words if w in cast), None)
         if not who:
-            who = re.sub(r"[^a-z0-9_]+", "", "_".join(subject[-2:]) or "thing")[:24] or "thing"
+            who = key
             n = 2
             base = who
             while who in cast and cast[who].get("looks") != text:
@@ -832,6 +842,17 @@ def resolve_cast(ep, cfg, log=print):
                 s["events"] = [e for e in s["events"] if e.get("who") != who]
     for who, info in list(cast.items()):
         info = dict(info) if isinstance(info, dict) else {}
+        if info.get("model_id") and not info.get("def"):
+            # picked on Custom Video's "who and what appears" cards: that imported model plays it (people too -
+            # an imported person moves as a whole and speaks with their own voice, like imported.person_def)
+            import imported
+            md = imported.model_def(info["model_id"], kind=propgen.slug(who), looks=info.get("looks") or who)
+            if md:
+                info["type"], info["def"] = "thing", md
+                info.pop("look", None)
+                log(f"  cast: {who} (your pick: imported model '{md.get('name')}')")
+            else:
+                log(f"  cast: {who} - the imported model you picked ({info['model_id']}) is gone; choosing again")
         if info.get("explainer") and not (info.get("def") or {}).get("explainer"):
             # "[show: toilet]": a model with moving parts, designed for what the narration says about it
             first = next((i for i, s in enumerate(ep["shots"]) if (s.get("show") or {}).get("who") == who), 0)
@@ -912,6 +933,12 @@ def resolve_cast(ep, cfg, log=print):
             if (comfy_cfg and not info["def"].get("sprite") and info["def"].get("source") != "imported"
                     and propgen.needs_picture(info["def"])):   # a 3D model stays 3D - only sprite-form props get drawn
                 info["def"] = propgen.add_sprite(dict(info["def"]), comfy_cfg, log=lambda m: log("  " + m))
+        if info.get("form") == "sprite" and info.get("def") and info["def"].get("source") != "imported":
+            # "Draw it" on the cards: a 2D picture in this video (the prop library's own form is left alone)
+            info["def"] = dict(info["def"], complex=True)
+            if comfy_cfg and not info["def"].get("sprite"):
+                info["def"] = propgen.add_sprite(info["def"], comfy_cfg, log=lambda m: log("  " + m))
+            log(f"  cast: {who} drawn as a picture" + ("" if info["def"].get("sprite") else " - no drawing (ComfyUI off)"))
         cast[who] = info
     ep["cast"] = cast
     # people don't "crash in", "fall" or "fly by" (things' verbs the AI sometimes gives them): they run in - a

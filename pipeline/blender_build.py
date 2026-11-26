@@ -1671,7 +1671,13 @@ segments = TRACKS[PRIMARY]["segs"]
 
 TOTAL = shot_info[-1]["f0"] + shot_info[-1]["n"] - 1 if shot_info else 0
 AUDIO_LEAD = float(EP.get("audio_lead", 0.15))
-HAS_CUTAWAY = any(s.get("cutaway") for s in SHOTS)
+def _is_cutaway(s):
+    """A shot that shows something else instead of her: "cutaway" on the shot, or a cutaway event on it (the prop
+    look check only had the event - she stayed in front of every prop and the judge scored her legs)."""
+    return bool(s.get("cutaway") or any(e.get("cutaway") for e in s.get("events") or []))
+
+
+HAS_CUTAWAY = any(_is_cutaway(s) for s in SHOTS)
 print(f"[build] {len(SHOTS)} shots, {len(TRACKS)} character(s), {TOTAL} frames @ {FPS}fps")
 
 for who, tr in TRACKS.items():
@@ -1703,7 +1709,7 @@ for who, tr in TRACKS.items():
             else:
                 write_pose(R, p, fr)
             if HAS_CUTAWAY:
-                gone = bool(shot.get("cutaway"))
+                gone = _is_cutaway(shot)
                 R.root.scale = (1e-4,) * 3 if gone else (1.0, 1.0, 1.0)
                 R.root.keyframe_insert("scale", frame=fr)
                 if gone:

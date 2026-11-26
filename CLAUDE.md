@@ -688,6 +688,20 @@ videos → `openBatchDialog`.
 - Fine in both: word-timed captions, cover pick (a close-up of her face), stream lengths, a new base set made at
   render (Grassy Field, 19 props). Whole-video loudness ~-16 LUFS (voice -14; the quiet intro/outro lowers it).
 
+## The look check judged HER (fixed 2026-11-26)
+`propgen.check_render` puts the prop in a one-shot cutaway, but `blender_build` hid her only when the SHOT had
+`cutaway` - the check's shot only had a cutaway EVENT, so she stood in front of every prop and the vision model scored
+her legs/skirt/ears ("a human character wearing a skirt", "cat ears, not cheetah ears"). That is why nearly every
+made prop scored 3-4/10 since the look check began, why many became flat sprites, and why the Top 5 test video's 7
+animal cutaways were all dropped (`drop_weak_cutaways`) after 10 minutes of designing them. Fixed both ways:
+`blender_build._is_cutaway(shot)` (shot `cutaway` or any cutaway event) and the check's shot sets `cutaway`.
+`propgen.CHECK_V` 2: `look_checked` stamps `check_v`; library props with an older check (or none) are checked again
+on their next use - also ones a bad check had made a sprite (not ones the user made a sprite: `form: "sprite"`);
+a pass sets `complex: False`. The PROP_PASS/SPRITE_BELOW thresholds were lowered while the judge was wrong - worth
+revisiting once props are judged on themselves. Also from that video: a cutaway's subject skips describing "-ing"
+words ("a speeding car zooming by" was `car_by`; `ING_NOUNS` keep "building", "ring"...), a cast entry named like
+the subject is reused (`key`), more dog/antelope words.
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

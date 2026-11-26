@@ -203,7 +203,8 @@ elephant donkey capybara panda koala otter hedgehog ferret llama alpaca camel mo
 kangaroo monkey dinosaur dino antelope kudu gazelle impala elk stag doe fawn bison buffalo ox yak boar warthog
 hyena jaguar panther lynx cougar puma badger beaver skunk mole sloth armadillo anteater meerkat chimp chimpanzee
 gorilla orangutan lemur gibbon baboon mammoth wombat platypus mongoose weasel tapir okapi caribou ibex chinchilla
-guinea lizard gecko iguana chameleon crocodile alligator turtle tortoise frog toad newt salamander trex""".split()),
+guinea lizard gecko iguana chameleon crocodile alligator turtle tortoise frog toad newt salamander trex pronghorn
+greyhound poodle beagle husky labrador retriever terrier dachshund bulldog corgi chihuahua pug hare jackrabbit""".split()),
     "fish": set("fish goldfish shark whale dolphin salmon tuna koi trout piranha orca clownfish pufferfish catfish "
                 "swordfish carp guppy stingray seahorse cod".split()),
     "bug": set("ant ants beetle ladybug ladybird bug bugs insect fly housefly cockroach cricket grasshopper "
@@ -676,7 +677,8 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
             changed = have.get("size_checked", False)
         if not have.get("animal") and not have.get("vehicle") and squeeze_to_width(have, log):
             changed = True                                   # ...the real width (older ones could be 8 m wide)...
-        if ollama and _prop_check_on() and "checked" not in have and have.get("parts") and not have.get("complex")                 and have.get("source") != "imported":       # ...a look check (once)...
+        if ollama and _prop_check_on() and have.get("check_v", 1) < CHECK_V and have.get("parts") \
+                and have.get("form") != "sprite"                 and have.get("source") != "imported":       # ...a look check (once)...
             have = look_checked(have, kind, have.get("looks", ""), setting, ollama, log)
             changed = True
         if comfy_cfg and not have.get("sprite") and needs_picture(have):   # ...and a picture if it needs one
@@ -745,7 +747,7 @@ def check_render(d, log=print):
               "_language": "en", "audio_lead": 0.0, "fps": 6, "render_res": [270, 480],
               "cast": {who: {"type": "thing", "def": d, "looks": d.get("looks", "")}},
               "shots": [{"action": "idle", "camera": "medium", "move": "static", "expression": "neutral",
-                         "duration": 0.7, "line": "", "talk": 0.0, "lead": 0.0,
+                         "duration": 0.7, "line": "", "talk": 0.0, "lead": 0.0, "cutaway": who,
                          "events": [{"who": who, "do": "appear", "cutaway": True}]}]}
         ep["character"] = R.resolve_character(ep, cfg)
         (tmp / "ep.json").write_text(json.dumps(ep, default=str), encoding="utf-8")
@@ -808,6 +810,11 @@ def _prop_check_on():
         return True
 
 
+# 2 = checked with her hidden: before 2026-11-26 she stood in front of every prop in its check picture and the judge
+# scored her legs ("a human character wearing a skirt"), so props checked before then are checked again once
+CHECK_V = 2
+
+
 def look_checked(d, kind, looks, setting, ollama, log=print):
     """Check an AI design's look; if it fails, the AI redesigns it once from the critique; if that fails too, it
     becomes a drawn sprite (complex = True -> add_sprite). The best-scoring shape design is kept as the fallback."""
@@ -822,7 +829,9 @@ def look_checked(d, kind, looks, setting, ollama, log=print):
         if score >= best.get("look_score", 0):
             best = d
         if score >= PROP_PASS:
-            d["checked"] = True
+            d.update(checked=True, check_v=CHECK_V)
+            if d.get("form") != "sprite":
+                d["complex"] = False              # a bad old check had made it a picture
             return d
         if attempt == 2:
             break
@@ -844,10 +853,10 @@ def look_checked(d, kind, looks, setting, ollama, log=print):
         nd["radius"] = round(min(4.0, float(nd["radius"]) * f), 2)
         d = nd
     if (best.get("look_score") or 0) < SPRITE_BELOW:     # clearly not the thing, even redesigned: a 2D sprite
-        best = dict(best, checked=False, complex=True)
+        best = dict(best, checked=False, complex=True, check_v=CHECK_V)
         log(f"[props] '{kind}' still doesn't look like it ({best.get('look_score')}/10) - it becomes a 2D sprite")
     else:                                              # "a bit off" stays 3D: sprites are the rare exception
-        best = dict(best, checked=False, complex=False)
+        best = dict(best, checked=False, complex=False, check_v=CHECK_V)
         log(f"[props] '{kind}' is a bit off ({best.get('look_score')}/10) but stays a 3D model")
     return best
 
