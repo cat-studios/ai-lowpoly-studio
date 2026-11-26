@@ -2366,6 +2366,7 @@ const S_TABS = {
       ["render.crf", "Video file quality (CRF)", "range", { min: 16, max: 26, step: 1 }, "Lower = sharper but bigger files. 20 is a good balance for uploads; 18 was the old setting (about 1.5x bigger)."]]],
     ["Start & end", [
       ["audio.intro", "Intro before first line (s)", "range", { min: 0, max: 3, step: 0.1 }, "Calm moment at the start - she idles, the title shows."],
+      ["audio.reactions", "Her own reaction sounds", "bool", {}, "A little gasp, giggle, “hmm” or “yay” in her own voice just before fitting lines (up to 3 per video)."],
       ["audio.outro", "Hold after last line (s)", "range", { min: 0, max: 4, step: 0.1 }, "Lets the last reaction land before the video ends."],
       ["audio.fade", "Fade in/out (s)", "range", { min: 0, max: 1.5, step: 0.05 }, "Picture and sound fade at the very start and end."],
     ]],

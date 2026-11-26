@@ -301,6 +301,9 @@ side so you see the arm and the thing.
 - **🏠 Her room** (Sets → 🏠 Her room): make it once and "My Room" becomes her home set - any script that says
   "her room", "home" or "bedroom" goes there. After every video she keeps one thing from it (a cutaway, something
   she held) as a souvenir along the walls - the newest 10. Remove one there; switch collecting off in Settings.
+- **Her own reaction sounds**: a little gasp when she's surprised, a giggle when she laughs, "hmm" when she
+  thinks, "yay", "aww" or "nya" - in her own voice, just before the line (up to 3 per video; Settings → Render &
+  audio → "Her own reaction sounds").
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

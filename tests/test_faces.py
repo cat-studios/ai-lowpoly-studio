@@ -26,5 +26,16 @@ class Faces(unittest.TestCase):
         self.assertEqual(A.direct("[blushing] Oh!", "cafe", beat_words=0)["shots"][0]["expression"], "blush")
 
 
+class Reactions(unittest.TestCase):
+    def test_sounds_on_fitting_lines_spaced_out(self):
+        s = A.direct("Wait, what?! No way!\nHmm, let me think.\nHaha that is so funny!\nYay, we did it!",
+                     "cafe", beat_words=0)["shots"]
+        self.assertEqual([x.get("react") for x in s], ["gasp", None, None, "yay"])   # 2 lines apart at least
+
+    def test_not_on_someone_elses_line(self):
+        s = A.direct("[+mom enter] Mom: Wait, what?!", "cafe", beat_words=0)["shots"]
+        self.assertFalse(any(x.get("react") for x in s))
+
+
 if __name__ == "__main__":
     unittest.main()

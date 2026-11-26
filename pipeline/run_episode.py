@@ -203,6 +203,25 @@ def line_voice(voice, shot):
     return v
 
 
+# her reaction sounds (shot "react", chosen by autodirect.reactions): said in her own voice just before the line
+REACT_TEXT = {"gasp": "Huh?!", "giggle": "Hehehe!", "hmm": "Hmmm...", "yay": "Yaaay!", "aww": "Awww!", "nya": "Nya!"}
+REACT_GAP = 0.08
+
+
+def sound_length(wav, ffmpeg, total):
+    """How long the sound in a clip lasts (to the first long silence): a "Huh?!" take was 0.26 s of voice and 1.4 s
+    of silence, which held the line back for no reason."""
+    try:
+        r = subprocess.run([ffmpeg, "-hide_banner", "-i", str(wav), "-af", "silencedetect=n=-40dB:d=0.15", "-f", "null",
+                            "-"], capture_output=True, text=True, timeout=60)
+        m = re.search(r"silence_start: ([\d.]+)", r.stderr)
+        while m and float(m.group(1)) < 0.05:           # silence at the very start doesn't count
+            m = re.search(r"silence_start: ([\d.]+)", r.stderr[m.end():])
+        return min(total, float(m.group(1))) if m else total
+    except Exception:
+        return total
+
+
 def tts(text, out_wav, voice, ffmpeg, cache_dir):
     """Speak one line -> wav, with optional extra pitch shift ("shift": 1.2). Results are cached."""
     voice = _normalize_voice(voice)
@@ -1421,9 +1440,25 @@ def main():
                 ep["shots"][j].pop("word_t", None)
         group_total[g] = total
         print(f"  beats {idx[0]}-{idx[-1]}: one line, {total:.1f}s in {len(idx)} beats")
+    react = {}                    # shot -> (wav, seconds): her reaction sound, the line waits for it
+    if not args.no_tts and (cfg.get("audio") or {}).get("reactions", True):
+        for i, shot in enumerate(ep["shots"]):
+            r = shot.get("react")
+            if r not in REACT_TEXT or shot.get("speaker") not in (None, "", "main"):
+                continue
+            wav = audio_dir / f"react_{i:02d}.wav"
+            try:
+                secs = tts(REACT_TEXT[r], wav, voice_for(ep, cfg, shot), ffmpeg, ROOT / "build" / "tts_cache")
+                react[i] = (wav, min(1.3, sound_length(wav, ffmpeg, float(secs)) + 0.05))
+                print(f"  shot {i}: her reaction '{r}' ({react[i][1]:.2f}s)")
+            except Exception as exc:                 # a reaction never stops the video
+                print(f"  (no reaction sound for shot {i}: {exc.__class__.__name__})")
     for i, shot in enumerate(ep["shots"]):
         # breathing room: a calm intro before the first line and a hold after the last one
         intro = float(cfg["audio"].get("intro", 0.7)) if i == 0 else 0.0
+        extra = react[i][1] + REACT_GAP if i in react else 0.0      # the reaction plays first, then the line
+        if i in react:
+            shot["react_at"] = round(AUDIO_LEAD + intro, 3)
         outro = float(cfg["audio"].get("outro", 1.3)) if i == len(ep["shots"]) - 1 else 0.0
         brand = S.deep_merge(cfg["branding"], ep.get("branding", {}))
         if outro and brand.get("end_text"):
@@ -1436,8 +1471,8 @@ def main():
             talk = shares[i]
             first, last = i == idx[0], i == idx[-1]
             shot["talk"] = round(talk, 3)
-            shot["lead"] = round(AUDIO_LEAD + intro, 3) if first else 0.0    # the line's voice starts once, here
-            dur = talk + (AUDIO_LEAD + intro if first else 0.0) + (TAIL_PAD + outro if last else 0.0)
+            shot["lead"] = round(AUDIO_LEAD + intro + extra, 3) if first else 0.0    # the line's voice starts once, here
+            dur = talk + (AUDIO_LEAD + intro + extra if first else 0.0) + (TAIL_PAD + outro if last else 0.0)
             shot["duration"] = round(dur, 3)
             if first:
                 print(f"  shot {i}: beat line {group_total[g]:.1f}s")
@@ -1460,9 +1495,10 @@ def main():
             print(f"  shot {i}: line {talk:.1f}s")
             report(0.10 + 0.18 * (i + 1) / max(1, len(ep["shots"])), f"Voice line {i + 1}/{len(ep['shots'])}")
         shot["talk"] = round(talk, 3)
-        shot["lead"] = round(AUDIO_LEAD + intro, 3)
-        shot["duration"] = max(float(shot.get("duration", 2.0)), AUDIO_LEAD + talk + TAIL_PAD) + intro + outro
+        shot["lead"] = round(AUDIO_LEAD + intro + extra, 3)
+        shot["duration"] = max(float(shot.get("duration", 2.0)), AUDIO_LEAD + talk + TAIL_PAD) + intro + outro + extra
     ep["audio_lead"] = AUDIO_LEAD
+    wavs += [(f"r{i}", w) for i, (w, _) in sorted(react.items())]       # her reactions go into the voice mix
     resolved = build / "resolved.json"
     resolved.write_text(json.dumps(ep, indent=2), encoding="utf-8")
 
@@ -1598,7 +1634,11 @@ def main():
     labels = []
     for k, (i, wav) in enumerate(wavs):
         cmd += ["-i", str(wav)]
-        delay = int(((timing["shots"][i]["f0"] - 1) / fps + float(ep["shots"][i].get("lead", AUDIO_LEAD))) * 1000)
+        if isinstance(i, str):                    # ("r3", wav): her reaction before shot 3's line
+            j = int(i[1:])
+            delay = int(((timing["shots"][j]["f0"] - 1) / fps + float(ep["shots"][j].get("react_at", AUDIO_LEAD))) * 1000)
+        else:
+            delay = int(((timing["shots"][i]["f0"] - 1) / fps + float(ep["shots"][i].get("lead", AUDIO_LEAD))) * 1000)
         fc.append(f"[{n_in}:a]adelay={delay}:all=1[a{k}]")
         labels.append(f"[a{k}]")
         n_in += 1

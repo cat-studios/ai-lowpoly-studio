@@ -775,6 +775,14 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   shot, clear of the room's own props (0.9 m), as `souv_<kind>` custom props scaled to ~`SOUVENIR_H` 0.6 m,
   `souvenir: True`. `GET /api/home`, `DELETE /api/home/souvenir/<kind>`. `autodirect.match_set`: `HOME_WORDS`
   ("her room", "home", "bedroom") pick it when it exists. Not made in dev (needs the AI dresser): try it in production.
+- **Her reaction sounds**: director `reactions(shots)` (with `story_fx`) puts `react` on the first beat of her own
+  lines - surprised -> gasp, laugh -> giggle, think -> hmm, celebrate -> yay, blush -> aww, wave -> nya
+  (`REACTION_FOR`), at most `MAX_REACTIONS` 3, `REACTION_GAP` 2 lines apart, no cutaways or other speakers.
+  `run_episode`: `REACT_TEXT` is said with `tts()` in her own voice (cached; the cloned voice in production),
+  timed by `sound_length` (silencedetect to the first silence: a "Huh?!" take was 0.26 s of voice + 1.4 s of
+  silence); the line's `lead` and the shot grow by that + `REACT_GAP`, `react_at` = the old lead, and the clip
+  joins the voice mix as `("r<shot>", wav)`. Settings `audio.reactions` (default on). Checked in a dev render
+  (`zz_check_react`): the gasp at 0.85-1.09 s, the line from 1.24 s.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

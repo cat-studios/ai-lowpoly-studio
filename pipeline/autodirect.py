@@ -760,6 +760,39 @@ def face_closeups(shots, text_of=lambda s: s.get("line", "")):
 MOVE_ANIMS_SET = set(catalog.MOVE_ANIMS)
 
 
+REACTION_FOR = [   # (shot test, her reaction sound) - run_episode.REACT_TEXT says them in her own voice
+    (lambda s: s.get("expression") == "surprised", "gasp"),
+    (lambda s: s.get("action") == "laugh", "giggle"),
+    (lambda s: s.get("action") == "think", "hmm"),
+    (lambda s: s.get("action") == "celebrate", "yay"),
+    (lambda s: s.get("expression") == "blush", "aww"),
+    (lambda s: s.get("action") == "wave", "nya"),
+]
+MAX_REACTIONS, REACTION_GAP = 3, 2
+
+
+def reactions(shots):
+    """Her own little sounds before fitting lines (a gasp when surprised, a giggle when she laughs, "hmm" when she
+    thinks...): on the first beat of her own lines, at most MAX_REACTIONS per video, REACTION_GAP lines apart,
+    never on a cutaway (she isn't on screen) or someone else's line."""
+    groups, order = {}, []
+    for k, s in enumerate(shots):
+        g = s.get("beat_group", f"s{k}")
+        if g not in groups:
+            order.append(g)
+        groups.setdefault(g, []).append(k)
+    made, last = 0, -99
+    for gi, g in enumerate(order):
+        first = shots[groups[g][0]]
+        if made >= MAX_REACTIONS or gi - last <= REACTION_GAP or first.get("speaker") or first.get("cutaway") \
+                or "react" in first:
+            continue
+        r = next((r for test, r in REACTION_FOR if test(first)), None)
+        if r:
+            first["react"] = r
+            made, last = made + 1, gi
+
+
 TO_VIEWER = re.compile(r"\b(comment|let me know|follow|subscribe|what do you think|tell me|you guys|everyone watching|"
                        r"which (?:one|side) are you|like and)\b", re.I)
 
@@ -1209,6 +1242,8 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         held_things(shots, cast)
         face_closeups(shots)
     conversations(shots, {"main"} | set((speakers or {}).values()))
+    if story_fx:
+        reactions(shots)
     for s in shots:
         s.pop("_set_expr", None)
         s.pop("_set_cam", None)
