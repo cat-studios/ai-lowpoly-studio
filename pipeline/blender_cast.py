@@ -112,7 +112,12 @@ def _roomiest(h, radius, x0, x1, y0, y1):
         for j in range(int(round((y1 - y0) / 0.25)) + 1):
             c = Vector((x0 + i * 0.25, y0 + j * 0.25, 0.0))
             in_shot = abs(c.x - h.x) - radius * 0.8 <= 0.34 * (c.y - h.y + 4)
-            score = _gap(c, h, radius) - (0.0 if in_shot else 1.0)
+            score = min(1.5, _gap(c, h, radius)) - (0.0 if in_shot else 1.0)     # 1.5 m of room is enough
+            far = (c - h).length
+            if far > 3.5:
+                # with Mom and a worker already beside her, a neighbour went 9.7 m back - a speck, and the arrival
+                # shot swung behind her to fit both: further away scores lower, unless nothing nearer has room
+                score -= (far - 3.5) * 0.8
             if c.y < h.y - 0.3:
                 # in front of her = between her and the camera: a kudu landed 2.8 m in front, filled the reveal
                 # shot as a grey blur and was out of every later shot - only when nothing else has any room

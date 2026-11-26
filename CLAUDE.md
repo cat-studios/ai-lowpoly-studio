@@ -856,6 +856,11 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
 - `autodirect.cast_kind`: a name one of your actors has (name or role, `actors.pick`) or a `ROLE_PEOPLE` word
   (worker, teacher, neighbour, vampire...) is a person - "+construction_worker ... Construction Worker: ..." was a
   thing, so the catgirl read "Construction Worker: Careful..." aloud.
+- Production test with the user's new actors (`zz_test_new_actors`): Mom + Construction Worker play their own clips
+  (walk in, Idle, Interact while talking), bright, framed on their lines; a neighbour got the generic Customer in
+  new colours. Fixed: with two people already beside her the neighbour went 9.7 m back (`_roomiest` scored
+  unlimited clearance) - clearance now counts up to 1.5 m and spots past 3.5 m lose 0.8 per metre (dev build
+  check: 3 m, behind and to the side).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
