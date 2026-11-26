@@ -204,7 +204,8 @@ kangaroo monkey dinosaur dino antelope kudu gazelle impala elk stag doe fawn bis
 hyena jaguar panther lynx cougar puma badger beaver skunk mole sloth armadillo anteater meerkat chimp chimpanzee
 gorilla orangutan lemur gibbon baboon mammoth wombat platypus mongoose weasel tapir okapi caribou ibex chinchilla
 guinea lizard gecko iguana chameleon crocodile alligator turtle tortoise frog toad newt salamander trex pronghorn
-greyhound poodle beagle husky labrador retriever terrier dachshund bulldog corgi chihuahua pug hare jackrabbit""".split()),
+greyhound poodle beagle husky labrador retriever terrier dachshund bulldog corgi chihuahua pug hare jackrabbit
+tamarin marmoset capuchin macaque mandrill""".split()),
     "fish": set("fish goldfish shark whale dolphin salmon tuna koi trout piranha orca clownfish pufferfish catfish "
                 "swordfish carp guppy stingray seahorse cod".split()),
     "bug": set("ant ants beetle ladybug ladybird bug bugs insect fly housefly cockroach cricket grasshopper "
