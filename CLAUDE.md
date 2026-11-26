@@ -652,6 +652,8 @@ delete / trash carry the cover like the shot sheet. `/media/` serves jpg.
   (`def.model.id`), else the studio body with its resolved `look` + `height`; voice = `role_voice`.
 - API (`web/actors_web.py`): `POST /api/actors/guests {episode}` (the people in that render), `POST /api/actors/keep
   {episode, who, name}`. `/api/ai/script` takes `regulars` (ids) → `writer_note` in the writer's extra rules.
+- Actor dialog → Imported model: every model (the picker stopped at 200; production has ~3000), category chips from
+  `imported.category_map` (People first), search across all, "Show more" by 120 (`model_choices` sends `category`).
 - UI: Videos → 🎭 Guests (`openGuests`); Custom Video Idea step → ⭐ Regulars chips (`W.regulars`); after directing,
   a regular's cast entry gets `actor: <id>` (`type: person`). Assets → Actors dialog: Personality + ⭐ Regular.
 - Script cleanup (`llm._clean_lines`): a bare direction line ("+mom enter, angry", no brackets) goes into the next

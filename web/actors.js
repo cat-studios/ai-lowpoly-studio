@@ -150,18 +150,34 @@ function actorEditor(a, data) {
               || '<div class="empty"><p>No rigged models yet. Make one from a VRoid file on the Characters page, or add a .blend to assets/actors/rigs.</p></div>'}</div>`;
           bindPick(el);
         } else {
-          el.innerHTML = `<input type="text" id="ae-search" placeholder="Search imported models…" style="margin-bottom:8px">
-            <div class="asset-grid" id="ae-models" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));max-height:300px;overflow:auto"></div>`;
+          // every imported model (production has ~3000 - the old list stopped at 200): category chips like Assets ->
+          // Imported (People first - actors are people), search across all of them, and "Show more" in pages
+          const all = data.models.imported;
+          const counts = {};
+          all.forEach((x) => { counts[x.category] = (counts[x.category] || 0) + 1; });
+          const cats = Object.keys(counts).sort((a, b) => (b === "People") - (a === "People") || counts[b] - counts[a]);
+          const cur0 = all.find((x) => x.id === model);
+          let cat = cur0 ? cur0.category : counts.People ? "People" : "", shown = 120;
+          el.innerHTML = `<input type="text" id="ae-search" placeholder="Search all ${all.length} imported models…" style="margin-bottom:8px">
+            <div class="chips-row" id="ae-cats" style="margin-bottom:8px;flex-wrap:wrap"><button class="chip-btn" data-cat="">All <span class="seg-n">${all.length}</span></button>${cats.map((c) =>
+              `<button class="chip-btn" data-cat="${esc(c)}">${esc(c)} <span class="seg-n">${counts[c]}</span></button>`).join("")}</div>
+            <div class="asset-grid" id="ae-models" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));max-height:340px;overflow:auto"></div>
+            <div class="muted small" id="ae-more-row" style="margin-top:6px"></div>`;
           const draw = () => {
             const q = $("#ae-search", m).value.toLowerCase();
-            const list = data.models.imported.filter((x) => !q || `${x.name} ${x.pack}`.toLowerCase().includes(q)).slice(0, 200);
-            $("#ae-models", m).innerHTML = list.map((x) => `<div class="asset-card ${x.id === model ? "pick-on" : ""}" tabindex="0" data-pick="${esc(x.id)}">
+            $$("[data-cat]", m).forEach((b) => b.classList.toggle("on", !q && b.dataset.cat === cat));
+            const list = all.filter((x) => q ? `${x.name} ${x.pack} ${x.category}`.toLowerCase().includes(q) : (!cat || x.category === cat));
+            $("#ae-models", m).innerHTML = list.slice(0, shown).map((x) => `<div class="asset-card ${x.id === model ? "pick-on" : ""}" tabindex="0" data-pick="${esc(x.id)}">
               <div class="asset-thumb checker">${x.preview ? `<img src="${esc(x.preview)}" alt="" loading="lazy">` : `<div class="asset-noimg"><span>📦</span></div>`}</div>
               <div class="asset-info"><div class="asset-name">${esc(x.name)}</div><div class="muted small">${esc(x.pack)}</div></div></div>`).join("")
               || '<div class="empty"><p>No imported models match.</p></div>';
+            $("#ae-more-row", m).innerHTML = list.length > shown
+              ? `Showing ${shown} of ${list.length} <button class="small-btn" id="ae-more">Show more</button>` : `${list.length} model${list.length === 1 ? "" : "s"}`;
+            if ($("#ae-more", m)) $("#ae-more", m).onclick = () => { shown += 120; draw(); };
             bindPick(el);
           };
-          $("#ae-search", m).oninput = draw;
+          $$("[data-cat]", m).forEach((b) => b.onclick = () => { cat = b.dataset.cat; shown = 120; $("#ae-search", m).value = ""; draw(); });
+          $("#ae-search", m).oninput = () => { shown = 120; draw(); };
           draw();
         }
         pic();

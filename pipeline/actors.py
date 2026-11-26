@@ -159,10 +159,12 @@ def model_choices():
                              "source": "character" if folder.name == "characters" else "actor rig",
                              "preview": f"/charimg/{p.stem}.preview.png" if folder.name == "characters" and pic.exists() else None})
     imported = []
+    cats = IMP.category_map()                 # the same categories as Assets -> Imported (the picker's chips)
     for pack in IMP.packs():
         for m in pack.get("models", []):
             if m.get("status") == "ok":
                 imported.append({"id": m["id"], "name": m["name"], "pack": pack["name"],
+                                 "category": cats.get(m["id"]) or "Other",
                                  "height": m.get("height"), "preview": m.get("preview")})
     return {"rigs": rigs, "imported": imported}
 
