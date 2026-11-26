@@ -32,6 +32,17 @@ class Subjects(unittest.TestCase):
         self.assertEqual(list(ep["cast"]), ["rubber_band"])          # a card's swap isn't lost to rubber_band2
 
 
+class WeakCutaways(unittest.TestCase):
+    def test_a_bit_off_is_shown_a_clear_fail_is_not(self):
+        ep = {"shots": [{"cutaway": "cheetah", "events": [{"who": "cheetah", "cutaway": True}]},
+                        {"cutaway": "blob", "events": [{"who": "blob", "cutaway": True}]}],
+              "cast": {"cheetah": {"type": "thing", "def": {"checked": False, "look_score": 4}},
+                       "blob": {"type": "thing", "def": {"checked": False, "look_score": 2}}}}
+        R.drop_weak_cutaways(ep, log=lambda m: None)
+        self.assertTrue(ep["shots"][0].get("events"))              # 4/10 "missing spots": shown (the user's choice)
+        self.assertFalse(ep["shots"][1].get("events"))             # 2/10: not the thing at all
+
+
 class CheckVersion(unittest.TestCase):
     def test_props_checked_before_the_fix_are_checked_again(self):
         self.assertGreaterEqual(P.CHECK_V, 2)

@@ -702,6 +702,9 @@ revisiting once props are judged on themselves. Also from that video: a cutaway'
 words ("a speeding car zooming by" was `car_by`; `ING_NOUNS` keep "building", "ring"...), a cast entry named like
 the subject is reused (`key`), more dog/antelope words. A "sandy savanna" was built as the beach base ("sandy" half-matched
 "sand"): the park base now has savanna, safari, grassland, prairie, plains.
+Cutaways (the user, 2026-11-26): `drop_weak_cutaways` drops a made prop only below `SPRITE_BELOW` (3/10, "not the
+thing" - and those get a sprite where ComfyUI runs); a "bit off" 3-4/10 one is shown (the re-rendered Top 5 lost 4 of
+5 animals at 4/10 under the old rule; the greyhound passed at 8/10 once the check judged the prop).
 
 ## "Who and what appears" cards (2026-11-26)
 `pipeline/castcards.py` `cards(ep)` (`POST /api/castcards {episode}`): runs `resolve_cutaways` on a COPY (so

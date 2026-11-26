@@ -745,18 +745,23 @@ def resolve_animations(ep, log=print):
 
 def drop_weak_cutaways(ep, log=print):
     """A cutaway only shows something you can recognise: an imported model, a built-in prop, a drawn picture, a person,
-    or a made prop that passed the look check (propgen.look_checked). A blocky shape that failed it (and got no
-    picture) would fill the screen with boxes - "a feline army marching" - so she stays on screen instead."""
+    or a made prop that didn't clearly fail the look check. A shape that scored under propgen.SPRITE_BELOW (3/10, "not
+    the thing") and got no picture would fill the screen with boxes - "a feline army marching" - so she stays on screen
+    instead. A "bit off" one (3-4/10: "missing spots") is shown, as everywhere else (the user's choice, 2026-11-26:
+    a Top 5 lost 4 of its 5 animals to that rule once the check judged the props themselves)."""
+    import propgen
     cast = ep.get("cast") or {}
     for s in ep["shots"]:
         for e in [e for e in s.get("events") or [] if e.get("cutaway")]:
             info = cast.get(e.get("who")) or {}
             d = info.get("def") or {}
-            if info.get("type") == "person" or info.get("prop") or d.get("model") or d.get("crowd") or d.get("sprite")                     or d.get("checked") is not False:
+            if info.get("type") == "person" or info.get("prop") or d.get("model") or d.get("crowd") or d.get("sprite") \
+                    or d.get("checked") is not False or (d.get("look_score") or 0) >= propgen.SPRITE_BELOW:
                 continue
             s["events"].remove(e)
             s.pop("cutaway", None)
-            log(f"  cutaway '{e['who']}' skipped - its shape doesn't look like it (and it has no picture)")
+            log(f"  cutaway '{e['who']}' skipped - its shape doesn't look like it at all "
+                f"({d.get('look_score')}/10, and it has no picture)")
     used = {e["who"] for s in ep["shots"] for e in s.get("events") or []}
     for who in [w for w in cast if w not in used]:
         cast.pop(who)
