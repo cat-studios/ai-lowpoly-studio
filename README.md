@@ -134,6 +134,11 @@ Three big buttons:
      one picture per shot with its line, no voice) or **🎞 Rough preview** (a few minutes: a small moving video
      with the voice and captions, plain look). Previews never make anything new - a set, prop or move that isn't
      made yet shows as a stand-in (the closest set you have); the real render makes it.
+     **🎭 Who and what appears** (same step) shows a card for everyone and everything else in the video - the
+     people, things and cutaways - with what will play it (your actor, an imported model, a made prop with its
+     look score, or "will be designed") and its picture. Swap it before rendering: **📦 One of my models**
+     (any imported model, by category), **🖼 Draw it** (a 2D picture), **🧊 Make a new 3D one**, or
+     **↺ Let the studio choose**.
 
 The scenes come after the script on purpose: the script decides where the story goes, and the shots are directed
 last so walks and pointing use the real sets' own places. Each video is its own new episode (named from the title).

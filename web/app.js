@@ -1309,6 +1309,8 @@ async function openCustomWizard() {
             <div class="cw-extras">
               <label class="check"><input type="checkbox" id="cw-fresh" ${W.fresh ? "checked" : ""}> 🎙 Record the voice lines again (new takes)</label>
               ${(W.language || META.settings.language || "en") !== "en" ? `<button id="cw-trans" class="small-btn">🌐 Check the ${esc(langName(W.language || META.settings.language))} translation</button>` : ""}</div>
+            <div class="cw-who"><p class="cw-label">🎭 Who and what appears <span class="muted small">- what will play each one. Swap anything that won't look right before you render.</span></p>
+              <div id="cw-cards" class="cw-cards"><span class="muted small">Looking…</span></div></div>
             <div class="cw-preview">
               <div class="muted small">Have a quick look first? Nothing new is made for these (new sets, props and moves show as stand-ins).</div>
               <div class="btns" style="justify-content:center">
@@ -1329,7 +1331,14 @@ async function openCustomWizard() {
             if (W.language) ep.language = W.language;
             if (W.music !== "__default") ep.music = W.music === "__none" ? "" : W.music;
             if (W.ambience !== "__default") ep.ambience = W.ambience === "__none" ? "" : W.ambience;
-            if (W.cast && Object.keys(W.cast).length) ep.cast = W.cast;
+            const cast = JSON.parse(JSON.stringify(W.cast || {}));
+            for (const [who, pick] of Object.entries(W.castPick || {})) {        // swaps from the "who appears" cards
+              const base = cast[who] || { type: "thing", looks: pick.looks || who.replace(/_/g, " ") };
+              delete base.model_id; delete base.form; delete base.generated;
+              cast[who] = { ...base, ...pick.set };
+              delete cast[who].looks_hint;
+            }
+            if (Object.keys(cast).length) ep.cast = cast;
             if (W.translations) ep.translations = W.translations;
             if (W.idea) ep.idea = W.idea;            // marks the idea used (Ideas page)
             if ((W.scenes || []).some((sc) => String(sc.choice).startsWith("new:"))) ep.set_style = W.setStyle;   // made at render
@@ -1364,6 +1373,44 @@ async function openCustomWizard() {
               });
             } catch (err) { btnEl.disabled = false; throw err; }
           });
+          // 🎭 the cards: what plays each cast member and cutaway (castcards.py), with swaps kept in W.castPick
+          W.castPick = W.castPick || {};
+          const drawCards = async () => {
+            const el = $("#cw-cards", box);
+            if (!el) return;
+            let r;
+            try { r = await api("POST", "/api/castcards", { episode: build() }); }
+            catch (err) { el.innerHTML = `<span class="muted small">Couldn't look: ${esc(err.message)}</span>`; return; }
+            if (!$("#cw-cards", box)) return;                       // the popup moved on
+            if (!r.cards.length) { el.innerHTML = `<span class="muted small">Only ${esc(titleCase(W.character || META.settings.active_character))} - nobody and nothing else appears.</span>`; return; }
+            const icon = { imported: "📦", actor: "🧍", body: "🧍", builtin: "🧱", library: "🧊", new: "✨", "?": "❔" };
+            el.innerHTML = r.cards.map((c, k) => {
+              const weak = c.score != null && c.score < 5;
+              return `<div class="cw-whocard ${weak ? "weak" : ""}" data-k="${k}">
+                <div class="cw-whopic checker">${c.picture ? `<img src="${esc(c.picture)}" alt="" loading="lazy">` : `<span>${icon[c.source] || "❔"}</span>`}</div>
+                <div class="cw-whoinfo"><b>${esc(c.who.replace(/_/g, " "))}</b> ${c.cutaway ? '<span class="pill">📷 cutaway</span>' : ""}
+                  <div class="small">${esc(c.label)}${c.score != null ? ` <span class="pill ${weak ? "bad" : "ok"}" title="How much it looked like itself in its check">${c.score}/10</span>` : ""}</div>
+                  <div class="muted small">shot${c.shots.length === 1 ? "" : "s"} ${esc(c.shots.join(", ") || "-")}</div>
+                  <div class="btns small-btns">
+                    <button class="small-btn" data-cact="model">📦 One of my models</button>
+                    ${c.type !== "person" ? `<button class="small-btn" data-cact="sprite" title="A drawn 2D picture (ComfyUI)">🖼 Draw it</button>
+                    <button class="small-btn" data-cact="new" title="The studio designs its own 3D model">🧊 Make a new 3D one</button>` : ""}
+                    ${W.castPick[c.who] ? `<button class="small-btn ghost" data-cact="reset">↺ Let the studio choose</button>` : ""}</div></div></div>`;
+            }).join("");
+            $$(".cw-whocard", el).forEach((cardEl) => {
+              const c = r.cards[Number(cardEl.dataset.k)];
+              const setPick = (set) => { W.castPick[c.who] = { looks: c.looks, set }; drawCards(); };
+              $$("[data-cact]", cardEl).forEach((btn) => btn.onclick = guard(async () => {
+                const a = btn.dataset.cact;
+                if (a === "reset") { delete W.castPick[c.who]; drawCards(); return; }
+                if (a === "sprite") return setPick({ form: "sprite" });
+                if (a === "new") return setPick({ generated: true });
+                const mid = await pickImportedModel(c.type === "person" ? "People" : "", c.who.replace(/_/g, " "));
+                if (mid) setPick({ model_id: mid });
+              }));
+            });
+          };
+          drawCards();
           $("#cw-sb", box).onclick = preview("storyboard");
           $("#cw-rough", box).onclick = preview("rough");
           const finish = (how) => {
@@ -1924,6 +1971,45 @@ async function pageIdeas() {
     $("[data-ia=series]", c).onclick = guard(() => openSeriesDialog({ idea: it.topic + (it.angle ? ` - ${it.angle}` : ""), template: it.template, idea_id: it.id }));
     $("[data-ia=star]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { starred: !it.starred }); pageIdeas(); });
     $("[data-ia=hide]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { hidden: !it.hidden }); pageIdeas(); });
+  });
+}
+
+// pick one of the imported models (Custom Video's "who appears" cards): resolves to its id, or null
+async function pickImportedModel(startCat = "", query = "") {
+  const all = (await api("GET", "/api/actors")).models.imported;
+  const counts = {};
+  all.forEach((x) => { counts[x.category] = (counts[x.category] || 0) + 1; });
+  const cats = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  let cat = counts[startCat] ? startCat : "", shown = 120, picked = null;
+  // the name as a first search only when it finds something ("mailman" found nothing and hid the People list)
+  const words = String(query).toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  if (!all.some((x) => words.some((w) => `${x.name} ${x.category}`.toLowerCase().includes(w)))) query = "";
+  return openModal({
+    title: "📦 Pick one of your models", wide: true,
+    body: `<input type="text" id="pm-q" placeholder="Search all ${all.length} models…" value="${esc(query)}" style="margin-bottom:8px">
+      <div class="chips-row" style="flex-wrap:wrap;margin-bottom:8px"><button class="chip-btn" data-pmcat="">All <span class="seg-n">${all.length}</span></button>${cats.map((c) =>
+        `<button class="chip-btn" data-pmcat="${esc(c)}">${esc(c)} <span class="seg-n">${counts[c]}</span></button>`).join("")}</div>
+      <div class="asset-grid" id="pm-grid" style="grid-template-columns:repeat(auto-fill,minmax(110px,1fr));max-height:50vh;overflow:auto"></div>
+      <div class="muted small" id="pm-more" style="margin-top:6px"></div>`,
+    buttons: [{ label: "Cancel", value: null }, { label: "Use it", primary: true, onClick: () => picked || (toast("Tap a model first", true), false) }],
+    onOpen: (m) => {
+      const draw = () => {
+        const q = $("#pm-q", m).value.trim().toLowerCase();
+        $$("[data-pmcat]", m).forEach((b) => b.classList.toggle("on", !q && b.dataset.pmcat === cat));
+        let list = all.filter((x) => q ? `${x.name} ${x.pack} ${x.category}`.toLowerCase().includes(q) : (!cat || x.category === cat));
+        if (q && !list.length) list = all.filter((x) => q.split(/\s+/).some((w) => w.length > 2 && x.name.toLowerCase().includes(w)));
+        $("#pm-grid", m).innerHTML = list.slice(0, shown).map((x) => `<div class="asset-card ${x.id === picked ? "pick-on" : ""}" tabindex="0" data-pm="${esc(x.id)}">
+          <div class="asset-thumb checker">${x.preview ? `<img src="${esc(x.preview)}" alt="" loading="lazy">` : `<div class="asset-noimg"><span>📦</span></div>`}</div>
+          <div class="asset-info"><div class="asset-name">${esc(x.name)}</div><div class="muted small">${esc(x.pack)}</div></div></div>`).join("")
+          || '<div class="empty"><p>No models match.</p></div>';
+        $("#pm-more", m).innerHTML = list.length > shown ? `Showing ${shown} of ${list.length} <button class="small-btn" id="pm-show">Show more</button>` : `${list.length} model${list.length === 1 ? "" : "s"}`;
+        if ($("#pm-show", m)) $("#pm-show", m).onclick = () => { shown += 120; draw(); };
+        $$("[data-pm]", m).forEach((c) => c.onclick = () => { picked = c.dataset.pm; $$("[data-pm]", m).forEach((x) => x.classList.toggle("pick-on", x === c)); });
+      };
+      $$("[data-pmcat]", m).forEach((b) => b.onclick = () => { cat = b.dataset.pmcat; shown = 120; $("#pm-q", m).value = ""; draw(); });
+      $("#pm-q", m).oninput = () => { shown = 120; draw(); };
+      draw();
+    },
   });
 }
 

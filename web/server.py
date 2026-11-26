@@ -1301,6 +1301,13 @@ class Handler(BaseHTTPRequestHandler):
                       result={"video": f"/media/{name}.mp4", "sheet": f"/media/{name}_shots.png", "episode": p.stem})
             return self.send_json(submit(job).to_dict())
 
+        if head == "castcards" and method == "POST":  # Custom Video: who and what appears, before the render
+            import castcards
+            ep = (self.body_json() or {}).get("episode") or {}
+            if not isinstance(ep.get("shots"), list):
+                raise ValueError("direct the shots first")
+            return self.send_json({"cards": castcards.cards(ep)})
+
         if head == "preview" and method == "POST":   # a quick look before the full render (storyboard / rough)
             b = self.body_json()
             p = episode_path(b.get("id"))
