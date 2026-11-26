@@ -2004,10 +2004,13 @@ function openCover(key, episode, img, title) {
         watchJob(job, $("#cv-job", box), (j) => {
           btnEl.disabled = false;
           if (j.status !== "done") { toast("Couldn't make the cover - see the log", true); return; }
-          const src = j.result.cover + "?t=" + Date.now();
-          $(".cover-wrap", box).innerHTML = draw(src);
-          $("#cv-job", box).innerHTML = "";
           toast("New cover ✓");
+          if (!box.isConnected) {                 // the popup was closed while it worked: refresh the Videos page
+            if (location.hash === "#videos") pageVideos();
+            return;
+          }
+          $(".cover-wrap", box).innerHTML = draw(j.result.cover + "?t=" + Date.now());
+          $("#cv-job", box).innerHTML = "";
         });
       });
       if ($("#cv-again", box)) $("#cv-again", box).onclick = run(0);
