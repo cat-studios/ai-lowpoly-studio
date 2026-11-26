@@ -37,6 +37,7 @@ LIGHT = {"day": "day", "sunny": "day", "morning": "day", "sunset": "sunset", "go
          "night": "night", "starry": "night", "stormy": "night", "dawn": "sunset", "foggy": "sunset", "rainy": "sunset",
          "snowy": "day"}
 STYLES = ["base", "palette", "judged"]      # the set style is a random pick of the three, as in the browser
+NEEDS_CO_STAR = {"conversation"}            # kinds a random video can't be: it has no co-star to talk to
 
 
 def lines_for(length):
@@ -52,7 +53,8 @@ def light_for(time_card):
 def item(rng=random, template_ids=()):
     """One random video, as an idea for batch.py: picks the way the 🎲 card deck does."""
     pick = {k: rng.choice(v) for k, v in CARDS.items()}
-    kind = rng.choice(list(template_ids)) if template_ids else "what_if"
+    kinds = [t for t in template_ids if t not in NEEDS_CO_STAR]
+    kind = rng.choice(kinds) if kinds else "what_if"
     lo, hi = lines_for(pick["length"])
     return {"id": None, "topic": pick["topic"], "angle": "", "template": kind, "titles": [],
             "random": {"scene": pick["scene"], "tone": pick["tone"], "guest": pick["guest"], "time": pick["time"],

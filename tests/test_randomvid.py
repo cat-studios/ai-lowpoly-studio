@@ -43,6 +43,12 @@ class Cards(unittest.TestCase):
         self.assertIn(r["style"], randomvid.STYLES)
         self.assertLessEqual(r["lines"][0], r["lines"][1])
 
+    def test_a_random_video_is_never_a_conversation(self):
+        for seed in range(30):              # a conversation needs a co-star, and a random video has none
+            it = randomvid.item(random.Random(seed), template_ids=["conversation", "what_if"])
+            self.assertEqual(it["template"], "what_if")
+        self.assertEqual(randomvid.item(random.Random(1), template_ids=["conversation"])["template"], "what_if")
+
     def test_light_and_length_follow_the_browser_flow(self):
         self.assertEqual(randomvid.light_for("a golden sunset"), "sunset")
         self.assertEqual(randomvid.light_for("day turning into night"), "day")     # first word that has a light

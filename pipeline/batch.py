@@ -67,8 +67,6 @@ def main(spec_path):
             if rnd:
                 lo, hi = rnd["lines"]
             br_on = bool(spec.get("brainrot") or idea.get("brainrot"))       # 🧠 brain rot mode (Settings tab)
-            br = S.load_settings().get("brainrot") or {}
-            beat = int(br.get("beat_words", 2)) if br_on else 4
             step(0.1, "writing the script")
             r = call(base, "POST", "/api/ai/script", {
                 "title": title, "set": f"new:{rnd['scene']}" if rnd else "auto", "scene_policy": "reuse",
@@ -86,10 +84,13 @@ def main(spec_path):
                 idea_text = f"{rnd['scene']}. {title}. {' '.join((r.get('lines') or [])[:2])}"[:300]
                 job = call(base, "POST", "/api/sets/generate", {"idea": idea_text, "where": "", "light": rnd["light"],
                                                                  "style": rnd["style"]})
-                set_id, start = wait_job(base, job["id"])["result"]["set"], "front"
+                set_id, start = (wait_job(base, job["id"]).get("result") or {}).get("set"), "front"
+                if not set_id:
+                    raise RuntimeError("the scene was made but its id didn't come back - see the set job's log")
             step(0.5, "directing the shots")
             d = call(base, "POST", "/api/autodirect", {
-                "script": r["script"], "set": set_id, "start": start, "cast": {}, "co_stars": [], "beat_words": beat,
+                "script": r["script"], "set": set_id, "start": start, "cast": {}, "co_stars": [], "beat_words": 4,
+                "brainrot": br_on,                       # the server uses brain rot mode's own cutting
                 "beat_sets": [], "cast_ai": True, "scene_ai": True, "character": spec.get("character") or "",
                 "title": title, "scene_policy": "reuse", "template": tpl_id})
             ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],

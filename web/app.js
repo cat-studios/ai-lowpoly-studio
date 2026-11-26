@@ -603,7 +603,7 @@ async function pageCreate() {
     if (ask && CS.ep.shots.length && !(await uiConfirm("Replace the current shots with new ones from the script? Changes you made to the shots are lost.", { title: "Direct shots", ok: "Replace shots" }))) return;
     const castAI = $("#cast-ai")?.checked;
     const r = await api("POST", "/api/autodirect", { script, set: CS.ep.set, start: CS.ep.start, cast: CS.ep.cast || {}, co_stars: CS.ep.co_stars || [],
-      beat_words: brainrotOn() ? brainrotBeats() : (CS.beats === false ? 0 : 4),
+      beat_words: CS.beats === false ? 0 : 4, brainrot: brainrotOn(),
       beat_sets: (CS.places.length + CS.newPlaces.length) > 1 ? [...CS.places, ...CS.newPlaces.map((p) => "new:" + p)] : [],
       cast_ai: castAI, character: $("#ep-char")?.value, scene_ai: $("#scene-ai")?.checked, title: CS.ep.title,
       scene_policy: $("#scene-policy")?.value || "reuse", template: CS.ep.template || "" });
@@ -786,7 +786,7 @@ async function openSeriesDialog(preset = {}) {
       } }],
   });
   if (!v) return;
-  const job = await api("POST", "/api/series", { ...v, character: $("#ep-char")?.value || "", model: CS.model });
+  const job = await api("POST", "/api/series", { ...v, character: $("#ep-char")?.value || "", model: CS.model, brainrot: brainrotOn() });
   toast(`Series started: ${v.count} episode${v.count > 1 ? "s" : ""} - follow it in the queue (top right)`);
   watchJob(job, $("#make-job"), (j) => toast(j.status === "done" ? "Series planned - the episodes are rendering one by one" : "The series failed - see the log", j.status !== "done"));
 }
@@ -822,7 +822,6 @@ const MW_STEPS_BASE = [
 ];
 // 🧠 Brain rot mode: the checkmark on the Create page (kept in this browser). Its words and pacing: Settings → Brain rot mode
 const brainrotOn = () => localStorage.getItem("lp_brainrot") === "1";
-const brainrotBeats = () => Number(META?.settings?.brainrot?.beat_words ?? 2);
 
 const MW_LIGHT = { day: "day", sunny: "day", morning: "day", sunset: "sunset", golden: "sunset", evening: "sunset",
   night: "night", starry: "night", stormy: "night", dawn: "sunset", foggy: "sunset", rainy: "sunset", snowy: "day" };
@@ -1178,7 +1177,7 @@ async function openCustomWizard() {
               const [lo, hi] = CW_LEN[W.length].slice(2);
               const r = await api("POST", "/api/ai/script", { title: W.title, set: "auto", scene_policy: "reuse", character: W.character,
                 model: CS.model, lines: lo + Math.floor(Math.random() * (hi - lo + 1)), tone: W.tone || tpl().tone, extra: W.note,
-                co_stars: W.co_stars, regulars: W.regulars || [], template: W.template, scenes: W.places });
+                co_stars: W.co_stars, regulars: W.regulars || [], template: W.template, scenes: W.places, brainrot: brainrotOn() });
               W.script = r.script; W.start = r.set || "auto";
               $("#cw-script", box).value = W.script; showBox();
               $("#cw-script", box).classList.add("cw-deal");
@@ -1266,7 +1265,7 @@ async function openCustomWizard() {
           if (!W.shots || W.shotsFor !== key) {
             await mwMagic(box, "Directing your shots…");
             const r = await api("POST", "/api/autodirect", { script: W.directScript, set: W.set, cast: {}, co_stars: W.co_stars,
-              beat_words: W.beats ? 4 : 0, cast_ai: W.castAI, character: W.character, scene_ai: false, title: W.title, template: W.template });
+              beat_words: W.beats ? 4 : 0, brainrot: brainrotOn(), cast_ai: W.castAI, character: W.character, scene_ai: false, title: W.title, template: W.template });
             W.shots = r.shots; W.start = r.start; W.cast = r.cast || {}; W.shotsFor = key;
             for (const id of W.regulars || []) if (W.cast[id]) Object.assign(W.cast[id], { type: "person", actor: id });   // played by their own actor
             if (r.set) W.set = r.set;
@@ -1353,6 +1352,7 @@ async function openCustomWizard() {
             if (W.co_stars.length) ep.co_stars = W.co_stars;
             if (W.look) ep.look_preset = W.look;
             if (W.language) ep.language = W.language;
+            if (brainrotOn()) ep.brainrot = true;               // 🧠 one word per caption at render
             if (W.music !== "__default") ep.music = W.music === "__none" ? "" : W.music;
             if (W.ambience !== "__default") ep.ambience = W.ambience === "__none" ? "" : W.ambience;
             const cast = JSON.parse(JSON.stringify(W.cast || {}));
@@ -2567,7 +2567,7 @@ const S_TABS = {
       ["brainrot.one_word_captions", "One word on screen at a time", "bool", {}, "The captions show a single word at a time, like the reference video."],
     ]],
     ["How it's used", [
-      ["brainrot.note", "", "note", {}, "Turn it on with the 🧠 checkmark on the Create page. It applies to random videos, Custom Video, and batches from the Ideas page. Scripts are written short and chaotic, with a story that jumps about, using the words above. The checkmark is remembered in this browser."],
+      ["brainrot.note", "", "note", {}, "Turn it on with the 🧠 checkmark on the Create page. It applies to random videos, Custom Video, Series and Batches (made from the Create page or the Ideas page). Scripts are written short and chaotic, with a story that jumps about, using the words above. The checkmark is remembered in this browser."],
     ]],
   ]],
   text: ["🔤 Text & branding", [
@@ -2678,7 +2678,7 @@ const S_TABS = {
       ["idle.minutes", "Quiet minutes before it starts", "range", { min: 5, max: 120, step: 5 }, "Polling and the status dot don't count as using the studio."],
       ["idle.count", "Videos each time", "range", { min: 1, max: 3, step: 1 }],
       ["idle.random_chance", "Random videos, in %", "range", { min: 0, max: 100, step: 10 }, "Each video is a random one (a place, vibe, guest, time and length from the 🎲 cards) this often; the rest come from fresh ideas. 0 = ideas only, 100 = random only."],
-      ["idle.per_day", "Most per day", "range", { min: 1, max: 10, step: 1 }, "Never reaches Postiz - these stay on your Videos page."],
+      ["idle.per_day", "Most batches per day", "range", { min: 1, max: 10, step: 1 }, "Never reaches Postiz - these stay on your Videos page."],
     ]],
     ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
       ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],

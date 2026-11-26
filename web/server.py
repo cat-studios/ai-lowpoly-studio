@@ -227,26 +227,30 @@ IDLE_IGNORE = ("/api/jobs", "/api/status", "/api/comfy/status", "/static/", "/me
 
 
 def idle_loop():
-    """Every minute: after `idle.minutes` with nobody using the studio and nothing queued or running, make a batch
-    (`idle.count` videos from fresh ideas, Settings -> Idle auto-make). Once per quiet spell, `idle.per_day` a day
-    at most. Not a weekly-plan week, so the Monday plan still runs."""
+    """Every minute: after `idle.minutes` with nobody using the studio and nothing queued, running or just finished,
+    make a batch (`idle.count` videos, Settings -> Idle auto-make), `idle.per_day` batches a day at most. Requests
+    the studio makes itself (batch.py, series.py: X-Studio-Job) don't count as use. Doesn't count as the week's plan."""
     import weekly
     while True:
         time.sleep(60)
         try:
             cfg = S.load_settings().get("idle") or {}
-            if not cfg.get("on") or time.time() - ACTIVITY["at"] < float(cfg.get("minutes", 10)) * 60:
+            if not cfg.get("on"):
                 continue
-            if any(j.status in ("queued", "running") for j in JOBS.values()):
+            jobs = list(JOBS.values())                  # a copy: requests add jobs meanwhile
+            if any(j.status in ("queued", "running") for j in jobs):
+                continue
+            # quiet = since the last time someone used it AND since the last job finished (so after a batch and its
+            # renders, the next one waits another quiet spell); up to `per_day` batches a day
+            last_end = max([j.ended or 0 for j in jobs] + [0])
+            if time.time() - max(ACTIVITY["at"], last_end) < float(cfg.get("minutes", 10)) * 60:
                 continue
             st = weekly.state()
             today = time.strftime("%Y-%m-%d")
-            if st.get("idle_fired_for") == ACTIVITY["at"]:          # this quiet spell already made its batch
-                continue
             made = int(st.get("idle_count") or 0) if st.get("idle_day") == today else 0
             if made >= int(cfg.get("per_day", 3)):
                 continue
-            st.update(idle_fired_for=ACTIVITY["at"], idle_day=today, idle_count=made + 1)
+            st.update(idle_day=today, idle_count=made + 1)
             weekly.save_state(st)
             run_idle_batch(cfg)
         except Exception as exc:
@@ -909,8 +913,8 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(urlparse(self.path).path)
         self._t0, self._logbody, self._raw_body = time.time(), "", None
         logs.set_request(self.client_address[0], method, path)
-        if not path.startswith(IDLE_IGNORE):              # someone is using the studio (polling doesn't count)
-            ACTIVITY["at"] = time.time()
+        if not path.startswith(IDLE_IGNORE) and not self.headers.get("X-Studio-Job"):
+            ACTIVITY["at"] = time.time()                  # someone is using the studio (polling and its own jobs don't count)
         if method != "GET" and "json" in (self.headers.get("Content-Type") or "") and path != "/login":
             n = int(self.headers.get("Content-Length") or 0)
             if 0 < n <= 256 * 1024:                      # small JSON changes: keep the body for the log
@@ -1323,7 +1327,8 @@ class Handler(BaseHTTPRequestHandler):
                     "character": str(b.get("character") or ""), "length": str(b.get("length") or "medium"),
                     "tone": str(b.get("tone") or ""), "note": str(b.get("note") or "")[:300],
                     "model": str(b.get("model") or ""), "idea_id": str(b.get("idea_id") or "")[:80],
-                    "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}"}
+                    "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}",
+                    "brainrot": bool(b.get("brainrot"))}                  # 🧠 the Create page's checkmark
             f = ROOT / "build" / "series" / f"{stamp()}-{slug(idea)[:30]}.json"
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(json.dumps(spec), encoding="utf-8")
@@ -1371,6 +1376,10 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             pace = templates.pacing(b.get("template"), beats_on=bool(int(b.get("beat_words", 4) or 0)))
+            if b.get("brainrot") and pace.get("beat_words"):    # 🧠 brain rot mode: its own (faster) cutting
+                br = S.load_settings().get("brainrot") or {}
+                pace["beat_words"] = max(1, int(br.get("beat_words", 2)))
+                pace["move_every"] = min(pace.get("move_every") or 2, 2)
             res = autodirect.direct(b.get("script", ""), b.get("set", "cafe"), b.get("start"), b.get("cast"), policy,
                                     speakers=speakers, title=b.get("title") or "",
                                     beat_sets=[x for x in (b.get("beat_sets") or [])
@@ -1542,7 +1551,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(res)
             if method == "POST" and arg == "fetch":
                 cmd = [sys.executable, "-u", str(PIPE / "stats.py"), "fetch"]
-                return self.send_json(submit(Job("stats", "Instagram numbers", cmd)).to_dict())
+                return self.send_json(submit(Job("stats", "Numbers from Instagram / YouTube", cmd)).to_dict())
             if method == "PUT" and arg:
                 if not ID_RE.fullmatch(arg):
                     raise ValueError("bad video")

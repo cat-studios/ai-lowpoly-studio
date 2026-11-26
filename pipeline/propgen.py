@@ -58,7 +58,8 @@ def design_call(fn, ollama, *args, **kw):
     machine on the network) with its design model, else the main Ollama. If the design server can't be reached,
     the main Ollama + main model take over (a render never stops because that machine is off). Only 3D object
     design goes to the design server - scripts, titles, sets and pictures stay on the main one."""
-    url = "" if (ollama or {}).get("big_server") is False else ((ollama or {}).get("design_url") or "")
+    set_up = (ollama or {}).get("design_url") or ""          # a big server's address is filled in
+    url = "" if (ollama or {}).get("big_server") is False else set_up
     if url and not _DESIGN_DOWN:
         try:
             return fn(url, design_model(ollama), *args, **kw)
@@ -70,7 +71,9 @@ def design_call(fn, ollama, *args, **kw):
                       "check the name in Settings -> AI tools - using the main Ollama")
             else:
                 print(f"[props] big model server {url} not reachable ({exc.__class__.__name__}) - using the main Ollama")
-    model = (ollama or {}).get("design_model") if not url else None
+    # design_model is a model on THIS server only when no big server is set up; with one set up (switched off or down),
+    # it names the big server's model, which this PC doesn't have - use the main model instead
+    model = (ollama or {}).get("design_model") if not set_up else None
     return fn(ollama["url"], model or ollama["model"], *args, **kw)
 
 

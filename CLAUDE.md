@@ -99,6 +99,45 @@ Open items:
 - Cast warning "no free spot ... moved to (x, y), clearance N m" = `spot()` found nothing beside her and
   `_roomiest()` picked a place instead (expected in crowded sets; it stays within ~3.5 m of her now).
 
+## 2026-11-27 work (unit-tested + dev API/browser checks; NOT yet rendered in production)
+- **Stats: YouTube** (`stats.fetch_youtube`, `fetch_all` = Instagram and/or YouTube, one failing doesn't stop the
+  other): Data API with `ideas.youtube_key` + `youtube.channel_id` (uploads playlist -> views/likes/comments, channel
+  subscriberCount kept in `db["youtube"]["history"]`), optional Analytics (OAuth `client_id/client_secret/
+  refresh_token`, secrets) -> per video `avg_view_pct`, `avg_view_secs`, `subs_gained`; stored per video under
+  `"yt"` (merged, so a fetch without Analytics keeps old retention), matched by title (`match`). `summary()["yt_by"]`
+  = by kind. Never run against the live API (no key in dev).
+- **Big server switch** `ollama.big_server` (default on): off = `llm._remote_for` and `propgen.design_call` never
+  use `design_url`; with a big server set up (on or off), `design_model` names ITS model, so the main Ollama falls
+  back to `ollama.model`.
+- **Loudness**: the final mix = amix -> `loudnorm=I=-14:TP=-1.5:LRA=11` -> `aresample=44100` -> apad -> fades
+  (loudnorm outputs 192 kHz: without the resample the AAC was 96 kHz; after the fades it lifted them back).
+- **Fact check** (`pipeline/factcheck.py`, Quick facts + Myth or fact, Settings `facts.check`): before Blender,
+  the local model lists the facts the video states as true (a myth line -> the true fact), each is looked up on
+  Wikipedia (search -> whole plain-text article -> `relevant()` = intro + the paragraphs sharing the claim's words,
+  3,500 chars; Wikipedia's own `exchars` stops at 1,200 = the intro only) and judged supported / contradicted /
+  unknown -> `build/<name>/facts.json` (`key` = hash of the lines: a re-render with the same script reuses it).
+  `review.fact_issues`: contradicted = warn, unknown = info. Live test: "octopuses have three hearts" supported
+  from the Octopus article; the small judge also called "bananas grow on trees" supported (lenient).
+- **Writer**: `llm.HOOK_STYLES` (one picked per script, `hook_rule`) + `ENDING_RULE` (the last line echoes the
+  first so the video loops).
+- **Weekly plan by numbers**: `weekly.kind_rank()` (Stats averages, kinds with 2+ videos) orders `pick`'s kinds.
+- **Idle auto-make** (`server.idle_loop`, Settings `idle {on, minutes, count, per_day, random_chance}`, 🌙 button
+  on the Create page): every minute; quiet = since max(last real request, last job finished) >= minutes and
+  nothing queued/running -> `run_idle_batch` (old trending ideas fetched first; each video random with
+  `random_chance` % = `randomvid.item()`, else `weekly.pick`), `per_day` batches a day (state in
+  `build/weekly_plan.json` `idle_day/idle_count`), never Postiz, not the week's plan. "Real request" = not
+  `IDLE_IGNORE` polling and not `X-Studio-Job` (sent by `series.call`, so batch/series calls don't count).
+- **Random videos on the server** (`pipeline/randomvid.py`): the 🎲 cards (`CARDS` - `tests/test_randomvid.py`
+  checks them against app.js `MW_STEPS_BASE`), never `conversation` (needs a co-star); in `batch.py` a `"random"`
+  item writes for `new:<place>`, makes that set first (`/api/sets/generate` + `wait_job`), then directs there.
+- **Brain rot mode** (🧠 checkmark on the Create page, kept in localStorage `lp_brainrot`; Settings tab
+  `brainrot {words, words_per_video, beat_words, one_word_captions}`): `/api/ai/script` `brainrot: true` ->
+  `llm.pick_brainrot_words` + `brainrot_rule` in the writer's notes; `/api/autodirect` `brainrot: true` -> the
+  tab's `beat_words` (the endpoint otherwise takes words-per-shot from the template - sending a number did
+  nothing) and `move_every` 2; episodes carry `"brainrot": true` -> `run_episode` sets caption `group` 1. Wired in:
+  random video, Custom Video popup, old Create page, Series, Batch (+ Ideas batches). Not: idle, weekly, remixes.
+  Settings rows gained types `list` (textarea, one per line) and `note`.
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours
@@ -984,7 +1023,9 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
 | `pipeline/llm.py` | Ollama: `generate_script`, `generate_titles`, `design_set` (text or `image=`), `make_coherent`, `make_theme`, `find_cast`, `find_scenes`, `place_for_title`, `social_copy`, `chat_json` (format=json). |
 | `pipeline/comfy.py` | ComfyUI client: status/models, `find_server`, Z-Image + checkpoint txt2img, `texture_set(mode=required|auto)`, `object_sprite`, `floor_prompt`, `colour_word`. |
 | `pipeline/postiz.py` | Postiz client: `channels()`, `upload()`, `captions()` (`llm.social_copy` + `TRENDY` tags), `draft()` (POST /posts type "draft", one per ticked channel, `settings_for()` per provider; discord needs a channel ID). Base `<url>/api/public/v1`, header `Authorization: <key>` (no Bearer). **Drafts only - never schedule/publish.** |
-| `pipeline/review.py` | The check after every render: missing/hidden her, short or lost cutaways, weak props, sounds, streams. |
+| `pipeline/review.py` | The check after every render: missing/hidden her, short or lost cutaways, weak props, sounds, streams, the fact check's findings. |
+| `pipeline/factcheck.py` | Fact check before the render (Quick facts, Myth or fact): claims -> Wikipedia -> local judge -> `build/<name>/facts.json`. |
+| `pipeline/randomvid.py` | The 🎲 random-video cards for the server (idle auto-make), as batch items with a `"random"` part. |
 | `pipeline/castcards.py` | Custom Video's "who and what appears" cards: what plays each cast member / cutaway, no AI. |
 | `pipeline/batch.py` | Batch from Ideas: several ideas -> one video each through the studio's own API. |
 | `pipeline/cover.py` | The Reel's cover picture: best frame (vision pick from a grid) + title in the video's look. |

@@ -23,7 +23,7 @@ class FactCheck(unittest.TestCase):
         chat = mock.Mock(side_effect=[extracted] + verdicts)
         with mock.patch.object(factcheck.S, "load_settings", lambda: SETTINGS), \
                 mock.patch.object(factcheck.llm, "chat_json", chat), \
-                mock.patch.object(factcheck, "article", lambda q: articles.get(q, (None, ""))):
+                mock.patch.object(factcheck, "article", lambda q, claim="": articles.get(q, (None, ""))):
             res = factcheck.check_episode(EP, build, log=lambda *a: None)
         return res, build
 
@@ -56,6 +56,25 @@ class FactCheck(unittest.TestCase):
             res = factcheck.check_episode(EP, build, log=lambda *a: None)
         self.assertEqual(res["status"], "error")
         self.assertTrue((build / "facts.json").exists())
+
+    def test_the_judge_reads_the_paragraphs_about_the_claim(self):
+        text = ("The octopus is a soft-bodied mollusc with eight limbs and no skeleton at all.\n"
+                "== Anatomy ==\n"
+                "Octopuses live in every ocean, and many species live on the sea floor near the coast.\n"
+                "They have three hearts: one pumps blood round the body, two pump it through the gills.\n")
+        got = factcheck.relevant(text, "Octopuses have three hearts")
+        self.assertIn("three hearts", got)
+        self.assertTrue(got.startswith("The octopus is"))           # the intro always comes first
+        self.assertNotIn("== Anatomy ==", got)
+
+    def test_the_same_script_reuses_the_last_check(self):
+        extracted = {"claims": [{"n": 1, "claim": "Octopuses have three hearts.", "search": "nothing"}]}
+        res, build = self.run_check(extracted, [], {})
+        chat = mock.Mock(side_effect=AssertionError("the model was asked again"))
+        with mock.patch.object(factcheck.S, "load_settings", lambda: SETTINGS), \
+                mock.patch.object(factcheck.llm, "chat_json", chat):
+            again = factcheck.check_episode(EP, build, log=lambda *a: None)
+        self.assertEqual(again["claims"], res["claims"])
 
     def test_only_fact_kinds_are_checked(self):
         self.assertTrue(factcheck.applies({"template": "myth_or_fact"}, {}))

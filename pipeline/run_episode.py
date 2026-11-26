@@ -1709,9 +1709,11 @@ def main():
     afades = (f",afade=t=in:d={fade},afade=t=out:st={max(0, dur - fade):.3f}:d={fade}" if fade > 0 else "")
     if labels:
         # apad to exactly the video's length (a bare apad never ends - one less way for the encode to hang)
-        # the whole mix to -14 LUFS (voice alone was -14, so the video came out ~-16 with music and quiet ends)
+        # the whole mix to -14 LUFS (voice alone was -14, so the video came out ~-16 with music and quiet ends);
+        # before the fades (so it can't lift them back up), and back to 44.1 kHz (loudnorm works at 192 kHz: the AAC
+        # came out at 96 kHz)
         fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,"
-                  f"apad=whole_dur={dur:.3f}{afades},loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+                  f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100,apad=whole_dur={dur:.3f}{afades}[a]")
     else:
         cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono"]
         fc.append(f"[{n_in}:a]anull[a]")

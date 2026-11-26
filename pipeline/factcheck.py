@@ -10,7 +10,9 @@ article's own text. Nothing is changed in the script - the result is build/<name
 review.py reports contradicted claims (warn) and unchecked ones (info) in the check after the render. A fact check
 that can't run (Ollama off, Wikipedia unreachable) never stops a render: status "skipped" or "error".
 """
+import hashlib
 import json
+import re
 import sys
 import time
 import urllib.parse
@@ -54,15 +56,45 @@ def _wiki(params):
         return json.load(r)
 
 
-def article(search):
-    """(url, text) of Wikipedia's best match for a search, or (None, "") when nothing matches."""
+TEXT_LIMIT = 3500          # characters of the article the judge reads
+
+
+def _keywords(s):
+    return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 3}
+
+
+def relevant(text, claim, limit=TEXT_LIMIT):
+    """The article's first paragraph + the paragraphs that share the most words with the claim, up to `limit`.
+    (Wikipedia's own extract stops at 1,200 characters - the intro, which rarely holds the detail being checked.)"""
+    paras = [p.strip() for p in text.split("\n") if len(p.strip()) > 40 and not p.strip().startswith("==")]
+    if not paras:
+        return text[:limit]
+    want = _keywords(claim)
+    ranked = sorted(paras[1:], key=lambda p: -len(want & _keywords(p)))
+    out, size = [paras[0]], len(paras[0])
+    for p in ranked:
+        if not want & _keywords(p) or size + len(p) > limit:
+            continue
+        out.append(p)
+        size += len(p)
+    return "\n\n".join(out)[:limit]
+
+
+def article(search, claim=""):
+    """(url, text) of Wikipedia's best match for a search - the parts about the claim -, or (None, "")."""
     hits = _wiki({"list": "search", "srsearch": search, "srlimit": 1}).get("query", {}).get("search") or []
     if not hits:
         return None, ""
     title = hits[0]["title"]
-    pages = _wiki({"prop": "extracts", "explaintext": 1, "exchars": 3000, "titles": title}).get("query", {}).get("pages") or [{}]
+    pages = _wiki({"prop": "extracts", "explaintext": 1, "exlimit": 1, "titles": title}).get("query", {}).get("pages") or [{}]
     text = pages[0].get("extract") or ""
-    return "https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_")), text
+    return ("https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_")),
+            relevant(text, claim or search))
+
+
+def script_key(lines):
+    """Same spoken lines = same facts: a re-render with the same script reuses the last check."""
+    return hashlib.sha1("\n".join(t for _, t in lines).encode("utf-8")).hexdigest()[:16]
 
 
 def spoken_lines(ep):
@@ -79,25 +111,40 @@ def check_episode(ep, build, log=print):
     """Writes build/<name>/facts.json and returns it. Never raises."""
     build = Path(build)
     build.mkdir(parents=True, exist_ok=True)
-    res = {"status": "skipped", "checked": None, "error": "", "claims": []}
+    lines = spoken_lines(ep)
+    key = script_key(lines)
+    try:                                                        # same script as the last check: keep its result
+        old = json.loads((build / "facts.json").read_text(encoding="utf-8"))
+        if old.get("key") == key and old.get("status") == "done":
+            log(f"  fact check: same script as before ({len(old.get('claims') or [])} claims)")
+            return old
+    except Exception:
+        pass
+    res = {"status": "skipped", "checked": None, "error": "", "key": key, "claims": []}
     try:
         o = S.load_settings()["ollama"]
-        lines = spoken_lines(ep)
         listing = "\n".join(f"{n}. {t}" for n, t in lines)
-        found = (llm.chat_json(o["url"], o["model"], EXTRACT, listing, temperature=0.2) or {}).get("claims") or []
+        got = llm.chat_json(o["url"], o["model"], EXTRACT, listing, temperature=0.2)
+        found = got if isinstance(got, list) else (got or {}).get("claims") or []
         shot_of = dict(lines)
         for c in found[:MAX_CLAIMS]:
             if not isinstance(c, dict) or not str(c.get("claim") or "").strip():
                 continue
-            n = int(c.get("n") or 0)
-            src, text = article(str(c.get("search") or c["claim"])[:120])
-            if not text:
-                verdict, note = "unknown", "no Wikipedia article found for it"
-            else:
-                j = llm.chat_json(o["url"], o["model"], JUDGE,
-                                  f"FACT: {c['claim']}\n\nARTICLE ({src}):\n{text}", temperature=0.1) or {}
-                verdict = j.get("verdict") if j.get("verdict") in VERDICTS else "unknown"
-                note = str(j.get("note") or "")[:300]
+            try:                                                 # one claim that breaks never loses the others
+                n = int(str(c.get("n") or 0).strip(". "))
+            except ValueError:
+                n = 0
+            try:
+                src, text = article(str(c.get("search") or c["claim"])[:120], str(c["claim"]))
+                if not text:
+                    verdict, note = "unknown", "no Wikipedia article found for it"
+                else:
+                    j = llm.chat_json(o["url"], o["model"], JUDGE,
+                                      f"FACT: {c['claim']}\n\nARTICLE ({src}):\n{text}", temperature=0.1) or {}
+                    verdict = j.get("verdict") if isinstance(j, dict) and j.get("verdict") in VERDICTS else "unknown"
+                    note = str(j.get("note") or "")[:300] if isinstance(j, dict) else ""
+            except Exception as exc:
+                src, verdict, note = "", "unknown", f"couldn't check it ({exc.__class__.__name__})"
             res["claims"].append({"shot": n if n in shot_of else 0, "line": shot_of.get(n, ""), "claim": c["claim"],
                                   "verdict": verdict, "source": src or "", "note": note})
         res["status"] = "done"

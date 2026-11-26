@@ -24,7 +24,8 @@ LENGTHS = {"short": (4, 5), "long": (10, 13)}       # "medium" = the template's 
 
 def call(base, method, path, body=None, timeout=1800):
     req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
-                                 method=method, headers={"Content-Type": "application/json"})
+                                 method=method, headers={"Content-Type": "application/json",
+                                                         "X-Studio-Job": "1"})   # the studio itself: not "someone using it" (idle auto-make)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -61,17 +62,21 @@ def main(spec_path):
         r = call(base, "POST", "/api/ai/script", {"title": title, "set": "auto", "scene_policy": "reuse",
                                                   "character": spec.get("character") or "", "model": model,
                                                   "lines": random.randint(lo, hi), "tone": spec.get("tone") or "",
-                                                  "extra": extra, "co_stars": [], "template": tpl_id})
+                                                  "extra": extra, "co_stars": [], "template": tpl_id,
+                                                  "brainrot": bool(spec.get("brainrot"))})
         print(f"\n== Episode {i}: {title}  (set {r.get('set')})\n{r['script']}")
         step(0.45, "directing the shots")
         d = call(base, "POST", "/api/autodirect", {"script": r["script"], "set": r["set"], "start": None, "cast": {},
                                                    "co_stars": [], "beat_words": 4, "beat_sets": [],
                                                    "cast_ai": True, "scene_ai": True,
                                                    "character": spec.get("character") or "", "title": title,
-                                                   "scene_policy": "reuse", "template": tpl_id})
+                                                   "scene_policy": "reuse", "template": tpl_id,
+                                                   "brainrot": bool(spec.get("brainrot"))})
         ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],
               "template": tpl_id, "series": {"id": sid, "idea": idea, "part": i, "of": len(titles)},
               "set_style": "base"}
+        if spec.get("brainrot"):
+            ep["brainrot"] = True                 # 🧠 one word per caption at render
         if spec.get("idea_id"):
             ep["idea"] = spec["idea_id"]          # started from the Ideas page: marked used when saved          # a series' new places are always hand-built bases (set style A)
         if spec.get("character"):
