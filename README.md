@@ -295,6 +295,9 @@ side so you see the arm and the thing.
 - **Regulars have jokes that come back**: give a regular a catchphrase and a running gag (Assets → Actors). The
   writer has them say the catchphrase once, works the gag in, and can call back to what they said last time (the
   studio remembers each regular's lines after every video).
+- **💬 Conversation** (a new kind of video): she and a co-star (pick one under "Also in it") talk *with each
+  other* - each turns to the other while talking, with two-shots of both - and only the opening and the last line
+  go to the viewer. Any script where two main characters go back and forth gets this too.
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

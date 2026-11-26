@@ -760,6 +760,13 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   `actors.remember(ep)` after the cover - a regular's own speaker lines, last `HISTORY_KEEP` 4 videos, an edit keeps
   it). `writer_note` adds "their catchphrase, said once", "running gag: ..." and "last time (<title>) they said: ...
   a short callback is welcome". Actor dialog: Catchphrase + Running gag fields and a "What they said last" list.
+- **Conversations**: template `conversation` (needs a co-star; the writer has them talk TO EACH OTHER, only the
+  hook and the last line to the viewer; beat_words 6). Director `conversations(shots, mains)` (mains = "main" +
+  the co-star ids from `speakers`; not with one main character): each line of a back-and-forth gets `talk_to`
+  (who it answers, else who answers it) - never line 1 or a `TO_VIEWER` line ("comment...", "let me know") - and
+  every other line of the run is a two-shot (`both`, unless the brackets chose the camera). Blender `fix_faces(segs,
+  who)`: a speaker with `talk_to` turns `TALK_TURN` 0.65 of the way towards them (`_pos_at`). Checked with a
+  dev-only copy of her profile as a co-star (`assets/characters/twin.json`, `episodes/zz_check_talk.json`).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

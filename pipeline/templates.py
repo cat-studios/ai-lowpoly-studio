@@ -125,6 +125,21 @@ TEMPLATES = {
         "lines": (6, 8),
         "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},
     },
+    "conversation": {
+        "name": "Conversation",
+        "icon": "💬",
+        "about": "She and a co-star talk WITH each other (pick one under 'Also in it'): a funny back-and-forth.",
+        "title_starts": ["What if", "Who would win", "Which is better", "Why do"],
+        "title_hint": "a question two friends would argue about or figure out together",
+        "script": ("This is a CONVERSATION: the main character and the other main character talk TO EACH OTHER, "
+                   "not to the camera - a quick back-and-forth where each line answers the one before (questions, "
+                   "disagreements, a joke at the other's expense, a twist). Every line of the other character starts "
+                   "with their name and a colon. Only the first line (the hook) and the last line speak to the "
+                   "viewer. About half the lines each."),
+        "tone": "funny",
+        "lines": (7, 9),
+        "direct": {"beat_words": 6, "walk_every": 0, "move_every": 0, "wipe_every": 5},
+    },
 }
 DEFAULT = "what_if"
 

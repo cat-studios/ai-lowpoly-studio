@@ -1671,12 +1671,27 @@ def build_track(who, start_pos):
     return segs
 
 
-def fix_faces(segs):
-    """Listeners turn to whoever is speaking in their shot (that speaker's spot at the start of the shot)."""
+TALK_TURN = 0.65     # a speaker in a conversation turns this much of the way to who they talk to (face still seen)
+
+
+def _pos_at(who, si):
+    """Where a main character stands when shot si starts."""
+    return next((s["p0"].copy() for s in TRACKS[who]["segs"] if s["shot"] == si), None) if who in TRACKS else None
+
+
+def fix_faces(segs, who=None):
+    """Listeners turn to whoever is speaking in their shot (that speaker's spot at the start of the shot). In a
+    conversation (shot "talk_to": another main character) the speaker turns most of the way to them too."""
     prev = None
     for s in segs:
         if prev is not None:
             s["y0"] = prev
+        to = SHOTS[s["shot"]].get("talk_to")
+        if not s["listener"] and to and to != who and s["anim"] not in MOVE_ANIMS:
+            tgt = _pos_at(to, s["shot"])
+            if tgt is not None and (tgt - s["p0"]).length > 1e-3:
+                full = yaw_for((tgt.x, tgt.y), s["p0"], s["y0"])
+                s["y1"] = lerp_angle(s["y1"], full, TALK_TURN)
         if s["listener"]:
             tgt = SPEAKER_POS.get(s["shot"], {}).get(speaker_of(SHOTS[s["shot"]]))
             if tgt is not None and (tgt - s["p0"]).length > 1e-3:
@@ -1715,7 +1730,7 @@ for k, co in enumerate(CO_STARS):
                         if isinstance(rig, VRoidRig) else 1.0}
     print(f"[build] co-star: {co.get('name', co['id'])} ({'model' if isinstance(rig, VRoidRig) else 'placeholder'})")
 for who in TRACKS:
-    fix_faces(TRACKS[who]["segs"])
+    fix_faces(TRACKS[who]["segs"], who)
 segments = TRACKS[PRIMARY]["segs"]
 
 TOTAL = shot_info[-1]["f0"] + shot_info[-1]["n"] - 1 if shot_info else 0

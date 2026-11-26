@@ -753,6 +753,43 @@ def face_closeups(shots, text_of=lambda s: s.get("line", "")):
 
 
 MOVE_ANIMS_SET = set(catalog.MOVE_ANIMS)
+
+
+TO_VIEWER = re.compile(r"\b(comment|let me know|follow|subscribe|what do you think|tell me|you guys|everyone watching|"
+                       r"which (?:one|side) are you|like and)\b", re.I)
+
+
+def conversations(shots, mains):
+    """Two main characters talking with each other: every line of a back-and-forth gets "talk_to" (who they're
+    answering, else who answers them) - Blender turns the speaker towards them - and every other line of the run
+    is a two-shot of both ("both"), unless the script chose the camera. Not with a single main character."""
+    if len(mains) < 2:
+        return
+    groups, order = {}, []
+    for k, s in enumerate(shots):
+        g = s.get("beat_group", f"s{k}")
+        if g not in groups:
+            order.append(g)
+        groups.setdefault(g, []).append(k)
+    who = [shots[groups[g][0]].get("speaker") or "main" for g in order]
+    run = 0
+    for gi, g in enumerate(order):
+        sp = who[gi]
+        prev = who[gi - 1] if gi else None
+        nxt = who[gi + 1] if gi + 1 < len(order) else None
+        to = prev if prev in mains and prev != sp else nxt if nxt in mains and nxt != sp else None
+        line_text = " ".join(shots[k].get("line", "") for k in groups[g])
+        if gi == 0 or sp not in mains or not to or TO_VIEWER.search(line_text):   # the hook / "comment below!"
+            run = 0
+            continue
+        for k in groups[g]:
+            shots[k]["talk_to"] = to
+        first = shots[groups[g][0]]
+        if run % 2 == 1 and gi and not first.get("_set_cam") and not first.get("cutaway"):
+            first["both"] = True
+            if first.get("camera") in ("closeup", "macro", "dramatic", "back", "tiny"):
+                first["camera"] = "medium"
+        run += 1
 CUTAWAY_MIN_WORDS = 4
 
 
@@ -1166,6 +1203,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         story_weather(shots, f"{title} {script}", set_name)
         held_things(shots, cast)
         face_closeups(shots)
+    conversations(shots, {"main"} | set((speakers or {}).values()))
     for s in shots:
         s.pop("_set_expr", None)
         s.pop("_set_cam", None)
