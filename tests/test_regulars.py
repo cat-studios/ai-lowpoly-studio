@@ -42,6 +42,16 @@ class Regulars(unittest.TestCase):
         shots = A.direct("\n".join(lines), "cafe", beat_words=0)["shots"]
         self.assertEqual(shots[1]["speaker"], "grandma_rose")
 
+    def test_speaking_people_are_played_by_actors(self):
+        mine = [{"id": "generic_human", "builtin": True},
+                {"id": "candycane_lady", "name": "Candycane Lady", "role": "", "description": "", "kind": "imported"},
+                {"id": "store_clerk", "name": "Store clerk", "role": "store clerk", "description": "", "kind": "generic"}]
+        with mock.patch.object(AC, "all_actors", lambda: mine):
+            self.assertEqual(AC.side_character("mom")["id"], "candycane_lady")        # a woman for "mom"
+            self.assertEqual(AC.side_character("neighbour")["id"], AC.side_character("neighbour")["id"])
+        with mock.patch.object(AC, "all_actors", lambda: mine[:1]):
+            self.assertIsNone(AC.side_character("mom"))                                # no actors: the studio body
+
     def test_they_remember_what_they_said(self):
         import json
         import tempfile

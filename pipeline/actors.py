@@ -178,7 +178,10 @@ def model_choices():
 def imported_def(actor):
     """The prop definition for an imported actor (it is placed like a prop, so it goes through the set code)."""
     import imported
-    return imported.model_def(actor.get("model_id", ""), kind="actor_" + actor["id"], looks=actor.get("role", ""))
+    d = imported.model_def(actor.get("model_id", ""), kind="actor_" + actor["id"], looks=actor.get("role", ""))
+    if d:
+        d["person"] = True                        # p_model lowers the arms of a T-posed person model
+    return d
 
 
 def save(data, aid=None):
@@ -227,6 +230,27 @@ def save(data, aid=None):
     DIR.mkdir(parents=True, exist_ok=True)
     (DIR / f"{aid}.json").write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
     return {**rec, "id": aid, "builtin": False}
+
+
+def side_character(who, looks=""):
+    """One of your actors for a speaking cast person no actor's role matches ("mom", "a grumpy neighbour"): the
+    user's rule - speaking people come from the Actors page, imported people are only for ones who don't speak.
+    Prefers an actor of the same kind (woman / man / child, from the words), the same name always gets the same one.
+    None when you have no actors (the studio body plays them)."""
+    import hashlib
+    mine = [a for a in all_actors() if not a.get("builtin")]
+    if not mine:
+        return None
+    want = words(f"{who} {looks}")
+    kind = ("child" if want & CHILD_WORDS else "female" if want & FEMALE_WORDS else
+            "male" if want & MALE_WORDS else None)
+
+    def kind_of(a):
+        ws = words(f"{a.get('name')} {a.get('role')} {a.get('description')}")
+        return "child" if ws & CHILD_WORDS else "female" if ws & FEMALE_WORDS else "male" if ws & MALE_WORDS else None
+    pool = [a for a in mine if kind and kind_of(a) == kind] or [a for a in mine if kind_of(a) is None] or mine
+    k = int(hashlib.md5(str(who).encode()).hexdigest()[:8], 16)
+    return sorted(pool, key=lambda a: a["id"])[k % len(pool)]
 
 
 def regulars():

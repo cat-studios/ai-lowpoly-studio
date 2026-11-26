@@ -822,6 +822,20 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   stayed on the catgirl and cut her off. `blender_cast` now records a speaking thing's position/facing per frame
   (`seen_at`/`seen_yaw`) and registers `CAST_TRACKS[who]` with `aim_head`/`aim_body` empties on it. Not used for the
   test: the `pokemon` co-star profile (a franchise character - original content only).
+- **Who plays people** (the user, 2026-11-26): imported people (the Quaternius "Posed Background Characters":
+  static, no animation) are for people who DON'T speak - background, crowds, walk-ons. A speaking cast person is
+  always one of your Actors: `resolve_cast` -> `AC.pick` by role, else `actors.side_character(who, looks)` (one of
+  your actors, the same one for the same name, a woman for "mom" from `FEMALE/MALE/CHILD_WORDS`), else the studio
+  body; `imported.person_def` only when they don't speak; a card's `model_id` is ignored for a speaker. Cards
+  (`castcards`, `speaks`): a speaking person shows their actor and a 🧍 One of my actors picker (`pickActor`,
+  sets `actor`) instead of 📦 One of my models.
+- **T-posed / sideways person models** (the "100 Avatars" Candycane Lady: one mesh, no skeleton, arms straight
+  out, facing +X): `p_model` for a person def (`person: True` - imported actors via `actors.imported_def`,
+  `imported.person_def`) runs `blender_models.face_front` (shoulder line = the wider horizontal axis at chest
+  height; toes = the front; turned to face -Y) and `relax_tpose` (arms out at shoulder height, span >= 0.3 h and
+  > 2.2 x the body: each arm turned 1.2 rad down round a pivot just outside the body - the body width measured just
+  below the arms, the body itself never moves, the arm root eases over 0.35 x the shoulder distance; shape keys are
+  bent too, they hold the real positions). Checked on the Candycane Lady and a posed Quaternius woman (untouched).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

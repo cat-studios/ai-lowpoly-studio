@@ -43,6 +43,97 @@ def load_model(path, fmt):
     return [o for o in new if o.parent is None or o.parent.name not in names]
 
 
+def face_front(objs, log=print):
+    """Turn a person model so it faces -Y (the camera side, the studio's front) - packs come facing any way (the
+    "100 Avatars" ones face sideways: profile to the camera). The shoulder line is the wider horizontal axis at
+    chest height; the toes (lowest points) stick out to the front."""
+    import math
+    from mathutils import Matrix
+    pts = [o.matrix_world @ v.co for o in objs if o.type == "MESH" for v in o.data.vertices] + \
+        [c.matrix_world @ v.co for o in objs for c in o.children_recursive if c.type == "MESH" for v in c.data.vertices]
+    if len(pts) < 20:
+        return 0.0
+    zs = [p.z for p in pts]
+    lo, hi = min(zs), max(zs)
+    h = max(1e-4, hi - lo)
+    chest = [p for p in pts if lo + 0.55 * h < p.z < lo + 0.8 * h] or pts
+    ex = max(p.x for p in chest) - min(p.x for p in chest)
+    ey = max(p.y for p in chest) - min(p.y for p in chest)
+    side_on = ey > ex * 1.2                       # the shoulders run along Y: it faces +X or -X
+    ax = "x" if side_on else "y"
+    mid = (max(getattr(p, ax) for p in pts) + min(getattr(p, ax) for p in pts)) / 2
+    feet = [getattr(p, ax) - mid for p in pts if p.z < lo + 0.05 * h]
+    fwd = (sum(feet) / len(feet)) if feet else 0.0          # toes point to the front
+    if side_on:
+        angle = -math.pi / 2 if fwd > 0 else math.pi / 2    # +X front -> turn to -Y ; -X front -> turn to -Y
+    else:
+        angle = math.pi if fwd > 0.02 * h else 0.0          # it faces +Y (its back to the camera)
+    if not angle:
+        return 0.0
+    rot = Matrix.Rotation(angle, 4, "Z")
+    for o in objs:
+        o.matrix_world = rot @ o.matrix_world
+    bpy.context.view_layer.update()
+    log(f"[models] person model turned {round(math.degrees(angle))} deg to face the camera")
+    return angle
+
+
+def relax_tpose(objs, angle=1.2, log=print):
+    """A person model stored in a T-pose with no skeleton (the "100 Avatars" pack: one mesh, arms straight out):
+    the arm vertices are turned down round each shoulder, so a person in a scene doesn't stand there like a
+    scarecrow. Only called for people (actors / imported people). Nothing changes when the arms aren't out."""
+    import math
+    from mathutils import Matrix, Vector
+    meshes = [o for o in objs if o.type == "MESH"] + [c for o in objs for c in o.children_recursive if c.type == "MESH"]
+    if not meshes or any(o.type == "ARMATURE" for o in objs) or any(c.type == "ARMATURE" for o in objs
+                                                                    for c in o.children_recursive):
+        return False
+    pts = [(o, v, o.matrix_world @ v.co) for o in meshes for v in o.data.vertices]
+    zs = [p.z for _, _, p in pts]
+    lo, hi = min(zs), max(zs)
+    h = max(1e-4, hi - lo)
+    cx = (max(p.x for _, _, p in pts) + min(p.x for _, _, p in pts)) / 2     # the middle of the box
+    span = max(abs(p.x - cx) for _, _, p in pts)
+    hips = [abs(p.x - cx) for _, _, p in pts if lo + 0.35 * h < p.z < lo + 0.55 * h]
+    torso = max(hips) if hips else 0.2 * h
+    if span < 0.3 * h or span < 2.2 * torso:             # arms aren't straight out: not a T-pose
+        return False
+    tips = [p for _, _, p in pts if abs(p.x - cx) > 0.85 * span]
+    arm_z = sum(p.z for p in tips) / len(tips)
+    if not (lo + 0.6 * h < arm_z < lo + 0.92 * h):        # the far-out points must be at shoulder height
+        return False
+    # the body's width just below the arms (at the hips a candy-cane body is only thin legs: the body got bent)
+    below = [abs(p.x - cx) for _, _, p in pts if arm_z - 0.2 * h < p.z < arm_z - 0.06 * h]
+    if below:
+        torso = max(torso, max(below))
+    sx = torso * 1.1                                      # the shoulder joint, just outside the body
+    blend = min(0.08 * h, 0.35 * sx)                     # a narrow bend at the shoulder (0.08 h bent a whole thin body)
+
+    def bend(p):
+        """Where a (world) point goes: arm points swing down round their shoulder; the body stays."""
+        dx = p.x - cx
+        side = 1 if dx > 0 else -1
+        out = abs(dx) - sx
+        if out <= 0:
+            return p                                      # the body never moves (bending it made a flared collar)
+        w = min(1.0, out / blend)                         # the arm's root eases into the turn
+        pivot = Vector((cx + side * sx, p.y, arm_z))
+        # about +Y a positive angle takes +X towards -Z: the right arm (+X) turns by +a, the left by -a - both down
+        return pivot + Matrix.Rotation(side * angle * w, 3, "Y") @ (p - pivot)
+
+    for o in meshes:
+        mw, inv = o.matrix_world, o.matrix_world.inverted()
+        keys = o.data.shape_keys.key_blocks if o.data.shape_keys else []
+        for kb in keys:                                   # shape keys (blinks...) hold the real positions
+            for d in kb.data:
+                d.co = inv @ bend(mw @ d.co)
+        for v in o.data.vertices:
+            v.co = inv @ bend(mw @ v.co)
+        o.data.update()
+    log(f"[models] arms lowered out of a T-pose ({len(pts)} points; h {h:.2f} span {span:.2f} body {torso:.2f} arms at {(arm_z - lo) / h:.2f})")
+    return True
+
+
 def fix_invisible(objs, path=""):
     """Some FBX files carry an opacity Blender reads as 0: every material of the Quaternius "Posed Background
     Characters" came in with Alpha 0, so cast people rendered as just a blob shadow. A material whose alpha isn't

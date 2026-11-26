@@ -866,6 +866,10 @@ def resolve_cast(ep, cfg, log=print):
                 s["events"] = [e for e in s["events"] if e.get("who") != who]
     for who, info in list(cast.items()):
         info = dict(info) if isinstance(info, dict) else {}
+        if info.get("model_id") and info.get("type") == "person" and \
+                any(s.get("speaker") == who and s.get("line") for s in ep["shots"]):
+            log(f"  cast: {who} speaks - an imported model can't play them (actors only), so it's left out")
+            info.pop("model_id")
         if info.get("model_id") and not info.get("def"):
             # picked on Custom Video's "who and what appears" cards: that imported model plays it (people too -
             # an imported person moves as a whole and speaks with their own voice, like imported.person_def)
@@ -907,6 +911,14 @@ def resolve_cast(ep, cfg, log=print):
             explicit = False
             log(f"  cast: {who} is a human, so it's a person (things can't talk)")
         act = AC.pick(who, info.get("actor"), person=info["type"] == "person")   # the actor who plays them
+        speaks = any(s.get("speaker") == who and s.get("line") for s in ep["shots"])
+        if info["type"] == "person" and speaks and not info.get("actor") and (not act or act.get("builtin")):
+            # speaking people come from your Actors (the user): one of them, not a random imported person - those
+            # are posed background figures with no animation, for people who don't speak
+            side = AC.side_character(who, info.get("looks") or "")
+            if side:
+                act = side
+                log(f"  cast: {who} speaks - played by your actor '{side['name']}'")
         if act and act["kind"] == "imported":        # a real model: it moves as a whole, like a thing
             info["type"] = "thing"
             info["def"] = AC.imported_def(act) or info.get("def")
@@ -914,10 +926,10 @@ def resolve_cast(ep, cfg, log=print):
             log(f"  cast: {who} (actor '{act['name']}', imported model)")
         elif act and not explicit:
             info["type"] = "person"                  # an actor for this name is a person
-        if info["type"] == "person" and not info.get("actor") and (not act or act.get("id") == AC.GENERIC_ID
-                                                                   or act.get("builtin")):
-            # no actor of your own for them: one of your imported people plays them (a woman for "mom") - the
-            # studio's block body read as a brown box for a head. It speaks with its own voice (no mouth moves).
+        if info["type"] == "person" and not speaks and not info.get("actor") and (
+                not act or act.get("id") == AC.GENERIC_ID or act.get("builtin")):
+            # someone who doesn't speak and has no actor of your own: one of your imported people (posed background
+            # figures - a woman for "mom"); a speaking one is never one of them (the user: actors only)
             import imported
             pd = imported.person_def(who, info.get("looks") or "", setting)
             if pd:

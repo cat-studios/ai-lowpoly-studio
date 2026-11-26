@@ -1392,7 +1392,8 @@ async function openCustomWizard() {
                   <div class="small">${esc(c.label)}${c.score != null ? ` <span class="pill ${weak ? "bad" : "ok"}" title="How much it looked like itself in its check">${c.score}/10</span>` : ""}</div>
                   <div class="muted small">shot${c.shots.length === 1 ? "" : "s"} ${esc(c.shots.join(", ") || "-")}</div>
                   <div class="btns small-btns">
-                    <button class="small-btn" data-cact="model">📦 One of my models</button>
+                    ${c.speaks && c.type === "person" ? `<button class="small-btn" data-cact="actor" title="Speaking people are played by your actors">🧍 One of my actors</button>`
+                      : `<button class="small-btn" data-cact="model">📦 One of my models</button>`}
                     ${c.type !== "person" ? `<button class="small-btn" data-cact="sprite" title="A drawn 2D picture (ComfyUI)">🖼 Draw it</button>
                     <button class="small-btn" data-cact="new" title="The studio designs its own 3D model">🧊 Make a new 3D one</button>` : ""}
                     ${W.castPick[c.who] ? `<button class="small-btn ghost" data-cact="reset">↺ Let the studio choose</button>` : ""}</div></div></div>`;
@@ -1405,6 +1406,11 @@ async function openCustomWizard() {
                 if (a === "reset") { delete W.castPick[c.who]; drawCards(); return; }
                 if (a === "sprite") return setPick({ form: "sprite" });
                 if (a === "new") return setPick({ generated: true });
+                if (a === "actor") {
+                  const id = await pickActor(c.actor);
+                  if (id) setPick({ actor: id, type: "person" });
+                  return;
+                }
                 const mid = await pickImportedModel(c.type === "person" ? "People" : "", c.who.replace(/_/g, " "));
                 if (mid) setPick({ model_id: mid });
               }));
@@ -1975,6 +1981,21 @@ async function pageIdeas() {
     $("[data-ia=series]", c).onclick = guard(() => openSeriesDialog({ idea: it.topic + (it.angle ? ` - ${it.angle}` : ""), template: it.template, idea_id: it.id }));
     $("[data-ia=star]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { starred: !it.starred }); pageIdeas(); });
     $("[data-ia=hide]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { hidden: !it.hidden }); pageIdeas(); });
+  });
+}
+
+// pick one of your actors (a speaking person on the "who appears" cards): resolves to its id, or null
+async function pickActor(current = "") {
+  const acts = (await api("GET", "/api/actors")).actors.filter((a) => !a.builtin);
+  if (!acts.length) { toast("No actors yet - add some on Assets → Actors", true); return null; }
+  let picked = current || null;
+  return openModal({
+    title: "🧍 Who plays them?",
+    body: `<div class="asset-grid" style="grid-template-columns:repeat(auto-fill,minmax(110px,1fr))">${acts.map((a) => `<div class="asset-card ${a.id === picked ? "pick-on" : ""}" tabindex="0" data-pa="${esc(a.id)}">
+      <div class="asset-thumb checker">${a.picture ? `<img src="${esc(a.picture)}" alt="" loading="lazy">` : `<div class="asset-noimg"><span>🧍</span></div>`}</div>
+      <div class="asset-info"><div class="asset-name">${esc(a.name)}${a.regular ? " ⭐" : ""}</div><div class="muted small">${esc(a.role || "")}</div></div></div>`).join("")}</div>`,
+    buttons: [{ label: "Cancel", value: null }, { label: "Use them", primary: true, onClick: () => picked || (toast("Tap an actor first", true), false) }],
+    onOpen: (m) => $$("[data-pa]", m).forEach((c) => c.onclick = () => { picked = c.dataset.pa; $$("[data-pa]", m).forEach((x) => x.classList.toggle("pick-on", x === c)); }),
   });
 }
 

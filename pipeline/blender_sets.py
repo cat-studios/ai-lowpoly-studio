@@ -577,6 +577,9 @@ def p_model(r, p, d):
     import blender_models as BM
     from mathutils import Matrix
     objs = BM.load_model(PROJECT / d["model"]["file"], d["model"]["format"])
+    if d.get("person"):                          # a person: facing the camera, and arms down from a T-pose
+        BM.face_front(objs)
+        BM.relax_tpose(objs)
     box = BM.bounds(objs)
     if box is None:                              # nothing usable in the file: a plain stand-in
         P("cube", f"{p['kind']}_missing", (0, 0, 0.5), (0.4, 0.4, 0.5), "#ff00ff", r)

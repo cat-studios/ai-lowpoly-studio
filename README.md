@@ -316,6 +316,10 @@ side so you see the arm and the thing.
 - **📊 Stats** (new page): how your posted videos did next to what they were - averages by kind of video, length,
   posted cover and set. 🔄 Get Instagram numbers needs your Instagram token and account id (Settings → Stats; read
   only, the studio never posts with it) - or type a video's views in yourself.
+- **Who plays people**: anyone who **speaks** is played by one of your **Actors** (Assets → Actors) - the one whose
+  role fits, else one of your actors (the same one for the same name). Your imported people are used only for
+  people who don't speak (background, crowds). Imported people that come in a T-pose or facing sideways are
+  turned to the camera with their arms down.
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

@@ -41,14 +41,15 @@ def _model_of(d):
     return None, ""
 
 
-def card_for(who, info, setting=""):
-    """What will play one cast member: {source, label, picture, score, form}."""
+def card_for(who, info, setting="", speaks=False):
+    """What will play one cast member: {source, label, picture, score, form}. A speaking person is always one of
+    your actors (the user: imported people are posed background figures, for people who don't speak)."""
     import actors as AC
     import imported
     import propgen
     import setgen
     looks = info.get("looks") or who.replace("_", " ")
-    if info.get("model_id"):                                    # your own pick on the card
+    if info.get("model_id") and not (speaks and info.get("type") == "person"):    # your own pick on the card
         m = imported.model_def(info["model_id"], kind=who, looks=looks)
         return {"source": "imported", "label": f"Your pick: {(m or {}).get('name') or info['model_id']}",
                 "picture": _imported_pic(info["model_id"]), "picked": True}
@@ -58,9 +59,13 @@ def card_for(who, info, setting=""):
     person = info.get("type") == "person" or (info.get("type") != "thing" and imported_kind(who) == "person")
     if person:
         act = AC.pick(who, info.get("actor"), looks=looks, person=True)
+        if (not act or act.get("builtin")) and speaks:
+            act = AC.side_character(who, looks)
         if act and not act.get("builtin"):
             return {"source": "actor", "label": f"Your actor: {act['name']}" + (" ⭐" if act.get("regular") else ""),
-                    "picture": actor_pic(act)}
+                    "picture": actor_pic(act), "actor": act["id"]}
+        if speaks:
+            return {"source": "body", "label": "The studio's own body (add actors on Assets → Actors)", "picture": None}
         pd = imported.person_def(who, looks, setting)
         if pd:
             mid, _n = _model_of(pd)
@@ -115,10 +120,11 @@ def cards(ep, log=lambda *_: None):
         info = info if isinstance(info, dict) else {}
         shots = sorted({k + 1 for k, s in enumerate(e["shots"]) for ev in s.get("events") or [] if ev.get("who") == who})
         cut = any(ev.get("who") == who and ev.get("cutaway") for s in e["shots"] for ev in s.get("events") or [])
+        speaks = any(s.get("speaker") == who and s.get("line") for s in e["shots"])
         try:
-            c = card_for(who, info, setting)
+            c = card_for(who, info, setting, speaks)
         except Exception as exc:                          # one odd entry never hides the others
             c = {"source": "?", "label": f"(couldn't tell: {exc.__class__.__name__})", "picture": None}
         out.append({"who": who, "type": info.get("type") or imported_kind(who), "looks": info.get("looks") or "",
-                    "cutaway": cut, "shots": shots, **c})
+                    "cutaway": cut, "shots": shots, "speaks": speaks, **c})
     return out
