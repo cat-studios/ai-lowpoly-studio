@@ -2599,7 +2599,8 @@ const S_TABS = {
     ["Ollama (script & title writing)", [
       ["ollama.url", "Server URL", "text"],
       ["ollama.model", "Default model", "ollamapick", { from: "ollama.url" }, "The models your Ollama has (🔄 after changing the address)."],
-      ["ollama.big_server", "Use the big model server", "bool", {}, "Off = everything runs on this PC. The address below is kept, so you can switch it back on."],
+      ["facts.check", "Check the facts in Quick facts & Myth or fact videos", "bool", {}, "Before rendering, each fact the video states is looked up on Wikipedia and checked by the local model. A wrong one shows as a warning on the video's ⚠️ check. Needs Ollama; skipped if it can't run."],
+      ["ollama.big_server", "Use the big model server", "bool", {},"Off = everything runs on this PC. The address below is kept, so you can switch it back on."],
       ["ollama.design_url", "Big model server", "text", { placeholder: "empty = the server above" },"Another Ollama with bigger models (e.g. a stronger computer on your network). If it can't be reached, the server above is used."],
       ["ollama.design_model", "Model on the big server", "ollamapick", { from: "ollama.design_url", big: true, first: "Same as the default model" }, "The models that server already has (🔄 after changing the address). Nothing is ever downloaded there."],
       ["ollama.design_scope", "Use the big server for", "select", { options: ["3d", "text"], labels: { "3d": "Only building 3D props & explainer models", text: "All the AI's writing too (scripts, titles, sets, cast, translations, captions)" } }, "Picture checks, drawings and voices always run on this PC."],

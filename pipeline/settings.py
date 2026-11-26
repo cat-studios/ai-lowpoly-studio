@@ -81,6 +81,7 @@ DEFAULTS = {
     "instagram": {"token": "", "user_id": ""},   # Stats: your posts' numbers (Graph API, read only)
     # Stats: YouTube numbers. The API key is ideas.youtube_key. client/refresh = optional OAuth for retention numbers
     "youtube": {"channel_id": "", "client_id": "", "client_secret": "", "refresh_token": ""},
+    "facts": {"check": True},            # Quick facts / Myth or fact: claims checked on Wikipedia before the render
     # the weekly plan (pipeline/weekly.py): on that day + hour, fresh ideas -> a batch of videos -> Postiz drafts
     "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True},     # her room (sets/home.json) keeps one thing from every video
     "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic

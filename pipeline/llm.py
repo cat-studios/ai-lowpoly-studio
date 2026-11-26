@@ -4,6 +4,7 @@ written by hand. Output is plain script lines (with optional [directions]) that 
 normal auto-director, so the AI never needs to know the JSON format.
 """
 import json
+import random
 import re
 import time
 import urllib.error
@@ -485,6 +486,24 @@ NOT_SPEAKERS = {"narrator", "character", "main character", "host", "me", "i", "s
                 "bonus", "ps", "update", "warning", "title", "script", "hook", "ending", "intro", "outro"}
 
 
+# Hooks: each script is asked for one of these openings (picked at random), so the first line doesn't always
+# come out as the same "Did you know..." shape. The ending rule makes the video loop back to its start.
+HOOK_STYLES = [
+    "a surprising number or fact, stated bluntly",
+    "a bold question that the video then answers",
+    "a 'wait, what?' reaction to the title",
+    "a confident claim most people think is wrong",
+    "a small confession that sets up the twist",
+]
+ENDING_RULE = ("The LAST line lands the punchline and, where it fits, echoes the first line's words or idea, so the "
+               "video loops back to its start when people replay it.")
+
+
+def hook_rule(rng=random):
+    """The hook sentence for one script: one style from HOOK_STYLES (each script asks for one)."""
+    return f"Open this one with {rng.choice(HOOK_STYLES)}."
+
+
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
                     others=None, polish=True, scenes="auto", explain=False):
     """others: the other main characters in the video, [{"name", "about"}] - they get some lines too.
@@ -502,7 +521,8 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         "in first person by the character, with a clear setup, escalation and a punchline at the end.\n"
         "The FIRST line is the hook - it decides whether people keep watching: at most 8 words, a surprising claim, "
         "a bold question or a 'wait, what?' moment about the title. Never open with a greeting (\"Hi everyone\", "
-        "\"Hello\"), her name or \"Today we...\".\n"
+        "\"Hello\"), her name or \"Today we...\". " + hook_rule() + "\n"
+        + ENDING_RULE + "\n"
         "Keep it family-friendly: no swearing (no damn, hell, crap...) and correct, natural English.\n"
         "Output ONLY the script lines, one per line. No numbering, no names, no stage directions in "
         "parentheses, no title, no commentary.\n"

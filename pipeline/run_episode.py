@@ -1392,6 +1392,10 @@ def main():
     resolve_animations(ep)
     resolve_cast(ep, cfg)
     drop_weak_cutaways(ep)
+    if not args.preview:                          # facts stated in the video, checked on Wikipedia (review.py reports them)
+        import factcheck as FC
+        if FC.applies(ep, cfg):
+            FC.check_episode(ep, build)
     ep["_language"] = out_language(ep, cfg)
     if args.preview == "storyboard":
         ep["_language"] = "en"                    # no voice, so the English lines are enough
@@ -1703,8 +1707,9 @@ def main():
     afades = (f",afade=t=in:d={fade},afade=t=out:st={max(0, dur - fade):.3f}:d={fade}" if fade > 0 else "")
     if labels:
         # apad to exactly the video's length (a bare apad never ends - one less way for the encode to hang)
+        # the whole mix to -14 LUFS (voice alone was -14, so the video came out ~-16 with music and quiet ends)
         fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,"
-                  f"apad=whole_dur={dur:.3f}{afades}[a]")
+                  f"apad=whole_dur={dur:.3f}{afades},loudnorm=I=-14:TP=-1.5:LRA=11[a]")
     else:
         cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono"]
         fc.append(f"[{n_in}:a]anull[a]")

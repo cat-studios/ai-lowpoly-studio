@@ -42,9 +42,18 @@ def due(plan, st, now=None):
     return now.weekday() == day and now.hour >= int(plan.get("hour", 3)) and st.get("last_week") != week_of(now)
 
 
-def pick(db, n):
+def kind_rank():
+    """Kinds of video, best first by average views on the Stats page (kinds with 2+ numbers only)."""
+    try:
+        import stats
+        return [e["value"] for e in stats.summary()["by"].get("kind", []) if e["videos"] >= 2]
+    except Exception:              # no numbers (or Stats broken): the plan keeps its plain order
+        return []
+
+
+def pick(db, n, rank=()):
     """n ideas: never used or hidden, starred first, then the newest - mixed kinds of video (one of each before
-    a second of any)."""
+    a second of any). rank = kinds best first: they're taken first, so with more kinds than slots the weakest drop out."""
     pool = [it for it in db.get("ideas", []) if not it.get("hidden") and not it.get("used")]
     pool.sort(key=lambda it: (not it.get("starred"), -float(it.get("added") or it.get("time") or 0)))
     by_kind, order = {}, []
@@ -53,6 +62,7 @@ def pick(db, n):
         if k not in by_kind:
             order.append(k)
         by_kind.setdefault(k, []).append(it)
+    order.sort(key=lambda k: rank.index(k) if k in rank else len(rank))     # unranked kinds keep their order
     out = []
     while len(out) < n and any(by_kind.values()):
         for k in order:
@@ -62,7 +72,7 @@ def pick(db, n):
 
 
 def spec_for(plan, db, base, postiz_on):
-    ideas = pick(db, max(1, min(10, int(plan.get("count", 5)))))
+    ideas = pick(db, max(1, min(10, int(plan.get("count", 5)))), kind_rank())
     return {"ideas": [{k: it.get(k) for k in ("id", "topic", "angle", "template", "titles")} for it in ideas],
             "length": str(plan.get("length") or "medium"), "note": "", "model": "", "regulars": [],
             "render": True, "drafts": bool(plan.get("drafts", True)) and postiz_on,
