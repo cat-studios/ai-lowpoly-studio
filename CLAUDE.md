@@ -756,6 +756,10 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   seriously / whatever" -> eyeroll) set the line's expression and a static close-up on the beat with the cue,
   unless the brackets set expression or camera (`_set_expr`/`_set_cam`, removed before returning); never line 1,
   another speaker or a cutaway; `MAX_FACES` 3. Checked in a 540x960 close-up render (`episodes/zz_check_faces.json`).
+- **Regulars' jokes**: actors gained `catchphrase`, `gag` (running gag) and `history` (kept by the render:
+  `actors.remember(ep)` after the cover - a regular's own speaker lines, last `HISTORY_KEEP` 4 videos, an edit keeps
+  it). `writer_note` adds "their catchphrase, said once", "running gag: ..." and "last time (<title>) they said: ...
+  a short callback is welcome". Actor dialog: Catchphrase + Running gag fields and a "What they said last" list.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

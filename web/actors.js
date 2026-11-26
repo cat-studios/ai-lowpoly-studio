@@ -85,6 +85,12 @@ function actorEditor(a, data) {
           <textarea rows="2" id="ae-desc">${esc(cur.description)}</textarea></label>
         <label class="modal-field">Personality <span class="muted">(how they talk and act - e.g. grumpy, says "back in my day")</span>
           <input type="text" id="ae-pers" value="${esc(cur.personality || "")}" placeholder="cheerful, always hungry"></label>
+        <label class="modal-field">Catchphrase <span class="muted">(said once in each video they're in)</span>
+          <input type="text" id="ae-catch" value="${esc(cur.catchphrase || "")}" placeholder="Back in my day..."></label>
+        <label class="modal-field">Running gag <span class="muted">(the writer works it in)</span>
+          <input type="text" id="ae-gag" value="${esc(cur.gag || "")}" placeholder="always losing her glasses"></label>
+        ${(cur.history || []).length ? `<details class="small"><summary>💬 What they said last (the writer can call back to it)</summary>${cur.history.slice().reverse().map((h) =>
+          `<div class="muted small"><b>${esc(h.title || "")}</b>: “${esc((h.lines || []).join(" / "))}”</div>`).join("")}</details>` : ""}
         ${a && a.builtin ? "" : `<label class="check"><input type="checkbox" id="ae-reg" ${cur.regular ? "checked" : ""}> ⭐ Regular - offered in Custom Video, and the script writer brings them back</label>`}
         <label class="modal-field">Kind<select id="ae-kind">${Object.entries(ACT_KIND).map(([k, v]) =>
           `<option value="${k}" ${k === cur.kind ? "selected" : ""}>${v}</option>`).join("")}</select></label>
@@ -106,7 +112,7 @@ function actorEditor(a, data) {
         const val = (id) => ($(`#${id}`, m)?.value ?? "").trim();
         const kind = kindOf();
         const payload = { name: val("ae-name"), role: val("ae-role"), description: val("ae-desc"), kind,
-          personality: val("ae-pers"), regular: !!$("#ae-reg", m)?.checked,
+          personality: val("ae-pers"), regular: !!$("#ae-reg", m)?.checked, catchphrase: val("ae-catch"), gag: val("ae-gag"),
           height: kind === "generic" ? Number(val("ae-height") || 1) : (cur.height || 1), look: {} };
         if (kind === "generic") ACT_LOOK.forEach(([k]) => { payload.look[k] = val(`ae-c-${k}`); });
         if (kind === "rigged") payload.model = model;

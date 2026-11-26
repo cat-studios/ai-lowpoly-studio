@@ -15,6 +15,9 @@ An actor is one JSON file in assets/actors/<id>.json:
     height      metres (generic: the body's height factor, 1.0 = average adult)
     personality how they talk and act ("grumpy, says 'back in my day'") - the script writer reads it
     regular     true = a recurring cast member: offered in Custom Video's Idea step, and the writer knows them
+    catchphrase what they always say ("Back in my day...") - the writer has them say it once
+    gag         a running gag ("always losing her glasses") - the writer works it in
+    history     what they said in their last videos, kept by the render (remember) - the writer may call back
     voice       their own voice (kept when the actor is edited, so a regular always sounds the same)
     builtin     true for the generic human that always exists (not stored as a file)
 
@@ -102,6 +105,9 @@ def _load(path):
     rec.setdefault("voice", dict(ACTOR_VOICE))
     rec.setdefault("personality", "")
     rec.setdefault("regular", False)
+    rec.setdefault("catchphrase", "")
+    rec.setdefault("gag", "")
+    rec.setdefault("history", [])
     rec["builtin"] = False
     return rec
 
@@ -193,11 +199,14 @@ def save(data, aid=None):
     rec = {"name": name, "role": str(data.get("role") or "").strip()[:60],
            "description": str(data.get("description") or "").strip()[:600], "kind": kind,
            "height": round(max(0.5, min(1.6, float(data.get("height") or 1.0))), 2),
-           "personality": str(data.get("personality") or "").strip()[:300], "regular": bool(data.get("regular"))}
+           "personality": str(data.get("personality") or "").strip()[:300], "regular": bool(data.get("regular")),
+           "catchphrase": str(data.get("catchphrase") or "").strip()[:120], "gag": str(data.get("gag") or "").strip()[:200]}
     for k in ("from_video",):
         if data.get(k):
             rec[k] = str(data[k])[:80]
     old = get(aid) if aid else None
+    if old and old.get("history"):
+        rec["history"] = old["history"]                   # the render keeps it - an edit doesn't wipe it
     v = data.get("voice")
     if isinstance(v, dict) and v.get("engine"):
         rec["voice"] = {**ACTOR_VOICE, **{k: str(x) for k, x in v.items()}}
@@ -230,12 +239,52 @@ def writer_note(ids):
     picked = [a for a in (get(i) for i in ids or []) if a and not a.get("builtin")]
     if not picked:
         return ""
-    who = "; ".join(f"{a['name']} (+{a['id']})" + (f" - {a['role']}" if a.get("role") else "")
-                    + (f", {a['personality']}" if a.get("personality") else "")
-                    + (f" ({a['description'][:120]})" if a.get("description") else "") for a in picked)
+    def one(a):
+        bits = [f"{a['name']} (+{a['id']})" + (f" - {a['role']}" if a.get("role") else "")
+                + (f", {a['personality']}" if a.get("personality") else "")
+                + (f" ({a['description'][:120]})" if a.get("description") else "")]
+        if a.get("catchphrase"):
+            bits.append(f"their catchphrase, said once: \"{a['catchphrase']}\"")
+        if a.get("gag"):
+            bits.append(f"running gag: {a['gag']}")
+        last = (a.get("history") or [])[-1:]
+        if last and last[0].get("lines"):
+            bits.append(f"last time (\"{last[0].get('title', '')}\") they said: \"{' / '.join(last[0]['lines'][:2])}\" "
+                        "- a short callback to it is welcome")
+        return "; ".join(bits)
+    who = " | ".join(one(a) for a in picked)
     return ("Regulars of the show who come back in these videos - use ALL of them: " + who + ". Bring each one in "
             "with [+id enter] (that exact id) on their first line, give each at least one line of their own as "
             "'Name: ...', and keep them in character.")
+
+
+HISTORY_KEEP = 4
+
+
+def remember(ep, log=print):
+    """After a render: what each regular said in it (their own 'Name:' lines), kept on their actor (the last
+    HISTORY_KEEP videos), so the next script can call back to it."""
+    cast = ep.get("cast") or {}
+    for who, info in cast.items():
+        aid = (info or {}).get("actor")
+        a = get(aid) if aid else None
+        if not a or a.get("builtin") or not a.get("regular"):
+            continue
+        lines = [str(s.get("line_src") or s.get("line") or "").strip() for s in ep.get("shots") or []
+                 if s.get("speaker") == who]
+        lines = [x for x in lines if x][:4]
+        if not lines:
+            continue
+        path = DIR / f"{aid}.json"
+        try:
+            rec = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        hist = [h for h in rec.get("history") or [] if h.get("title") != ep.get("title")]
+        hist.append({"title": str(ep.get("title") or "")[:80], "lines": lines, "time": int(time.time())})
+        rec["history"] = hist[-HISTORY_KEEP:]
+        path.write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
+        log(f"  regular {a['name']}: remembered {len(lines)} line(s) for next time")
 
 
 def from_cast(who, info, name="", episode=""):

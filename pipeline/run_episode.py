@@ -1684,6 +1684,12 @@ def main():
     except Exception as exc:                       # a cover never fails the video
         print(f"  (no cover: {exc.__class__.__name__}: {str(exc)[:160]})")
 
+    try:                                            # regulars remember what they said (callbacks next time)
+        import actors as AC
+        AC.remember(ep)
+    except Exception as exc:
+        print(f"  (regulars not updated: {exc.__class__.__name__})")
+
     # 6. the check: what a person reviewing the video would look for (shown as ⚠️ on the Videos page)
     report(0.995, "Checking the video")
     try:

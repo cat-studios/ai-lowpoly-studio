@@ -42,6 +42,25 @@ class Regulars(unittest.TestCase):
         shots = A.direct("\n".join(lines), "cafe", beat_words=0)["shots"]
         self.assertEqual(shots[1]["speaker"], "grandma_rose")
 
+    def test_they_remember_what_they_said(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "grandma_rose.json").write_text(json.dumps({**ROSE, "catchphrase": "Back in my day..."}), encoding="utf-8")
+            ep = {"title": "Cookie heist", "cast": {"grandma_rose": {"type": "person", "actor": "grandma_rose"}},
+                  "shots": [{"line": "Where are the cookies?"},
+                            {"line": "Not me, dear.", "speaker": "grandma_rose"}]}
+            with mock.patch.object(AC, "DIR", d):
+                AC.remember(ep, log=lambda m: None)
+                a = AC.get("grandma_rose")
+                self.assertEqual(a["history"][-1], {**a["history"][-1], "title": "Cookie heist", "lines": ["Not me, dear."]})
+                note = AC.writer_note(["grandma_rose"])
+                AC.save({"name": "Grandma Rose", "kind": "generic", "regular": True}, aid="grandma_rose")
+                self.assertTrue(AC.get("grandma_rose")["history"])          # an edit keeps it
+        self.assertIn('"Back in my day..."', note)
+        self.assertIn("Not me, dear.", note)
+
     def test_bare_direction_lines_go_into_the_next_line(self):
         # "+mom enter, angry" on its own line was half spoken (", angry") and Mom's next line wasn't hers
         lines = llm._clean_lines("Uh oh.\n+mom enter, angry\nMom: Again?\n+ toaster: Ding!", main=["Catgirl"])

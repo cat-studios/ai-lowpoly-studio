@@ -292,6 +292,9 @@ side so you see the arm and the thing.
   front of her for that line and puts it away after (up to 3 per video).
 - **Close-up reactions**: "just kidding" gets a wink, "aww, stop it" a blush, "ugh, seriously?" an eye-roll - each
   in a close-up (up to 3 per video). Write `[wink]`, `[blush]` or `[eyeroll]` in a line's brackets to choose.
+- **Regulars have jokes that come back**: give a regular a catchphrase and a running gag (Assets → Actors). The
+  writer has them say the catchphrase once, works the gag in, and can call back to what they said last time (the
+  studio remembers each regular's lines after every video).
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):
