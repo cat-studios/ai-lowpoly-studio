@@ -113,6 +113,10 @@ def _roomiest(h, radius, x0, x1, y0, y1):
             c = Vector((x0 + i * 0.25, y0 + j * 0.25, 0.0))
             in_shot = abs(c.x - h.x) - radius * 0.8 <= 0.34 * (c.y - h.y + 4)
             score = _gap(c, h, radius) - (0.0 if in_shot else 1.0)
+            if c.y < h.y - 0.3:
+                # in front of her = between her and the camera: a kudu landed 2.8 m in front, filled the reveal
+                # shot as a grey blur and was out of every later shot - only when nothing else has any room
+                score -= 2.0 + (h.y - c.y)
             if score > best_score:
                 best, best_score = c, score
     return best

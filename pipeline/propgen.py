@@ -196,14 +196,19 @@ def clean(raw, kind, looks="", by="ollama", settle=True):
 ANIMAL_FAMILIES = {
     "bird": set("""bird birds pigeon pigeons dove crow raven sparrow parrot seagull gull duck duckling chicken hen
 rooster chick owl eagle hawk falcon penguin robin flamingo swan goose turkey canary budgie toucan pelican
-magpie""".split()),
+magpie ostrich emu peacock hummingbird woodpecker kiwi heron stork vulture parakeet cockatoo puffin""".split()),
     "beast": set("""cat cats kitten kitty dog dogs puppy pup doggo fox wolf horse pony cow cows bull calf pig piglet sheep
 lamb goat bear cub rabbit bunny mouse mice rat hamster deer reindeer lion tiger leopard cheetah raccoon squirrel
 elephant donkey capybara panda koala otter hedgehog ferret llama alpaca camel moose zebra giraffe hippo rhino
-kangaroo monkey dinosaur dino""".split()),
-    "fish": set("fish goldfish shark whale dolphin salmon tuna koi trout piranha orca".split()),
+kangaroo monkey dinosaur dino antelope kudu gazelle impala elk stag doe fawn bison buffalo ox yak boar warthog
+hyena jaguar panther lynx cougar puma badger beaver skunk mole sloth armadillo anteater meerkat chimp chimpanzee
+gorilla orangutan lemur gibbon baboon mammoth wombat platypus mongoose weasel tapir okapi caribou ibex chinchilla
+guinea lizard gecko iguana chameleon crocodile alligator turtle tortoise frog toad newt salamander trex""".split()),
+    "fish": set("fish goldfish shark whale dolphin salmon tuna koi trout piranha orca clownfish pufferfish catfish "
+                "swordfish carp guppy stingray seahorse cod".split()),
     "bug": set("ant ants beetle ladybug ladybird bug bugs insect fly housefly cockroach cricket grasshopper "
-               "firefly mosquito termite weevil".split()),
+               "firefly mosquito termite weevil butterfly moth bee bees wasp hornet spider dragonfly "
+               "cicada mantis flea".split()),
 }
 ANIMAL_COLORS = {   # body, wing/back, beak/snout - when the description names no colour
     "pigeon": ("#8d93a3", "#6c7282", "#3a3c44"), "dove": ("#eceef2", "#c9ccd4", "#e8a050"),
@@ -248,7 +253,23 @@ def animal_family(kind, looks=""):
         for fam, words in ANIMAL_FAMILIES.items():
             if set(desc[:4]) & words:
                 return fam
+    if len(name - {""}) <= 2 and not (name | set(desc)) & (THING_WORDS | MADE_THINGS):
+        # an animal no list knows: its body words say what kind ("kudu: tall, antlers" was 4 grey blocks)
+        for fam, words in BODY_HINTS.items():
+            if set(desc) & words:
+                return fam
     return None
+
+
+# made things that can have "wings", "horns" or "fur" in their description (a wing chair, a horned helmet)
+MADE_THINGS = set("""chair sofa couch armchair table lamp plane airplane jet aircraft rocket machine robot car truck
+van bus bike kite hat helmet costume coat rug blanket boots glider drone ship boat instrument trumpet""".split())
+BODY_HINTS = {
+    "beast": set("antlers antler horns hooves hoof fur furry mane paws snout muzzle whiskers tusks trunk "
+                 "mammal four-legged".split()),
+    "bird": set("feathers feathered beak wings winged".split()),
+    "fish": set("fins gills".split()),
+}
 
 
 THING_WORDS = set("""bed feeder food bowl cage house toy statue plush plushie poster picture painting sign tank

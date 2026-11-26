@@ -667,6 +667,21 @@ regulars' cast entries get `actor`) → `/api/render`, reusing `series.call/slug
 logged and skipped. UI: Ideas page ☑ Pick several (`IDEA_PICK`, a Set; card tick boxes, `.picked`) → 🎬 Make the
 videos → `openBatchDialog`.
 
+## Production test videos (2026-11-26: `zz_test_hook_goldfish`, `zz_test_guess_animal`)
+- Storyboards at 2 fps lost her: `Smoother` took 4 steps per frame, so 1/8 s steps blew the 7 Hz springs up to
+  ~1e254 (only the blob shadow stayed). Now `ceil(96 / FPS)` steps (<= 1/96 s; 24 fps unchanged).
+- Hook: `closeup` push-in (a `medium` push-in starts at 1.3 x 4 m = a tiny figure); `hook_word` <= 8 letters.
+- Myth or fact: the local model put "Myth!" inside the brackets and cast "+second_claim" - `_clean_lines` moves
+  `SAID_IN_BRACKETS` words out and drops `LABEL_CAST`. It still writes wrong facts (believes the myths) - a model
+  limit; the user checks those scripts before rendering.
+- Guess what: a "kudu" had no body template (4 blocks, 3-4/10) - `ANIMAL_FAMILIES` grew (antelopes, deer kin,
+  reptiles, more birds/fish/bugs) and `BODY_HINTS` (antlers, hooves, fur, feathers, fins) name unknown animals
+  unless the name/looks are a made thing (`MADE_THINGS`: a wing chair). Its spot: no free spot beside her, and
+  `blender_cast._roomiest` chose 2.8 m IN FRONT of her (it counts as "in shot") - spots in front now score -2 - depth.
+  `sfx_events`: a cast arrival's sound replaces any sound within 0.35 s (boing + pop played at once).
+- Fine in both: word-timed captions, cover pick (a close-up of her face), stream lengths, a new base set made at
+  render (Grassy Field, 19 props). Whole-video loudness ~-16 LUFS (voice -14; the quiet intro/outro lowers it).
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

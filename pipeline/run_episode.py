@@ -625,7 +625,10 @@ def sfx_events(ep, timing, sx):
                 continue
             hit = spec[3] if spec and spec[3] is not None else 0.0
             default_at = 0.1 if verb in ("crash_in", "fall", "fly_by") else 0.0
-            out.append((snd, t0 + float(e.get("at", default_at)) + hit, float(sx.get("volume", 0.55)) * 1.2))
+            at = t0 + float(e.get("at", default_at)) + hit
+            # two sounds at once is noise ("boing" + "pop" on one reveal): the arrival's sound wins
+            out = [o for o in out if abs(o[1] - at) > 0.35]
+            out.append((snd, at, float(sx.get("volume", 0.55)) * 1.2))
     return out
 
 
