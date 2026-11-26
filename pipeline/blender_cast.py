@@ -57,9 +57,16 @@ def event_frames(who):
             e = dict(e, _si=si, _end=f0 + B.shot_info[si]["n"] - 1)
             out.append((f0 + round(at * B.FPS), e))
     out.sort(key=lambda x: x[0])
-    # a cutaway subject that isn't used again disappears when its shot ends
-    for k, (f, e) in enumerate(list(out)):
-        if e.get("cutaway") and not any(f2 > f for f2, _ in out[k + 1:]):
+    # a cutaway subject disappears when its shot ends - it stands where SHE stands (she's hidden for that shot), so
+    # staying on put it inside her for the next shots. Only when its next event starts right then does it stay
+    # (a later cutaway or move brings it back: an event always shows it). It used to vanish only when it was never
+    # used again: a horse with a second cutaway stood inside her for four shots and inside the car's cutaway.
+    base = list(out)
+    for k, (f, e) in enumerate(base):
+        if not e.get("cutaway"):
+            continue
+        nxt = next((f2 for f2, _ in base[k + 1:] if f2 > f), None)
+        if nxt is None or nxt > e["_end"] + 1:
             out.append((e["_end"] + 1, {"who": who, "do": "vanish", "duration": 1.0 / B.FPS, "_si": e["_si"],
                                         "_end": e["_end"] + 1}))
     return sorted(out, key=lambda x: x[0])
@@ -556,8 +563,8 @@ def animate_thing(who, info, side):
             elif verb == "appear":
                 loc = p1.copy()
                 sc = B.smooth(u) * (1 + 0.3 * math.sin(math.pi * u))
-            elif verb == "vanish":
-                sc = 1 - B.smooth(u)
+            elif verb == "vanish":      # counted from 1: a one-frame vanish (a cutaway's end) is gone on that frame,
+                sc = 1 - B.smooth(min(1.0, (fr - f + 1) / n))      # not drawn full size inside her for one frame
             elif verb == "bounce":
                 loc.z += abs(math.sin(u * math.pi * 3)) * 0.6 * (1 - u)
             elif verb == "spin":

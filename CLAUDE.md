@@ -162,6 +162,12 @@ Open items:
   (path, mtime, size). Saved as `build/<name>/picture.key` after a good render (deleted before each render); a
   match + `frames_complete` = Blender skipped (same path as `--no-render`). `--full-render` forces it. Checked
   with storyboards: same episode twice -> reused; music + look changed -> reused; one camera changed -> rendered.
+- **Cutaway subjects inside her** (production `being_an_adult_in_the_1920s_or_today_63y5a`: a horse stood inside
+  her for 4 shots and inside the car's cutaway): a cutaway subject stands where she stands, and
+  `blender_cast.event_frames` only made it vanish when it was never used again - a second cutaway kept it there.
+  Now it vanishes after every cutaway shot unless its next event starts right then (an event always shows it
+  again). And a one-frame vanish was drawn full size on its frame (`u` from 0): counted from 1 now. Checked with a
+  storyboard of that episode: the horse and car only in their own shots.
 
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
