@@ -81,16 +81,20 @@ DEFAULTS = {
     "instagram": {"token": "", "user_id": ""},   # Stats: your posts' numbers (Graph API, read only)
     # Stats: YouTube numbers. The API key is ideas.youtube_key. client/refresh = optional OAuth for retention numbers
     "youtube": {"channel_id": "", "client_id": "", "client_secret": "", "refresh_token": ""},
-    "facts": {"check": True},            # Quick facts / Myth or fact: claims checked on Wikipedia before the render
+    "facts": {"check": True,             # Quick facts / Myth or fact: claims checked on Wikipedia before the render
+              "contact": ""},            # optional contact in the Wikipedia User-Agent (higher limits); empty = none
     # the weekly plan (pipeline/weekly.py): on that day + hour, fresh ideas -> a batch of videos -> Postiz drafts
     # 🧠 brain rot mode (the Create page's checkmark): the word bank and how it's made (Settings -> Brain rot mode)
     "brainrot": {"words": ["skibidi", "rizz", "sigma", "ohio", "aura", "mewing", "fanum tax", "bussin", "no cap",
                            "lowkey", "sus", "it's giving", "delulu", "npc", "main character energy", "goofy", "chat",
                            "unhinged", "gigachad", "on god"],
-                 "words_per_video": 3, "beat_words": 2, "one_word_captions": True},
+                 "words_per_video": 3, "beat_words": 2, "one_word_captions": True,
+                 "highlight": True, "highlight_color": "#ffe14d"},      # the bank's words in their own colour
     # idle auto-make: after `minutes` with nobody using the studio (and nothing running), make `count` videos from fresh ideas
-    "idle": {"on": False, "minutes": 10, "count": 1, "per_day": 3, "random_chance": 50},
-    "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True},     # her room (sets/home.json) keeps one thing from every video
+    # brainrot_chance (here and in "plan"): how often (0-100 %) a video made without you is in brain rot mode
+    "idle": {"on": False, "minutes": 10, "count": 1, "per_day": 3, "random_chance": 50, "brainrot_chance": 0},
+    "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True,
+             "brainrot_chance": 0},     # her room (sets/home.json) keeps one thing from every video
     "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic
              "use_ollama": True,           # let Ollama design new sets (falls back to pure random)
              "look_check": True,           # the picture model checks new sets (and redesigns ones that don't fit)

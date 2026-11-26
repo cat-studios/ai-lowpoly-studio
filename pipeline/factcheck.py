@@ -9,12 +9,16 @@ article's own text. Nothing is changed in the script - the result is build/<name
 
 review.py reports contradicted claims (warn) and unchecked ones (info) in the check after the render. A fact check
 that can't run (Ollama off, Wikipedia unreachable) never stops a render: status "skipped" or "error".
+
+    python pipeline/factcheck.py episodes/<id>.json     check now (Custom Video's 🔎 Check facts, /api/factcheck);
+                                                         the render reuses the result while the script stays the same
 """
 import hashlib
 import json
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -31,17 +35,22 @@ UA = {"User-Agent": "LowPolyStudio/1.0"}
 VERDICTS = ("supported", "contradicted", "unknown")
 
 EXTRACT = (
-    "You pick out the FACTS a short video states as true. You get numbered spoken lines. Return JSON: "
-    '{"claims": [{"n": <line number>, "claim": "<the fact, one plain sentence>", "search": "<2-4 words to look up '
-    'on Wikipedia>"}]}. Only checkable facts (numbers, dates, what something is or does), at most 12. If a line calls '
-    "something a myth, the claim is the TRUE fact that replaces it, not the myth. Jokes, opinions and questions are "
-    'not facts. If there are none, return {"claims": []}.'
+    "You pick out the FACTS ABOUT THE WORLD a short video states as true. You get numbered spoken lines. Return JSON: "
+    '{"claims": [{"n": <line number>, "claim": "<the fact, one plain sentence that names its subject>", "search": '
+    '"<2-4 words to look up on Wikipedia>"}]}. Only checkable facts about science, nature, animals, history, places, '
+    "numbers, dates or how something works - at most 12. If a line calls something a myth, the claim is the TRUE fact "
+    "that replaces it, not the myth. NOT facts: what the speaker says, does, feels or asks, jokes, greetings, "
+    'opinions, questions, the story. Most funny scripts have none: then return {"claims": []}.'
 )
 JUDGE = (
     "You check one fact against the text of a Wikipedia article. Answer JSON: "
-    '{"verdict": "supported" | "contradicted" | "unknown", "note": "<one short sentence>"}. "supported" = the text says '
-    'so, "contradicted" = the text says otherwise, "unknown" = the text does not cover it. Use only the text.'
+    '{"verdict": "supported" | "contradicted" | "unknown", "note": "<one short sentence>"}. "supported" = the text '
+    'says the same thing about the same subject, "contradicted" = the text says otherwise about that subject, '
+    '"unknown" = the text is about something else or does not cover it. Use only the text; when unsure, "unknown".'
 )
+# a world fact names its subject: a "claim" starting like this is about the speaker or the story, not checkable
+NOT_A_SUBJECT = {"i", "i'm", "you", "you're", "she", "she's", "he", "he's", "we", "they", "it", "it's", "this",
+                 "that", "my", "your", "her", "his", "our", "their"}
 
 
 def applies(ep, cfg=None):
@@ -50,17 +59,45 @@ def applies(ep, cfg=None):
     return bool(on) and (ep.get("template") or "") in TEMPLATES
 
 
-def _wiki(params):
+WIKI_GAP = 1.0              # seconds between Wikipedia calls (it answers 429 "too many requests" to bursts)
+_LAST_CALL = [0.0]
+
+
+def _user_agent():
+    """Wikimedia asks API users for a contact; Settings -> AI tools -> fact check contact adds one if you choose
+    (empty by default: nothing about you is sent)."""
+    try:
+        contact = str((S.load_settings().get("facts") or {}).get("contact") or "").strip()
+    except Exception:
+        contact = ""
+    return {"User-Agent": UA["User-Agent"] + (f" ({contact})" if contact else "")}
+
+
+def _wiki(params, tries=3):
     q = urllib.parse.urlencode({"format": "json", "formatversion": 2, "action": "query", **params})
-    with urllib.request.urlopen(urllib.request.Request(f"{WIKI}?{q}", headers=UA), timeout=20) as r:
-        return json.load(r)
+    for attempt in range(tries):
+        wait = WIKI_GAP - (time.time() - _LAST_CALL[0])
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_CALL[0] = time.time()
+        try:
+            with urllib.request.urlopen(urllib.request.Request(f"{WIKI}?{q}", headers=_user_agent()), timeout=20) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == tries - 1:
+                raise
+            try:                                      # too many requests: wait as long as it asks (at most 20 s)
+                time.sleep(min(20.0, float(exc.headers.get("Retry-After") or 5)))
+            except ValueError:
+                time.sleep(5)
 
 
 TEXT_LIMIT = 3500          # characters of the article the judge reads
 
 
 def _keywords(s):
-    return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 3}
+    """The words that say something (4+ letters), cut to 5 letters so endings don't matter (octopuses ~ octopus)."""
+    return {w[:5] for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 3}
 
 
 def relevant(text, claim, limit=TEXT_LIMIT):
@@ -81,15 +118,20 @@ def relevant(text, claim, limit=TEXT_LIMIT):
 
 
 def article(search, claim=""):
-    """(url, text) of Wikipedia's best match for a search - the parts about the claim -, or (None, "")."""
-    hits = _wiki({"list": "search", "srsearch": search, "srlimit": 1}).get("query", {}).get("search") or []
-    if not hits:
-        return None, ""
-    title = hits[0]["title"]
-    pages = _wiki({"prop": "extracts", "explaintext": 1, "exlimit": 1, "titles": title}).get("query", {}).get("pages") or [{}]
-    text = pages[0].get("extract") or ""
-    return ("https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_")),
-            relevant(text, claim or search))
+    """(url, text) of the Wikipedia article about the claim's subject - the parts about the claim -, or (None, "").
+    The first of the top hits whose TITLE shares a word with the claim (the model's search words first, then the
+    claim itself): "honey shelf life" once led to an actress who starred in a film called Honey."""
+    want = _keywords(claim or search)
+    for q in dict.fromkeys(x for x in (search, claim) if x):
+        hits = _wiki({"list": "search", "srsearch": q, "srlimit": 3}).get("query", {}).get("search") or []
+        title = next((h["title"] for h in hits if want & _keywords(h["title"])), None)
+        if not title:
+            continue
+        pages = _wiki({"prop": "extracts", "explaintext": 1, "exlimit": 1, "titles": title}).get("query", {}).get("pages") or [{}]
+        text = relevant(pages[0].get("extract") or "", claim or search)
+        if want & _keywords(text):                # an article about something else is no source at all
+            return "https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_")), text
+    return None, ""
 
 
 def script_key(lines):
@@ -134,6 +176,11 @@ def check_episode(ep, build, log=print):
                 n = int(str(c.get("n") or 0).strip(". "))
             except ValueError:
                 n = 0
+            if shot_of.get(n) and not _keywords(str(c["claim"])) & _keywords(shot_of[n]):
+                continue        # nothing in its line says so: the model made it up ("Just between us" -> "It is a secret")
+            first = (re.findall(r"[a-z']+", str(c["claim"]).lower()) or [""])[0]
+            if first in NOT_A_SUBJECT:
+                continue        # about the speaker or the story ("She asks seriously..."), not a fact to look up
             try:
                 src, text = article(str(c.get("search") or c["claim"])[:120], str(c["claim"]))
                 if not text:
@@ -156,3 +203,22 @@ def check_episode(ep, build, log=print):
         log(f"  fact check skipped: {res['error']}")
     (build / "facts.json").write_text(json.dumps(res, indent=1, ensure_ascii=False), encoding="utf-8")
     return res
+
+
+def build_dir(ep_path):
+    """The render's build folder for an episode file (= run_episode: build/<slug of the file name>)."""
+    name = re.sub(r"[^a-z0-9]+", "_", Path(ep_path).stem.lower()).strip("_") or "episode"
+    return ROOT / "build" / name
+
+
+def main(ep_path):
+    ep = json.loads(Path(ep_path).read_text(encoding="utf-8-sig"))
+    res = check_episode(ep, build_dir(ep_path))
+    for c in res["claims"]:
+        print(f"[{c['verdict']}] {c['claim']}" + (f" - {c['note']}" if c.get("note") else ""))
+    if res["status"] != "done":
+        sys.exit(f"The fact check couldn't run: {res['error'] or res['status']}")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])

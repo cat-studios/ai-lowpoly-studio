@@ -9,6 +9,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import catalog
 
@@ -37,6 +38,30 @@ def list_models(url=DEFAULT_URL):
 
 _REMOTE_DOWN = {}          # big text server -> when it last failed (it's tried again after REMOTE_RETRY seconds)
 REMOTE_RETRY = 300
+# shared by every job (each is its own process): without it every fact check / script job waited the full
+# REMOTE_TIMEOUT for a slow big server before using this PC
+_DOWN_FILE = Path(__file__).resolve().parent.parent / "build" / "remote_down.json"
+
+
+def _down_since(big):
+    """When the big server last failed (this process or any other job)."""
+    t = _REMOTE_DOWN.get(big, 0)
+    try:
+        t = max(t, float(json.loads(_DOWN_FILE.read_text(encoding="utf-8")).get(big, 0)))
+    except Exception:
+        pass
+    return t
+
+
+def _mark_down(big, when):
+    _REMOTE_DOWN[big] = when
+    try:
+        d = json.loads(_DOWN_FILE.read_text(encoding="utf-8")) if _DOWN_FILE.exists() else {}
+        d[big] = when
+        _DOWN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _DOWN_FILE.write_text(json.dumps(d), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _remote_for(url, has_images):
@@ -52,11 +77,11 @@ def _remote_for(url, has_images):
     big = "" if o.get("big_server") is False else str(o.get("design_url") or "").strip()
     if not big or o.get("design_scope") != "text" or url.rstrip("/") != str(o.get("url", "")).rstrip("/"):
         return None
-    if time.time() - _REMOTE_DOWN.get(big, 0) < REMOTE_RETRY:
+    if time.time() - _down_since(big) < REMOTE_RETRY:
         return None
     model = (o.get("design_model") or "").strip() or None
     if not _remote_alive(big, model):
-        _REMOTE_DOWN[big] = time.time()
+        _mark_down(big, time.time())
         print(f"[ai] big text server {big} isn't answering (or has no {model}) - using this PC's Ollama "
               f"for the next {REMOTE_RETRY // 60} min")
         return None
@@ -103,7 +128,7 @@ def _chat(url, payload, has_images=False):
         except (OSError, TimeoutError, ValueError) as exc:     # unreachable, no such model, bad answer, too slow
             slow = isinstance(exc, TimeoutError) or "timed out" in str(exc)
             # too slow (a busy 80B model): skip it for longer - every call waited the full time before
-            _REMOTE_DOWN[rem[0]] = time.time() + (REMOTE_SLOW_SKIP - REMOTE_RETRY if slow else 0)
+            _mark_down(rem[0], time.time() + (REMOTE_SLOW_SKIP - REMOTE_RETRY if slow else 0))
             print(f"[ai] big text server {rem[0]} failed ({exc.__class__.__name__}: {str(exc)[:80]}) - "
                   f"using {url} for the next {(REMOTE_SLOW_SKIP if slow else REMOTE_RETRY) // 60} min")
     return _chat_once(url, payload)
@@ -488,20 +513,26 @@ NOT_SPEAKERS = {"narrator", "character", "main character", "host", "me", "i", "s
 
 # Hooks: each script is asked for one of these openings (picked at random), so the first line doesn't always
 # come out as the same "Did you know..." shape. The ending rule makes the video loop back to its start.
-HOOK_STYLES = [
-    "a surprising number or fact, stated bluntly",
-    "a bold question that the video then answers",
-    "a 'wait, what?' reaction to the title",
-    "a confident claim most people think is wrong",
-    "a small confession that sets up the twist",
-]
+# The style is saved on the episode ("hook_style"), so the Stats page can show which openings keep people watching.
+HOOK_STYLES = {
+    "number": "a surprising number or fact, stated bluntly",
+    "question": "a bold question that the video then answers",
+    "wait_what": "a 'wait, what?' reaction to the title",
+    "myth_buster": "a confident claim most people think is wrong",
+    "confession": "a small confession that sets up the twist",
+}
 ENDING_RULE = ("The LAST line lands the punchline and, where it fits, echoes the first line's words or idea, so the "
                "video loops back to its start when people replay it.")
 
 
-def hook_rule(rng=random):
-    """The hook sentence for one script: one style from HOOK_STYLES (each script asks for one)."""
-    return f"Open this one with {rng.choice(HOOK_STYLES)}."
+def pick_hook_style(rng=random):
+    """One hook style id (HOOK_STYLES), at random."""
+    return rng.choice(list(HOOK_STYLES))
+
+
+def hook_rule(style):
+    """The hook sentence for one script, for a style id (an unknown id = "number")."""
+    return f"Open this one with {HOOK_STYLES.get(style) or HOOK_STYLES['number']}."
 
 
 def pick_brainrot_words(bank, n=3, rng=random):
@@ -519,10 +550,13 @@ def brainrot_rule(words):
 
 
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
-                    others=None, polish=True, scenes="auto", explain=False, brainrot=None):
+                    others=None, polish=True, scenes="auto", explain=False, brainrot=None, hook_style=None):
     """others: the other main characters in the video, [{"name", "about"}] - they get some lines too.
     scenes: "stay" (one place), "move" (the story travels: 1-3 [@ place] changes) or "auto" (only when it moves).
-    brainrot: the words to use (pick_brainrot_words) - the brain rot style is added to the writer's extra notes."""
+    brainrot: the words to use (pick_brainrot_words) - the brain rot style is added to the writer's extra notes.
+    hook_style: a HOOK_STYLES id (the caller records it on the episode); None = one at random."""
+    if hook_style not in HOOK_STYLES:
+        hook_style = pick_hook_style()
     if brainrot:
         extra = (extra + " " + brainrot_rule(brainrot)).strip()
     others = [o for o in (others or []) if isinstance(o, dict) and o.get("name")]
@@ -538,7 +572,7 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         "in first person by the character, with a clear setup, escalation and a punchline at the end.\n"
         "The FIRST line is the hook - it decides whether people keep watching: at most 8 words, a surprising claim, "
         "a bold question or a 'wait, what?' moment about the title. Never open with a greeting (\"Hi everyone\", "
-        "\"Hello\"), her name or \"Today we...\". " + hook_rule() + "\n"
+        "\"Hello\"), her name or \"Today we...\". " + hook_rule(hook_style) + "\n"
         + ENDING_RULE + "\n"
         "Keep it family-friendly: no swearing (no damn, hell, crap...) and correct, natural English.\n"
         "Output ONLY the script lines, one per line. No numbering, no names, no stage directions in "

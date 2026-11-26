@@ -7,6 +7,7 @@ The web server checks once every few minutes (web/server.py plan_loop); ▶ Run 
 once. State (the last week it ran) in build/weekly_plan.json.
 """
 import json
+import random
 import time
 from datetime import datetime
 from pathlib import Path
@@ -71,9 +72,20 @@ def pick(db, n, rank=()):
     return out
 
 
+def roll_brainrot(items, chance, rng=random):
+    """Brain rot mode by chance (0-100 %) for videos made without you: each item gets "brainrot": True or not
+    (batch.py reads it per item)."""
+    chance = max(0.0, min(100.0, float(chance or 0)))
+    for it in items:
+        if rng.random() * 100 < chance:
+            it["brainrot"] = True
+    return items
+
+
 def spec_for(plan, db, base, postiz_on):
     ideas = pick(db, max(1, min(10, int(plan.get("count", 5)))), kind_rank())
-    return {"ideas": [{k: it.get(k) for k in ("id", "topic", "angle", "template", "titles")} for it in ideas],
+    items = [{k: it.get(k) for k in ("id", "topic", "angle", "template", "titles")} for it in ideas]
+    return {"ideas": roll_brainrot(items, plan.get("brainrot_chance", 0)),
             "length": str(plan.get("length") or "medium"), "note": "", "model": "", "regulars": [],
             "render": True, "drafts": bool(plan.get("drafts", True)) and postiz_on,
             "weekly": datetime.now().strftime("%Y-%m-%d"), "base": base}

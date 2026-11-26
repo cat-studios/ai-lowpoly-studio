@@ -211,7 +211,7 @@ def run_idle_batch(cfg):
             items.append(ideas.pop(0))
         else:
             items.append(randomvid.item(template_ids=kinds))
-    spec["ideas"] = items
+    spec["ideas"] = weekly.roll_brainrot(items, cfg.get("brainrot_chance", 0))   # 🧠 by chance (Settings)
     f = ROOT / "build" / "series" / f"{stamp()}-idle.json"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(spec), encoding="utf-8")
@@ -1078,6 +1078,7 @@ class Handler(BaseHTTPRequestHandler):
                 regs = [str(r) for r in (b.get("regulars") or []) if re.fullmatch(r"[a-z0-9_]{1,48}", str(r))]
                 extra = " ".join(x for x in (tpl["script"], AC.writer_note(regs), b.get("extra", "")) if x)
                 br = S.load_settings().get("brainrot") or {}           # 🧠 brain rot mode: the words from its bank
+                hook_style = llm.pick_hook_style()                      # recorded on the episode (Stats: which hooks work)
                 lines = llm.generate_script(o["url"], model, b.get("title") or "an ordinary day", char,
                                             {"name": s["name"], "description": s["description"],
                                              "marks": list(s["marks"])},
@@ -1086,8 +1087,10 @@ class Handler(BaseHTTPRequestHandler):
                                             scenes=str(b.get("scenes") or "auto"),
                                             explain=b.get("template") == "how_it_works",   # [show:] models only there
                                             brainrot=(llm.pick_brainrot_words(br.get("words"), br.get("words_per_video", 3))
-                                                      if b.get("brainrot") else None))
-                return self.send_json({"lines": lines, "script": "\n".join(lines), "model": model, "set": chosen})
+                                                      if b.get("brainrot") else None),
+                                            hook_style=hook_style)
+                return self.send_json({"lines": lines, "script": "\n".join(lines), "model": model, "set": chosen,
+                                       "hook_style": hook_style})
             if arg == "titles":
                 tpl = templates.get(b.get("template")) if b.get("template") else None
                 titles = llm.generate_titles(o["url"], model, char, b.get("theme", ""), int(b.get("count", 8)),
@@ -1579,6 +1582,22 @@ class Handler(BaseHTTPRequestHandler):
             if method == "DELETE" and arg == "souvenir" and len(parts) > 2:
                 home.remove(parts[2])
                 return self.send_json({"ok": True})
+
+        if head == "factcheck" and method == "POST":  # Custom Video: 🔎 Check facts before the render (factcheck.py)
+            b = self.body_json()
+            p = episode_path(str(b.get("id") or ""))
+            if not p.exists():
+                raise ValueError("save the video first")
+            import factcheck
+            out = factcheck.build_dir(p) / "facts.json"            # the render's own build folder: it reuses this
+
+            def facts_done(job):
+                try:
+                    job.result = json.loads(out.read_text(encoding="utf-8"))
+                except Exception:
+                    job.result = {"status": "error", "error": "no result was written", "claims": []}
+            cmd = [sys.executable, "-u", str(PIPE / "factcheck.py"), str(p)]
+            return self.send_json(submit(Job("factcheck", "Fact check", cmd, facts_done)).to_dict())
 
         if head == "castcards" and method == "POST":  # Custom Video: who and what appears, before the render
             import castcards

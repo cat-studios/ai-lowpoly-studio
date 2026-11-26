@@ -103,6 +103,24 @@ class YouTube(unittest.TestCase):
         self.assertEqual(s["youtube"]["subscribers"], 10)
 
 
+class HookStyles(unittest.TestCase):
+    def test_averages_by_hook_style_and_brain_rot(self):
+        facts = {"a": {"title": "A", "template": "what_if", "seconds": 30, "set": "park", "hook": "", "shots": 9,
+                       "language": "en", "hook_style": "question", "brainrot": True},
+                 "b": {"title": "B", "template": "what_if", "seconds": 30, "set": "park", "hook": "", "shots": 9,
+                       "language": "en", "hook_style": "number", "brainrot": False}}
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "stats.json"
+            store.write_text(json.dumps({"videos": {"a": {"views": 900, "yt": {"id": "x", "views": 50, "avg_view_pct": 70.0}},
+                                                    "b": {"views": 100}}}))
+            with mock.patch.object(stats, "STORE", store), mock.patch.object(stats, "facts", lambda k: facts[k]):
+                s = stats.summary()
+        self.assertEqual(s["by"]["hook"][0], {"value": "question", "videos": 1, "avg": 900})
+        self.assertEqual(s["by"]["brainrot"][0]["value"], "on")
+        self.assertEqual(s["yt_by_hook"][0]["value"], "question")
+        self.assertEqual(s["yt_by_hook"][0]["avg_view_pct"], 70.0)
+
+
 class CoverB(unittest.TestCase):
     def test_runner_up_is_another_frame(self):
         cands = [(0, "f0", 3), (4, "f4", 5), (9, "f9", 3)]

@@ -190,12 +190,16 @@ def picture_issues(ep, timing, build, ffmpeg, ollama, out, log=print):
                "Look at those shots (🎞 Shots) - the picture model can be wrong.")
 
 
-def fact_issues(build, out):
-    """The fact check before the render (factcheck.py): contradicted facts are a warning, unchecked ones an note."""
+def fact_issues(ep, build, out):
+    """The fact check before the render (factcheck.py): contradicted facts are a warning, unchecked ones a note.
+    A check of an earlier script (the lines changed since) is ignored."""
+    import factcheck
     p = Path(build) / "facts.json"
     if not p.exists():
         return
     res = json.loads(p.read_text(encoding="utf-8"))
+    if res.get("key") and res["key"] != factcheck.script_key(factcheck.spoken_lines(ep)):
+        return
     for c in res.get("claims") or []:
         if c.get("verdict") == "contradicted":
             _issue(out, "warn", f"A fact may be wrong: \"{c['claim']}\" - {c.get('note') or 'the article says otherwise'}",
@@ -209,7 +213,7 @@ def check(ep, timing, build, mp4, cfg, requested=(), ffmpeg="ffmpeg", log=print)
     out = []
     for fn, args in ((cutaway_issues, (ep, timing, list(requested), out)), (cast_issues, (ep, build, out)),
                      (sound_issues, (ep, timing, cfg, out)), (stream_issues, (mp4, out)),
-                     (fact_issues, (build, out)),
+                     (fact_issues, (ep, build, out)),
                      (picture_issues, (ep, timing, build, ffmpeg, cfg.get("ollama"), out, log))):
         try:
             fn(*args)

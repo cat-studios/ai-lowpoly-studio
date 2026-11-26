@@ -308,6 +308,8 @@ def facts(key):
     shots = ep.get("shots") or []
     return {"title": ep.get("title") or key, "template": ep.get("template") or "what_if", "seconds": secs,
             "set": ep.get("set") or "", "hook": next((s.get("line") for s in shots if s.get("line")), ""),
+            "hook_style": ep.get("hook_style") or "?",                 # llm.HOOK_STYLES id ("?" = made before 2026-11-27)
+            "brainrot": bool(ep.get("brainrot")),
             "shots": len(shots), "language": ep.get("language") or "en"}
 
 
@@ -331,6 +333,19 @@ def _avg(xs):
     return round(sum(xs) / len(xs), 1) if xs else None
 
 
+def _yt_by(rows, field):
+    """YouTube by one fact (kind, hook style): views, how much of each video people watch, subscribers it brought."""
+    groups = {}
+    for r in rows:
+        if r.get("yt"):
+            groups.setdefault(r.get(field) or "?", []).append(r["yt"])
+    return sorted(({"value": k, "videos": len(x), "avg_views": _avg([y.get("views") for y in x]),
+                    "avg_view_pct": _avg([y.get("avg_view_pct") for y in x]),
+                    "avg_view_secs": _avg([y.get("avg_view_secs") for y in x]),
+                    "subs": sum(y.get("subs_gained") or 0 for y in x)} for k, x in groups.items()),
+                  key=lambda e: -(e["avg_views"] or 0))
+
+
 def summary():
     """Every video with numbers + the averages by kind, length, cover and set; and YouTube's by kind."""
     db = load()
@@ -343,23 +358,15 @@ def summary():
     for r in rows:
         score = _score(r)
         for dim, val in (("kind", r["template"]), ("length", length_bucket(r["seconds"])),
-                         ("cover", (r.get("posted_cover") or "?").upper()), ("set", r["set"])):
+                         ("cover", (r.get("posted_cover") or "?").upper()), ("set", r["set"]),
+                         ("hook", r.get("hook_style") or "?"), ("brainrot", "on" if r.get("brainrot") else "off")):
             g = groups.setdefault(dim, {}).setdefault(val, [])
             g.append(score or 0)
     avg = {dim: sorted(({"value": k, "videos": len(x), "avg": round(sum(x) / len(x))} for k, x in d.items()),
                        key=lambda e: -e["avg"]) for dim, d in groups.items()}
-    # YouTube, by kind: views, how much of each video people watch, and subscribers each video brought in
-    yt_groups = {}
-    for r in rows:
-        if r.get("yt"):
-            yt_groups.setdefault(r["template"], []).append(r["yt"])
-    yt_by = sorted(({"value": k, "videos": len(x), "avg_views": _avg([y.get("views") for y in x]),
-                     "avg_view_pct": _avg([y.get("avg_view_pct") for y in x]),
-                     "avg_view_secs": _avg([y.get("avg_view_secs") for y in x]),
-                     "subs": sum(y.get("subs_gained") or 0 for y in x)} for k, x in yt_groups.items()),
-                    key=lambda e: -(e["avg_views"] or 0))
     yt = db.get("youtube") or {}
-    return {"rows": sorted(rows, key=lambda r: -(_score(r) or 0)), "by": avg, "yt_by": yt_by,
+    return {"rows": sorted(rows, key=lambda r: -(_score(r) or 0)), "by": avg,
+            "yt_by": _yt_by(rows, "template"), "yt_by_hook": _yt_by(rows, "hook_style"),
             "youtube": {"channel": yt.get("channel"), "subscribers": yt.get("subscribers"),
                         "fetched": yt.get("fetched"), "history": (yt.get("history") or [])[-60:]},
             "posts": [{k: p.get(k) for k in ("id", "caption", "permalink", "timestamp")} for p in db.get("posts") or []],

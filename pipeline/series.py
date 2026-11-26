@@ -77,6 +77,8 @@ def main(spec_path):
               "set_style": "base"}
         if spec.get("brainrot"):
             ep["brainrot"] = True                 # 🧠 one word per caption at render
+        if r.get("hook_style"):
+            ep["hook_style"] = r["hook_style"]    # the writer's opening (Stats: which hooks work)
         if spec.get("idea_id"):
             ep["idea"] = spec["idea_id"]          # started from the Ideas page: marked used when saved          # a series' new places are always hand-built bases (set style A)
         if spec.get("character"):

@@ -590,6 +590,7 @@ async function pageCreate() {
       model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template || "",
       brainrot: brainrotOn() });
     $("#script").value = r.script; CS.scriptDraft = r.script;
+    if (r.hook_style) CS.ep.hook_style = r.hook_style;        // the opening the writer was asked for (📊 Stats)
     if (r.set && r.set !== CS.ep.set) { CS.ep.set = r.set; refreshScene(); toast(`Set: ${META.catalog.sets[r.set]?.name || "new - " + r.set.slice(4)}`); }
     $("#ai-status").textContent = `${r.lines.length} lines from ${r.model} in ${((Date.now() - t0) / 1000).toFixed(1)}s`;
     CS.tab = "write"; $$(".tab")[0].click();
@@ -718,6 +719,7 @@ async function pageCreate() {
       model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template,
       brainrot: brainrotOn() });
     setVal("#script", r.script); CS.scriptDraft = r.script;
+    if (r.hook_style) CS.ep.hook_style = r.hook_style;        // the opening the writer was asked for (📊 Stats)
     // the scene comes from the title and the script, not the other way round
     status("3/5 Making a scene that fits the script (a few minutes)…");
     const idea = `${picks.scene}. ${CS.ep.title}. ${(r.lines || []).slice(0, 2).join(" ")}`.slice(0, 300);
@@ -1178,7 +1180,7 @@ async function openCustomWizard() {
               const r = await api("POST", "/api/ai/script", { title: W.title, set: "auto", scene_policy: "reuse", character: W.character,
                 model: CS.model, lines: lo + Math.floor(Math.random() * (hi - lo + 1)), tone: W.tone || tpl().tone, extra: W.note,
                 co_stars: W.co_stars, regulars: W.regulars || [], template: W.template, scenes: W.places, brainrot: brainrotOn() });
-              W.script = r.script; W.start = r.set || "auto";
+              W.script = r.script; W.start = r.set || "auto"; W.hookStyle = r.hook_style || "";
               $("#cw-script", box).value = W.script; showBox();
               $("#cw-script", box).classList.add("cw-deal");
             });
@@ -1340,6 +1342,10 @@ async function openCustomWizard() {
                 <button id="cw-sb" class="small-btn" title="One picture per shot, no voice - about a minute">👀 Storyboard</button>
                 <button id="cw-rough" class="small-btn" title="A small moving video with the voice and captions, plain look - a few minutes">🎞 Rough preview</button></div>
               <div id="cw-prev-job"></div><div id="cw-prev"></div></div>
+            <div class="cw-preview">
+              <div class="muted small">Does it state facts? Check them on Wikipedia before you render (about half a minute per fact). The render reuses the result while the script stays the same.</div>
+              <div class="btns" style="justify-content:center"><button id="cw-facts-go" class="small-btn">🔎 Check facts</button></div>
+              <div id="cw-facts-job"></div><div id="cw-facts"></div></div>
             <div class="cw-go">
               <button id="cw-render" class="primary cw-render">▶ ${W.editId ? "Render it again!" : "Render my video!"}</button>
               <div class="btns" style="justify-content:center"><button id="cw-save">💾 Save without rendering</button></div></div>`, "");
@@ -1353,6 +1359,7 @@ async function openCustomWizard() {
             if (W.look) ep.look_preset = W.look;
             if (W.language) ep.language = W.language;
             if (brainrotOn()) ep.brainrot = true;               // 🧠 one word per caption at render
+            if (W.hookStyle) ep.hook_style = W.hookStyle;        // the opening the writer was asked for (📊 Stats)
             if (W.music !== "__default") ep.music = W.music === "__none" ? "" : W.music;
             if (W.ambience !== "__default") ep.ambience = W.ambience === "__none" ? "" : W.ambience;
             const cast = JSON.parse(JSON.stringify(W.cast || {}));
@@ -1368,15 +1375,45 @@ async function openCustomWizard() {
             if ((W.scenes || []).some((sc) => String(sc.choice).startsWith("new:"))) ep.set_style = W.setStyle;   // made at render
             return ep;
           };
-          // a preview saves the video first (the same file the real render then uses)
-          const preview = (kind) => guard(async (e) => {
-            const btnEl = e.currentTarget;
+          // a preview or a fact check saves the video first (the same file the real render then uses)
+          const saveForCheck = async () => {
             if (!W.previewId && !W.editId) W.previewId = ((W.title || "episode").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "episode")
               + "_" + Date.now().toString(36).slice(-5);
             const id = W.editId || W.previewId;
+            await api("PUT", `/api/episodes/${id}`, build());
+            return id;
+          };
+          // 🔎 Check facts (pipeline/factcheck.py): each fact the video states, against Wikipedia
+          const FACT_ICON = { supported: "✅", contradicted: "❌", unknown: "❔" };
+          const factsHtml = (res) => {
+            if (res.status !== "done") return `<p class="muted small">The check couldn't run: ${esc(res.error || res.status)}</p>`;
+            if (!res.claims.length) return '<p class="muted small">No checkable facts in this script.</p>';
+            const bad = res.claims.filter((c) => c.verdict === "contradicted").length;
+            return `<p class="small"><b>${bad ? `❌ ${bad} may be wrong` : "✅ Nothing contradicted"}</b> - ${res.claims.length} fact${res.claims.length > 1 ? "s" : ""} checked. Fix a line in the Script step and check again.</p>
+              <ul class="small" style="text-align:left;margin:4px 0;padding-left:18px">${res.claims.map((c) => `<li>${FACT_ICON[c.verdict] || "❔"} ${c.shot ? `<span class="muted">shot ${c.shot}:</span> ` : ""}${esc(c.claim)}
+                ${c.note ? `<div class="muted">${esc(c.note)}</div>` : ""}${c.source ? `<a href="${esc(c.source)}" target="_blank" rel="noopener">source ↗</a>` : ""}</li>`).join("")}</ul>`;
+          };
+          const checkFacts = guard(async (e) => {
+            const btnEl = e.currentTarget;
             btnEl.disabled = true;
             try {
-              await api("PUT", `/api/episodes/${id}`, build());
+              const id = await saveForCheck();
+              const job = await api("POST", "/api/factcheck", { id });
+              $("#cw-facts", box).innerHTML = "";
+              watchJob(job, $("#cw-facts-job", box), (j) => {
+                btnEl.disabled = false;
+                const out = $("#cw-facts", box);
+                if (!out) return;                        // the popup moved on
+                $("#cw-facts-job", box).innerHTML = "";
+                out.innerHTML = factsHtml(j.status === "done" ? j.result : { status: "error", error: "see the log", claims: [] });
+              });
+            } catch (err) { btnEl.disabled = false; throw err; }
+          });
+          const preview = (kind) => guard(async (e) => {
+            const btnEl = e.currentTarget;
+            btnEl.disabled = true;
+            try {
+              const id = await saveForCheck();
               const job = await api("POST", "/api/preview", { id, kind });
               $("#cw-prev", box).innerHTML = "";
               watchJob(job, $("#cw-prev-job", box), async (j) => {
@@ -1443,6 +1480,7 @@ async function openCustomWizard() {
           drawCards();
           $("#cw-sb", box).onclick = preview("storyboard");
           $("#cw-rough", box).onclick = preview("rough");
+          $("#cw-facts-go", box).onclick = checkFacts;
           const finish = (how) => {
             Object.assign(CS, { ep: build(), id: W.editId || W.previewId || "", keepId: !!W.editId, rendered: null, scriptDraft: W.directScript,
               beats: W.beats, wiz: null });
@@ -2168,8 +2206,13 @@ function idleLabel() {
 async function pageStats() {
   const s = await api("GET", "/api/stats");
   const num = (x) => x == null ? "-" : Number(x).toLocaleString();
-  const dims = { kind: "Kind of video", length: "Length", cover: "Cover posted", set: "Set" };
+  const dims = { kind: "Kind of video", hook: "Hook style (the first line)", length: "Length", cover: "Cover posted", set: "Set", brainrot: "🧠 Brain rot mode" };
   const tplName = (id) => { const t = tplOf(id); return t.name ? `${t.icon} ${t.name}` : id; };
+  const HOOK_NAMES = { number: "🔢 A surprising number", question: "❓ A bold question", wait_what: "😳 Wait, what?",
+    myth_buster: "🙅 Most people are wrong", confession: "🤫 A confession", "?": "Not recorded (older videos)" };
+  const label = (d, v) => d === "kind" ? tplName(v) : d === "hook" ? (HOOK_NAMES[v] || v) : d === "set" ? (META.catalog.sets[v]?.name || v) : v;
+  const ytTable = (rows, head, name) => rows.length ? `<table class="st-table"><tr><th>${head}</th><th>Videos</th><th>Avg views</th><th>Avg % watched</th><th>Avg seconds watched</th><th>Subscribers gained</th></tr>
+    ${rows.map((e) => `<tr><td>${esc(name(e.value))}</td><td>${e.videos}</td><td>${num(e.avg_views)}</td><td>${e.avg_view_pct == null ? "-" : e.avg_view_pct + "%"}</td><td>${num(e.avg_view_secs)}</td><td>${num(e.subs)}</td></tr>`).join("")}</table>` : "";
   app.innerHTML = `<div class="assets-head"><div><h2>📊 Stats</h2>
       <p class="muted small">How your posted videos did, next to what they were - to see which kinds work. Numbers come from Instagram
         and YouTube (Settings → Stats) or you type the views in. Which cover you posted is noted on 🖼 Cover.</p></div></div>
@@ -2180,11 +2223,11 @@ async function pageStats() {
     ${s.youtube && s.youtube.channel ? `<div class="panel"><h4>▶ YouTube</h4>
       <p><b>${s.youtube.subscribers == null ? "Subscribers hidden" : Number(s.youtube.subscribers).toLocaleString() + " subscribers"}</b>
       ${(() => { const h = s.youtube.history || []; if (h.length < 2) return ""; const d = h[h.length - 1][1] - h[0][1]; return ` <span class="muted small">${d >= 0 ? "+" : ""}${d} since ${ago(h[0][0])}</span>`; })()}</p>
-      ${(s.yt_by || []).length ? `<table class="st-table"><tr><th>Kind of video</th><th>Videos</th><th>Avg views</th><th>Avg % watched</th><th>Avg seconds watched</th><th>Subscribers gained</th></tr>
-        ${s.yt_by.map((e) => `<tr><td>${esc(tplName(e.value))}</td><td>${e.videos}</td><td>${num(e.avg_views)}</td><td>${e.avg_view_pct == null ? "-" : e.avg_view_pct + "%"}</td><td>${num(e.avg_view_secs)}</td><td>${num(e.subs)}</td></tr>`).join("")}</table>` : '<p class="muted small">Matched uploads show here after a fetch.</p>'}
+      ${(s.yt_by || []).length ? ytTable(s.yt_by, "Kind of video", tplName) + ytTable(s.yt_by_hook || [], "Hook style", (v) => HOOK_NAMES[v] || v)
+        : '<p class="muted small">Matched uploads show here after a fetch.</p>'}
     </div>` : ""}
     ${s.rows.length ? `<div class="stats-by">${Object.entries(dims).map(([d, label]) => (s.by[d] || []).length ? `<div class="panel"><h4>${label}</h4>
-      ${(s.by[d] || []).map((e) => `<div class="st-bar"><span>${esc(d === "kind" ? tplName(e.value) : d === "set" ? (META.catalog.sets[e.value]?.name || e.value) : e.value)}</span><b>${num(e.avg)}</b> <span class="muted small">avg · ${e.videos} video${e.videos > 1 ? "s" : ""}</span></div>`).join("")}</div>` : "").join("")}</div>`
+      ${(s.by[d] || []).map((e) => `<div class="st-bar"><span>${esc(label(d, e.value))}</span><b>${num(e.avg)}</b> <span class="muted small">avg · ${e.videos} video${e.videos > 1 ? "s" : ""}</span></div>`).join("")}</div>` : "").join("")}</div>`
       : '<p class="muted">No numbers yet - fetch them, or type a video\'s views below.</p>'}
     <div class="panel"><h4>Videos</h4><table class="st-table"><tr><th>Video</th><th>Instagram views</th><th>Likes</th><th>Saves</th><th>Instagram post</th><th>YouTube views</th><th>% watched</th><th>YouTube</th></tr>
       ${s.videos.map((v) => { const r = s.rows.find((x) => x.key === v.key) || {};
@@ -2565,9 +2608,11 @@ const S_TABS = {
     ["Pace & captions", [
       ["brainrot.beat_words", "Words per shot", "range", { min: 1, max: 6, step: 1 }, "Smaller = faster cuts (the reference video changes about every second)."],
       ["brainrot.one_word_captions", "One word on screen at a time", "bool", {}, "The captions show a single word at a time, like the reference video."],
+      ["brainrot.highlight", "Bank words pop in their own colour", "bool", {}, "When a word or phrase from the bank is said, its caption shows in the colour below and a little bigger."],
+      ["brainrot.highlight_color", "Bank word colour", "color"],
     ]],
     ["How it's used", [
-      ["brainrot.note", "", "note", {}, "Turn it on with the 🧠 checkmark on the Create page. It applies to random videos, Custom Video, Series and Batches (made from the Create page or the Ideas page). Scripts are written short and chaotic, with a story that jumps about, using the words above. The checkmark is remembered in this browser."],
+      ["brainrot.note", "", "note", {}, "Turn it on with the 🧠 checkmark on the Create page. It applies to random videos, Custom Video, Series and Batches (made from the Create page or the Ideas page). Videos made without you (idle auto-make, the weekly plan) have their own brain rot chance in their settings. Scripts are written short and chaotic, with a story that jumps about, using the words above. The checkmark is remembered in this browser."],
     ]],
   ]],
   text: ["🔤 Text & branding", [
@@ -2640,6 +2685,7 @@ const S_TABS = {
       ["ollama.url", "Server URL", "text"],
       ["ollama.model", "Default model", "ollamapick", { from: "ollama.url" }, "The models your Ollama has (🔄 after changing the address)."],
       ["facts.check", "Check the facts in Quick facts & Myth or fact videos", "bool", {}, "Before rendering, each fact the video states is looked up on Wikipedia and checked by the local model. A wrong one shows as a warning on the video's ⚠️ check. Needs Ollama; skipped if it can't run."],
+      ["facts.contact", "Fact check: contact for Wikipedia (optional)", "text", { placeholder: "e.g. an email or website - empty = none" }, "Wikipedia asks tools to say who to contact and is more patient with those that do. Only sent to Wikipedia, and only if you fill it in."],
       ["ollama.big_server", "Use the big model server", "bool", {},"Off = everything runs on this PC. The address below is kept, so you can switch it back on."],
       ["ollama.design_url", "Big model server", "text", { placeholder: "empty = the server above" },"Another Ollama with bigger models (e.g. a stronger computer on your network). If it can't be reached, the server above is used."],
       ["ollama.design_model", "Model on the big server", "ollamapick", { from: "ollama.design_url", big: true, first: "Same as the default model" }, "The models that server already has (🔄 after changing the address). Nothing is ever downloaded there."],
@@ -2678,6 +2724,7 @@ const S_TABS = {
       ["idle.minutes", "Quiet minutes before it starts", "range", { min: 5, max: 120, step: 5 }, "Polling and the status dot don't count as using the studio."],
       ["idle.count", "Videos each time", "range", { min: 1, max: 3, step: 1 }],
       ["idle.random_chance", "Random videos, in %", "range", { min: 0, max: 100, step: 10 }, "Each video is a random one (a place, vibe, guest, time and length from the 🎲 cards) this often; the rest come from fresh ideas. 0 = ideas only, 100 = random only."],
+      ["idle.brainrot_chance", "🧠 Brain rot videos, in %", "range", { min: 0, max: 100, step: 10 }, "This often an idle video is made in brain rot mode (words and pacing: the Brain rot mode tab). 0 = never."],
       ["idle.per_day", "Most batches per day", "range", { min: 1, max: 10, step: 1 }, "Never reaches Postiz - these stay on your Videos page."],
     ]],
     ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
@@ -2687,6 +2734,7 @@ const S_TABS = {
       ["plan.count", "Videos", "range", { min: 1, max: 10, step: 1 }],
       ["plan.length", "Length", "select", { options: ["short", "medium", "long"] }],
       ["plan.drafts", "Make Postiz drafts", "bool", {}, "Drafts only - you post them yourself."],
+      ["plan.brainrot_chance", "🧠 Brain rot videos, in %", "range", { min: 0, max: 100, step: 10 }, "This often a weekly video is made in brain rot mode (words and pacing: the Brain rot mode tab). 0 = never."],
     ]],
     ["ComfyUI (set textures, prop pictures, music)", [
       ["comfy.mode", "Use ComfyUI", "select", { options: ["required", "auto", "off"], labels: { required: "Required - always texture sets (floor, walls/sky, pictures)", auto: "Only when needed - just picture props", off: "Off - never" } }],

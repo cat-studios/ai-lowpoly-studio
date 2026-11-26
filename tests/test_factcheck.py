@@ -67,6 +67,24 @@ class FactCheck(unittest.TestCase):
         self.assertTrue(got.startswith("The octopus is"))           # the intro always comes first
         self.assertNotIn("== Anatomy ==", got)
 
+    def test_a_claim_its_line_never_made_is_dropped(self):
+        extracted = {"claims": [{"n": 3, "claim": "It is a secret.", "search": "secret"},      # line 3: "Wow, you didn't..."
+                                {"n": 1, "claim": "Octopuses possess three hearts.", "search": "nothing"}]}
+        res, _ = self.run_check(extracted, [], {})
+        self.assertEqual([c["claim"] for c in res["claims"]], ["Octopuses possess three hearts."])
+
+    def test_a_claim_about_the_speaker_is_not_a_fact(self):
+        extracted = {"claims": [{"n": 3, "claim": "You didn't know that.", "search": "know"},
+                                {"n": 1, "claim": "Octopuses possess three hearts.", "search": "nothing"}]}
+        res, _ = self.run_check(extracted, [], {})
+        self.assertEqual([c["claim"] for c in res["claims"]], ["Octopuses possess three hearts."])
+
+    def test_an_article_about_something_else_is_no_source(self):
+        pages = {"query": {"search": [{"title": "Jackie - Public, Private, Secret"}], "pages": [
+            {"extract": "Jackie - Public, Private, Secret is a 2008 documentary film about a famous woman's life."}]}}
+        with mock.patch.object(factcheck, "_wiki", lambda params: pages):
+            self.assertEqual(factcheck.article("bananas", "Bananas grow on trees"), (None, ""))
+
     def test_the_same_script_reuses_the_last_check(self):
         extracted = {"claims": [{"n": 1, "claim": "Octopuses have three hearts.", "search": "nothing"}]}
         res, build = self.run_check(extracted, [], {})
@@ -91,16 +109,26 @@ class Report(unittest.TestCase):
             {"shot": 3, "claim": "Octopuses dream.", "verdict": "unknown", "note": "no article"},
             {"shot": 1, "claim": "Octopuses have three hearts.", "verdict": "supported"}]}), encoding="utf-8")
         out = []
-        review.fact_issues(build, out)
+        review.fact_issues(EP, build, out)
         self.assertEqual([i["level"] for i in out], ["warn", "info"])
         self.assertEqual(out[0]["shots"], [2])
+
+    def test_a_check_of_an_older_script_is_not_reported(self):
+        build = Path(tempfile.mkdtemp())
+        (build / "facts.json").write_text(json.dumps({"key": "something-else", "claims": [
+            {"shot": 2, "claim": "Bananas are berries.", "verdict": "contradicted"}]}), encoding="utf-8")
+        out = []
+        review.fact_issues(EP, build, out)
+        self.assertEqual(out, [])
 
 
 class Writer(unittest.TestCase):
     def test_each_script_gets_one_hook_style_and_the_loop_ending(self):
         for seed in range(5):
-            rule = llm.hook_rule(random.Random(seed))
-            self.assertTrue(any(style in rule for style in llm.HOOK_STYLES))
+            style = llm.pick_hook_style(random.Random(seed))
+            self.assertIn(style, llm.HOOK_STYLES)
+            self.assertIn(llm.HOOK_STYLES[style], llm.hook_rule(style))
+        self.assertIn(llm.HOOK_STYLES["number"], llm.hook_rule("not-a-style"))
         self.assertIn("loops back", llm.ENDING_RULE)
 
 

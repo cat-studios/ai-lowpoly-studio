@@ -137,6 +137,31 @@ Open items:
   nothing) and `move_every` 2; episodes carry `"brainrot": true` -> `run_episode` sets caption `group` 1. Wired in:
   random video, Custom Video popup, old Create page, Series, Batch (+ Ideas batches). Not: idle, weekly, remixes.
   Settings rows gained types `list` (textarea, one per line) and `note`.
+- **Check facts before rendering**: Custom Video's last step -> 🔎 Check facts (`POST /api/factcheck {id}` saves
+  first, job `factcheck.py episodes/<id>.json` -> `build/<slug>/facts.json` = the render's own folder, reused while
+  the lines hash to the same `key`; `review.fact_issues(ep, ...)` ignores a check of an older script). Guards
+  learned live: a claim must share a word with its line and not start with a pronoun (`NOT_A_SUBJECT`: "It is a
+  secret" from "Just between us"); the article is the first of 3 hits whose TITLE shares a word with the claim
+  (search words, then the claim itself - "honey" once led to Jessica Alba); `_keywords` = 5-letter stems
+  (octopuses ~ octopus); `_wiki` waits `WIKI_GAP` 1 s and honours 429 Retry-After (Wikipedia rate-limits bursts);
+  optional `facts.contact` goes in the User-Agent only when the user fills it in. Live: octopus hearts, honey,
+  bananas = berries, Venus day > year all supported with the right articles (6-26 s).
+- **Big server down = shared**: `llm._mark_down/_down_since` keep the skip in `build/remote_down.json`, so every job
+  (its own process) skips a slow big server - each job waited `REMOTE_TIMEOUT` 120 s before (132 s -> 4 s).
+- **Hook style recorded**: `llm.HOOK_STYLES` is a dict of ids; `/api/ai/script` picks one (`pick_hook_style`),
+  passes `generate_script(hook_style=)` and returns `hook_style`; every caller stores `ep["hook_style"]` (random,
+  old page, Custom Video `W.hookStyle`, batch, series). Stats: `by["hook"]`, `by["brainrot"]`, `yt_by_hook`.
+- **Bank words highlighted**: `run_episode.highlight_marks` (phrases too, case/punctuation ignored) ->
+  `{\c<brainrot.highlight_color>&}` on the word and a bigger pop (ends at 115 %) for its caption; a fixed size tag
+  on the word would have cancelled the caption's pop-in. Settings `brainrot.highlight`, `highlight_color`.
+- **Brain rot by chance**: `idle.brainrot_chance`, `plan.brainrot_chance` (0-100, default 0) ->
+  `weekly.roll_brainrot` sets `"brainrot": True` per batch item.
+- **Frames reused when the picture is unchanged** (`run_episode.picture_key`): a fingerprint of the resolved
+  episode minus `PICTURE_SKIP` (captions, branding, look, music, ambience, translations, ...) and `SHOT_SKIP` (sfx),
+  plus the Blender code (`PICTURE_CODE`), the animation library, fx overrides and every file the episode names
+  (path, mtime, size). Saved as `build/<name>/picture.key` after a good render (deleted before each render); a
+  match + `frames_complete` = Blender skipped (same path as `--no-render`). `--full-render` forces it. Checked
+  with storyboards: same episode twice -> reused; music + look changed -> reused; one camera changed -> rendered.
 
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no

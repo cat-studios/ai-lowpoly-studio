@@ -449,6 +449,76 @@ def hook_word(words):
     return k_best
 
 
+# Reusing the last render's frames when the PICTURE wouldn't change (only sound or text did: music, captions, look,
+# branding, sound effects...): a fingerprint of everything Blender is given. Anything unsure stays in it, so the
+# worst case is a full render, never a stale picture.
+PICTURE_SKIP = {"captions", "branding", "look", "look_preset", "music", "ambience", "translations", "hook_style",
+                "brainrot", "idea", "series", "batch", "remix", "variation_of", "script"}      # top-level, never in Blender
+SHOT_SKIP = {"sfx", "sfx_at", "sfx_volume"}                                                  # per shot, sound only
+PICTURE_CODE = ["blender_build.py", "blender_sets.py", "blender_cast.py", "blender_fx.py", "blender_models.py",
+                "animlib.py", "catalog.py", "setgen.py"]
+FILE_EXTS = {".blend", ".vrm", ".glb", ".fbx", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".json"}
+
+
+def _file_refs(obj, out):
+    """Files an episode points to (models, textures, sprites): their dates and sizes go into the fingerprint."""
+    if isinstance(obj, dict):
+        for v in obj.values():
+            _file_refs(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _file_refs(v, out)
+    elif isinstance(obj, str) and len(obj) < 400 and Path(obj).suffix.lower() in FILE_EXTS:
+        for p in (Path(obj), ROOT / obj):
+            if p.is_file():
+                out.add(p.resolve())
+                break
+    return out
+
+
+def picture_key(ep):
+    """The fingerprint of the 3D render: the resolved episode minus sound/text-only fields, the Blender code, the
+    animation library + effect overrides, and every file the episode points to (path, date, size)."""
+    data = {k: v for k, v in ep.items() if k not in PICTURE_SKIP}
+    data["shots"] = [{k: v for k, v in s.items() if k not in SHOT_SKIP} for s in ep.get("shots") or []]
+    h = hashlib.sha1(json.dumps(data, sort_keys=True, default=str).encode("utf-8"))
+    for f in PICTURE_CODE:
+        p = ROOT / "pipeline" / f
+        if p.exists():
+            h.update(p.read_bytes())
+    files = _file_refs(data, set())
+    files.update(p.resolve() for p in (ROOT / "assets" / "anims").glob("*.json"))
+    if (ROOT / "assets" / "fx_overrides.json").exists():
+        files.add((ROOT / "assets" / "fx_overrides.json").resolve())
+    for p in sorted(files):
+        st = p.stat()
+        h.update(f"{p}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8"))
+    return h.hexdigest()[:20]
+
+
+def frames_complete(build, frames_dir):
+    """The last render's frames are all there (as many as its timing.json says)."""
+    try:
+        timing = json.loads((build / "timing.json").read_text(encoding="utf-8-sig"))
+        return len(list(frames_dir.glob("f_*.png"))) == int(timing["total_frames"]) > 0
+    except Exception:
+        return False
+
+
+def highlight_marks(words, phrases):
+    """Brain rot mode: the indexes of the caption words that belong to a bank word or phrase ("FANUM TAX!" both
+    words), matched ignoring case and punctuation."""
+    clean = lambda w: re.sub(r"[^\w']", "", w.lower())      # noqa: E731
+    norm = [clean(w) for w in words]
+    marks = set()
+    for ph in phrases or []:
+        toks = [t for t in (clean(x) for x in str(ph).split()) if t]
+        for i in range(len(norm) - len(toks) + 1) if toks else ():
+            if norm[i:i + len(toks)] == toks:
+                marks.update(range(i, i + len(toks)))
+    return marks
+
+
 def write_captions(path, ep, shots, timing, res, cap, brand):
     fps = timing["fps"]
     font = cap["font"].replace(",", " ")
@@ -521,6 +591,8 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
         if not isinstance(wt, list) or len(wt) != len(words):
             wt = None                  # no word times from the voice: spread the words by length
         t = start
+        marks = highlight_marks(words, cap.get("highlight_words"))       # 🧠 brain rot: the bank's words pop
+        hl = ass_color(cap.get("highlight_color"), "#ffe14d")
         for g0 in range(0, len(words), grp):
             chunk = range(g0, min(len(words), g0 + grp))
             dur = shot["talk"] * sum(weights[k] for k in chunk) / total_w
@@ -542,9 +614,13 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
                     fs = max(base, min(base * 2, round(res[0] * 0.92 / (0.68 * max(1, len(words[k]))))))
                     tag = "{\\fs" + str(fs) + "\\c" + (col or tcol2) + "&}"
                     parts.append(f"{tag}{words[k]}{{\\fs{base}}}")
+                elif k in marks:       # a bank word: its own colour (and a bigger pop, below)
+                    parts.append("{\\c" + hl + "&}" + words[k])
                 else:
                     parts.append(f"{tag}{words[k]}")
-            efx = ("{\\fscx40\\fscy40\\t(0,110,\\fscx125\\fscy125)\\t(110,240,\\fscx100\\fscy100)}" if big else fx)
+            efx = ("{\\fscx40\\fscy40\\t(0,110,\\fscx125\\fscy125)\\t(110,240,\\fscx100\\fscy100)}" if big
+                   else "{\\fscx50\\fscy50\\t(0,100,\\fscx130\\fscy130)\\t(100,220,\\fscx115\\fscy115)}"
+                   if any(k in marks for k in chunk) else fx)
             lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(end)},Caption,,0,0,{low},,{efx}{' '.join(parts)}")
             t += dur
     if brand.get("watermark"):
@@ -1343,6 +1419,8 @@ def main():
     ap.add_argument("episode", type=Path, nargs="?")
     ap.add_argument("--no-tts", action="store_true", help="skip voice; estimate line timing instead")
     ap.add_argument("--no-render", action="store_true", help="reuse frames from the last render")
+    ap.add_argument("--full-render", action="store_true",
+                    help="render the frames again even when the picture looks unchanged (normally they're reused)")
     ap.add_argument("--fresh-voice", action="store_true", help="regenerate voice lines instead of using the cache")
     ap.add_argument("--say", metavar="TEXT", help="voice test: speak TEXT in a character's voice")
     ap.add_argument("--character", help="character id for --say (default: active character)")
@@ -1522,7 +1600,16 @@ def main():
     # 2. Blender
     segs = segments(ep)
     expected = sum(round(float(s.get("duration", 2.0)) * int(ep.get("fps", 24))) for s in ep["shots"])
+    # the picture unchanged since the last render (only sound / text changed): its frames are reused, no Blender
+    key_file, pkey = build / "picture.key", picture_key(ep)
+    if (not args.no_render and not args.full_render and not ep.get("_no_render") and key_file.exists()
+            and key_file.read_text(encoding="utf-8").strip() == pkey and frames_complete(build, frames_dir)):
+        print("The picture is the same as the last render (only sound or text changed) - reusing its frames, "
+              "Blender skipped (--full-render renders them again)")
+        report(0.88, "Reusing the last render's frames")
+        args.no_render = True
     if not args.no_render:
+        key_file.unlink(missing_ok=True)          # a render that fails half-way never leaves a matching key
         if frames_dir.exists():
             shutil.rmtree(frames_dir)
         multi = len(segs) > 1 or segs[0][0] != ep.get("set", "cafe")
@@ -1568,6 +1655,7 @@ def main():
         if ep.get("_no_render"):
             print(f"Build check done (_no_render: no frames, no video) - {build / 'timing.json'}")
             return
+        key_file.write_text(pkey, encoding="utf-8")   # these frames belong to this picture (reused next time)
     if not (build / "timing.json").exists():
         sys.exit("No earlier render to reuse (build/<episode>/timing.json is missing) - render it in full first.")
     timing = json.loads((build / "timing.json").read_text(encoding="utf-8-sig"))
@@ -1584,8 +1672,12 @@ def main():
     # 3. captions + ffmpeg
     res = ep.get("render_res", [216, 384])
     cap = S.deep_merge(cfg["captions"], ep.get("captions", {}))
-    if ep.get("brainrot") and (cfg.get("brainrot") or {}).get("one_word_captions", True):
+    br = cfg.get("brainrot") or {}
+    if ep.get("brainrot") and br.get("one_word_captions", True):
         cap["group"] = 1                       # brain rot mode: one word at a time, like the reference video
+    if ep.get("brainrot") and br.get("highlight", True):
+        cap["highlight_words"] = br.get("words") or []          # the bank's words show in their own colour
+        cap["highlight_color"] = br.get("highlight_color") or "#ffe14d"
     write_captions(build / "captions.ass", ep, ep["shots"], timing, res, cap,
                    S.deep_merge(cfg["branding"], ep.get("branding", {})))
     out_dir = ROOT / "output" / ("previews" if args.preview else "")

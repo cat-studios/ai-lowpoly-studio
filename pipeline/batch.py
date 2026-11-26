@@ -99,6 +99,8 @@ def main(spec_path):
                   "batch": {"id": stamp, "part": i, "of": len(ideas)}}      # the Videos page's 🎬 Batch pill
             if br_on:
                 ep["brainrot"] = True                  # one-word captions at render (run_episode.py)
+            if r.get("hook_style"):
+                ep["hook_style"] = r["hook_style"]      # the writer's opening (Stats: which hooks work)
             if spec.get("variation_of"):              # 🔁 a part 2 / another kind of video of an earlier one
                 ep.pop("batch")
                 ep["variation_of"] = spec["variation_of"]
