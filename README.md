@@ -22,7 +22,7 @@ From idea to video:
 
 **The opening** decides whether people keep watching, so the first line is a hook (a surprising claim or bold
 question of at most 8 words - the AI writer is told so, and its editor checks it), the camera pushes in on her while
-she says it (no more walking in), and the hook's key word pops up twice the size as she says it (Settings → Text &
+she says it (no more walking in) in a close-up, and the hook's key word pops up twice the size as she says it (Settings → Text &
 branding → "Hook word pops up big").
 
 **Batch from Ideas**: on the 💡 Ideas page press **☑ Pick several**, tick up to 10 ideas and **🎬 Make the

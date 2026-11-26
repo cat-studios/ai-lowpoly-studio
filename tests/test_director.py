@@ -83,7 +83,7 @@ class Cast(unittest.TestCase):
 class Opening(unittest.TestCase):
     def test_hook_pushes_in_instead_of_walking(self):
         first = shots("The moon just vanished tonight.\nThe tides would stop!")[0]
-        self.assertEqual((first["camera"], first["move"]), ("medium", "push_in"))
+        self.assertEqual((first["camera"], first["move"]), ("closeup", "push_in"))
         self.assertNotIn(first["action"], ("walk_to", "run_to"))
 
     def test_hook_word(self):

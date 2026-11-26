@@ -794,8 +794,9 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         shot = {}
         if i == 0 and opening == "hook" and "action" not in d and "want" not in d and not shown:
             # the hook: the first line is said straight to the camera while it pushes in on her (a walk-in spent
-            # the first seconds - the ones that decide if people stay - on her feet)
-            shot.update(action=action if action not in catalog.MOVE_ANIMS else "idle", camera="medium",
+            # the first seconds - the ones that decide if people stay - on her feet). A close-up: a "medium" push-in
+            # starts at 1.3x its 4 m, so the first test video opened on a small full-body figure
+            shot.update(action=action if action not in catalog.MOVE_ANIMS else "idle", camera="closeup",
                         move="push_in", expression=expr if expr != "neutral" else "happy")
         elif i == 0 and "action" not in d and "want" not in d:
             # open by walking in, toward the camera so her face is seen (she may start further back)

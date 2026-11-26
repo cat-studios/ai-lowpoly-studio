@@ -414,13 +414,18 @@ where which do does did can could would will should ever just really very there 
 
 
 def hook_word(words):
-    """The word of the hook (the first line) that pops up big: the longest word that says something
-    ("What if the MOON vanished?" -> VANISHED), the later one on a tie."""
-    best, k_best = 0, None
+    """The word of the hook (the first line) that pops up big: the longest word that says something, up to 8
+    letters ("What if the moon VANISHED?"; "GOLDFISH forget everything..."), the earlier one on a tie. A longer word
+    only when there's no other: a 10-letter word can only grow 1.25x inside the frame ("EVERYTHING" barely popped)
+    and was said late."""
+    best, k_best = -99, None
     for k, w in enumerate(words):
         core = re.sub(r"[^\w']", "", w).lower()
-        if core and core not in HOOK_SKIP and len(core) >= best:
-            best, k_best = len(core), k
+        if not core or core in HOOK_SKIP:
+            continue
+        score = len(core) if len(core) <= 8 else 8 - (len(core) - 8) * 2
+        if score > best:
+            best, k_best = score, k
     return k_best
 
 
