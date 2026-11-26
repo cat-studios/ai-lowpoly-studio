@@ -53,17 +53,42 @@ def _remote_for(url, has_images):
         return None
     if time.time() - _REMOTE_DOWN.get(big, 0) < REMOTE_RETRY:
         return None
-    return big, (o.get("design_model") or "").strip() or None
+    model = (o.get("design_model") or "").strip() or None
+    if not _remote_alive(big, model):
+        _REMOTE_DOWN[big] = time.time()
+        print(f"[ai] big text server {big} isn't answering (or has no {model}) - using this PC's Ollama "
+              f"for the next {REMOTE_RETRY // 60} min")
+        return None
+    return big, model
 
 
-def _chat_once(url, payload):
+_REMOTE_OK = {}            # big text server -> when it last answered a quick check
+REMOTE_CHECK = 60
+
+
+def _remote_alive(big, model):
+    """A 4-second look before using the big server: when it was off, every call waited the full 5-minute
+    chat timeout first (a script needs several calls - a video hung for 15 minutes)."""
+    if time.time() - _REMOTE_OK.get(big, 0) < REMOTE_CHECK:
+        return True
     try:
-        return _req(url, "/api/chat", payload)
+        names = {m.get("name") for m in _req(big, "/api/tags", timeout=4).get("models", [])}
+    except Exception:
+        return False
+    if model and model not in names:
+        return False
+    _REMOTE_OK[big] = time.time()
+    return True
+
+
+def _chat_once(url, payload, timeout=300):
+    try:
+        return _req(url, "/api/chat", payload, timeout=timeout)
     except urllib.error.HTTPError as exc:      # older Ollama / non-thinking models may reject "think"
         if exc.code != 400 or "think" not in payload:
             raise
         payload = {k: v for k, v in payload.items() if k != "think"}
-        return _req(url, "/api/chat", payload)
+        return _req(url, "/api/chat", payload, timeout=timeout)
 
 
 def _chat(url, payload, has_images=False):
@@ -73,12 +98,18 @@ def _chat(url, payload, has_images=False):
     if rem:
         p = dict(payload, model=rem[1]) if rem[1] else payload
         try:
-            return _chat_once(rem[0], p)
-        except (OSError, TimeoutError, ValueError) as exc:     # unreachable, no such model, bad answer
-            _REMOTE_DOWN[rem[0]] = time.time()
+            return _chat_once(rem[0], p, timeout=REMOTE_TIMEOUT)
+        except (OSError, TimeoutError, ValueError) as exc:     # unreachable, no such model, bad answer, too slow
+            slow = isinstance(exc, TimeoutError) or "timed out" in str(exc)
+            # too slow (a busy 80B model): skip it for longer - every call waited the full time before
+            _REMOTE_DOWN[rem[0]] = time.time() + (REMOTE_SLOW_SKIP - REMOTE_RETRY if slow else 0)
             print(f"[ai] big text server {rem[0]} failed ({exc.__class__.__name__}: {str(exc)[:80]}) - "
-                  f"using {url} for the next {REMOTE_RETRY // 60} min")
+                  f"using {url} for the next {(REMOTE_SLOW_SKIP if slow else REMOTE_RETRY) // 60} min")
     return _chat_once(url, payload)
+
+
+REMOTE_TIMEOUT = 120       # seconds a big-server answer may take before this PC's Ollama does it instead
+REMOTE_SLOW_SKIP = 1800    # after a too-slow answer the big server is left alone this long
 
 
 def chat(url, model, system, user, temperature=0.8):

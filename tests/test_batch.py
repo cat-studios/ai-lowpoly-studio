@@ -40,5 +40,31 @@ class Batch(unittest.TestCase):
         self.assertEqual(sum(1 for c in calls if c[1] == "/api/render"), 1)
 
 
+class Variation(unittest.TestCase):
+    def test_part_2_is_marked_and_has_no_idea(self):
+        calls = []
+
+        def fake_call(base, method, path, body=None, timeout=0):
+            calls.append((method, path, body))
+            if path == "/api/ai/script":
+                return {"script": "A new twist.", "set": "cafe"}
+            if path == "/api/autodirect":
+                return {"set": "cafe", "start": "front", "shots": [{"line": "A new twist."}]}
+            return {"id": "job1"}
+
+        spec = {"base": "http://x", "note": "This is PART 2", "variation_of": {"id": "ep1", "title": "T", "mode": "part2"},
+                "ideas": [{"id": None, "topic": "T", "template": "what_if", "titles": ["T, part 2?"]}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            sp = Path(tmp) / "spec.json"
+            sp.write_text(json.dumps(spec), encoding="utf-8")
+            with mock.patch.object(batch, "call", fake_call), mock.patch.object(batch, "report", lambda *a: None):
+                batch.main(sp)
+        ep = next(c[2] for c in calls if c[0] == "PUT")
+        self.assertEqual(ep["variation_of"]["id"], "ep1")
+        self.assertNotIn("idea", ep)
+        self.assertNotIn("batch", ep)
+        self.assertIn("PART 2", next(c[2] for c in calls if c[1] == "/api/ai/script")["extra"])
+
+
 if __name__ == "__main__":
     unittest.main()

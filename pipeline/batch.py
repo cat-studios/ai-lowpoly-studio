@@ -65,6 +65,11 @@ def main(spec_path):
             ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],
                   "template": tpl_id, "idea": idea["id"], "set_style": spec.get("set_style") or "base",
                   "batch": {"id": stamp, "part": i, "of": len(ideas)}}      # the Videos page's 🎬 Batch pill
+            if spec.get("variation_of"):              # 🔁 a part 2 / another kind of video of an earlier one
+                ep.pop("batch")
+                ep["variation_of"] = spec["variation_of"]
+            if not idea.get("id"):
+                ep.pop("idea")
             if spec.get("character"):
                 ep["character"] = spec["character"]
             cast = d.get("cast") or {}

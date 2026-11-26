@@ -633,3 +633,6 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .check-list { display: grid; gap: 8px; }
 .check-item { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); border-left: 3px solid rgba(255,255,255,.2); }
 .check-item.warn { border-left-color: #e0a04a; }
+.cmp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.cmp-item video { width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 10px; }
+.cmp-item { display: grid; gap: 4px; }

@@ -2015,6 +2015,62 @@ async function pickImportedModel(startCat = "", query = "") {
   });
 }
 
+// 🔁 a variation of a video: part 2 (new facts, it knows what part 1 said), or the same idea as another kind
+function openVariation(episode, title) {
+  const tpls = META.catalog.templates || [];
+  openModal({
+    title: `🔁 More like “${title}”`,
+    body: `<label class="check"><input type="radio" name="vm" value="part2" checked> 📺 <b>Part 2</b> - new facts, a new twist, a nod to this one</label>
+      <label class="check"><input type="radio" name="vm" value="kind"> 🔄 <b>The same idea as another kind of video</b></label>
+      <label class="modal-field">Kind<select id="vk">${tpls.map((t) => `<option value="${esc(t.id)}">${esc(t.icon + " " + t.name)}</option>`).join("")}</select></label>
+      <label class="modal-field">Length<select id="vl"><option value="short">Short</option><option value="medium" selected>Medium</option><option value="long">Long</option></select></label>
+      <p class="muted small">It's written, directed and rendered like a video from the Ideas page - follow it at the top right.</p>`,
+    buttons: [{ label: "Cancel", value: null }, { label: "🔁 Make it", primary: true, onClick: async (m) => {
+      await api("POST", "/api/variation", { episode, mode: $("input[name=vm]:checked", m).value, template: $("#vk", m).value, length: $("#vl", m).value });
+      toast("Making it - follow it at the top right ✓");
+    } }],
+  });
+}
+
+// 🎛 a remix: the same script in another set, look or language (up to 3), rendered for ⚖️ Compare
+function openRemix(episode, title) {
+  const sets = Object.entries(META.catalog.sets || {});
+  const looks = Object.keys(META.presets || {});
+  const langs = Object.entries(META.catalog.languages || {});
+  const row = (n) => `<div class="row" style="gap:6px;align-items:end;margin-bottom:8px"><b style="flex:0 0 18px">${n}</b>
+    <label style="flex:2">Set<select data-rs="${n}"><option value="">same</option>${sets.map(([id, s]) => `<option value="${esc(id)}">${esc(s.name || id)}</option>`).join("")}</select></label>
+    <label style="flex:1">Look<select data-rl="${n}"><option value="">same</option>${looks.map((l) => `<option>${esc(l)}</option>`).join("")}</select></label>
+    <label style="flex:1">Language<select data-rg="${n}"><option value="">same</option>${langs.map(([c, nm]) => `<option value="${esc(c)}">${esc(nm)}</option>`).join("")}</select></label></div>`;
+  openModal({
+    title: `🎛 Remix “${title}”`, wide: true,
+    body: `<p class="muted small">Same script, something different - each row is one more video. Then ⚖️ Compare them side by side and keep the best.</p>${[1, 2, 3].map(row).join("")}`,
+    buttons: [{ label: "Cancel", value: null }, { label: "🎛 Make the remixes", primary: true, onClick: async (m) => {
+      const variants = [1, 2, 3].map((n) => ({ set: $(`[data-rs="${n}"]`, m).value, look_preset: $(`[data-rl="${n}"]`, m).value, language: $(`[data-rg="${n}"]`, m).value }))
+        .filter((v) => v.set || v.look_preset || v.language);
+      if (!variants.length) { toast("Change something in at least one row", true); return false; }
+      const r = await api("POST", "/api/remix", { episode, variants });
+      toast(`${r.jobs.length} remix${r.jobs.length > 1 ? "es" : ""} rendering - ⚖️ Compare when they're done`);
+    } }],
+  });
+}
+
+// ⚖️ the videos of one remix group side by side; ⭐ Keep marks the one you'll post
+function openCompare(group, vids) {
+  const list = vids.filter((v) => v.remix && v.remix.group === group && !v.previous);
+  openModal({
+    title: "⚖️ Compare the remixes", wide: true,
+    body: `<div class="cmp-grid">${list.map((v) => `<div class="cmp-item"><video src="${esc(v.url)}" ${v.cover ? `poster="${esc(v.cover)}"` : ""} controls playsinline preload="none"></video>
+      <div class="small"><b>${esc(v.remix.what || "")}</b>${v.remix.picked ? " ⭐" : ""}</div>
+      <button class="small-btn" data-keep="${esc(v.episode)}">⭐ Keep this one</button></div>`).join("")}</div>
+      <p class="muted small">Still rendering ones appear here when they're done. ⭐ marks the one you'll post (the others stay - delete them on the Videos page if you like).</p>`,
+    buttons: [{ label: "Close" }],
+    onOpen: (m) => $$("[data-keep]", m).forEach((b) => b.onclick = guard(async () => {
+      await api("POST", "/api/remix/pick", { episode: b.dataset.keep });
+      toast("Kept ⭐"); pageVideos();
+    })),
+  });
+}
+
 // 🏠 her room (pipeline/home.py): make it once, then see / remove the souvenirs it keeps from the videos
 async function openHome() {
   const h = await api("GET", "/api/home");
@@ -2137,7 +2193,7 @@ async function pageVideos() {
   const vids = await api("GET", "/api/videos");
   app.innerHTML = `<h2>Videos</h2>${vids.length ? `<div class="cards">${vids.map((v) => `
     <div class="card"><video src="${esc(v.url)}" ${v.cover ? `poster="${esc(v.cover)}"` : ""} controls preload="none" playsinline></video>
-      <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${v.series ? `<span class="pill" title="Series: ${esc(v.series.idea || "")}">📺 ${esc(String(v.series.idea || "").slice(0, 24))} ${v.series.part}/${v.series.of}</span> ` : ""}${v.batch ? `<span class="pill" title="Made in a batch from the Ideas page">🎬 Batch ${v.batch.part}/${v.batch.of}</span> ` : ""}${esc(v.title || v.name)}</div>
+      <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${v.series ? `<span class="pill" title="Series: ${esc(v.series.idea || "")}">📺 ${esc(String(v.series.idea || "").slice(0, 24))} ${v.series.part}/${v.series.of}</span> ` : ""}${v.batch ? `<span class="pill" title="Made in a batch from the Ideas page">🎬 Batch ${v.batch.part}/${v.batch.of}</span> ` : ""}${v.variation ? `<span class="pill" title="Made from “${esc(v.variation.title || "")}”">🔁 ${v.variation.mode === "part2" ? "Part 2" : "Variation"}</span> ` : ""}${v.remix ? `<span class="pill" title="Remix group - 🎛 Compare">🎛 ${esc(v.remix.what || "")}${v.remix.picked ? " ⭐" : ""}</span> ` : ""}${esc(v.title || v.name)}</div>
       <div class="muted small">${ago(v.updated)} · ${(v.size / 1048576).toFixed(1)} MB
         ${v.check ? (v.check.length ? `<button class="check-chip ${v.check.some((i) => i.level === "warn") ? "warn" : ""}" data-check="${esc(v.key)}" title="What the check after the render found">⚠️ ${v.check.length} to look at</button>`
           : '<span class="check-chip ok" title="The check after the render found nothing">✓ checked</span>') : ""}</div>
@@ -2146,6 +2202,9 @@ async function pageVideos() {
         ${META.settings.postiz?.url ? `<button data-pz="${esc(v.key)}">📤 Postiz</button>` : ""}
         ${v.sheet ? `<button data-sheet="${esc(v.sheet)}" title="One frame from every shot">🎞 Shots</button>` : ""}
         ${!v.previous && v.episode ? `<button data-guests="${esc(v.episode)}" title="Keep someone from this video as a regular">🎭 Guests</button>` : ""}
+        ${!v.previous && v.episode ? `<button data-vary="${esc(v.episode)}" data-title="${esc(v.title || v.name)}" title="A part 2, or the same idea as another kind of video">🔁 Variation</button>` : ""}
+        ${!v.previous && v.episode ? `<button data-remix="${esc(v.episode)}" data-title="${esc(v.title || v.name)}" title="The same script in another set, look or language">🎛 Remix</button>` : ""}
+        ${v.remix ? `<button data-compare="${esc(v.remix.group)}" title="See the remixes side by side and pick one">⚖️ Compare</button>` : ""}
         ${!v.previous && (v.cover || v.episode) ? `<button data-cover="${esc(v.key)}" data-ep="${esc(v.episode || "")}" data-img="${esc(v.cover || "")}" data-title="${esc(v.title || v.name)}" title="The cover picture for posting">🖼 Cover</button>` : ""}
         <button data-rename="${esc(v.key)}" data-title="${esc(v.title || v.name)}">✏️ Rename</button>
         <button data-delete="${esc(v.key)}" data-title="${esc(v.title || v.name)}" class="danger">🗑 Delete</button></div>
@@ -2168,6 +2227,9 @@ async function pageVideos() {
     });
   });
   $$("[data-guests]").forEach((b) => b.onclick = guard(() => openGuests(b.dataset.guests)));
+  $$("[data-vary]").forEach((b) => b.onclick = () => openVariation(b.dataset.vary, b.dataset.title));
+  $$("[data-remix]").forEach((b) => b.onclick = () => openRemix(b.dataset.remix, b.dataset.title));
+  $$("[data-compare]").forEach((b) => b.onclick = () => openCompare(b.dataset.compare, vids));
   $$("[data-sheet]").forEach((b) => b.onclick = () => {
     const card = b.closest(".card");
     const open = $(".sheet-strip", card);

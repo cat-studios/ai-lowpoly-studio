@@ -158,6 +158,26 @@ def episode_path(eid):
 FONT_CACHE = {}
 
 
+def queue_render(p, fresh_voice=False, reuse_frames=False):
+    """The render job for an episode file (the render route, remixes)."""
+    remember_look(p)                            # the first render keeps the look this video is made with
+    cmd = [sys.executable, "-u", str(PIPE / "run_episode.py"), str(p)]
+    if fresh_voice:
+        cmd.append("--fresh-voice")
+    if reuse_frames:
+        cmd.append("--no-render")
+    name = slug(p.stem)
+    if not reuse_frames:                        # keep the video this render replaces (output/previous/)
+        when = stamp()                          # one stamp for both, so the sheet matches its video
+        for old in (OUTPUT / f"{name}.mp4", OUTPUT / f"{name}_shots.png", OUTPUT / f"{name}_cover.jpg"):
+            if old.exists():
+                (OUTPUT / "previous").mkdir(exist_ok=True)
+                shutil.copy2(old, OUTPUT / "previous" / f"{old.stem}-{when}{old.suffix}")
+    job = Job("render", f"Render {p.stem}" + (" (look only)" if reuse_frames else ""), cmd,
+              result={"video": f"/media/{name}.mp4", "sheet": f"/media/{name}_shots.png", "episode": p.stem})
+    return submit(job)
+
+
 def remember_look(path):
     """Save the look, captions and watermark a video is made with, the first time it renders.
     A video that already has them keeps them, so later changes to your global settings don't change it.
@@ -199,10 +219,12 @@ def list_videos():
         sheet = v.with_name(v.stem + "_shots.png")
         ep = by_slug.get(v.stem)
         title, series, batch = "", None, None
+        variation = remix = None
         if ep:
             try:
                 e = json.loads((EPISODES / f"{ep}.json").read_text(encoding="utf-8-sig"))
                 title, series, batch = e.get("title", ""), e.get("series"), e.get("batch")
+                variation, remix = e.get("variation_of"), e.get("remix")
             except Exception:
                 pass
         cover = v.with_name(v.stem + "_cover.jpg")
@@ -214,6 +236,8 @@ def list_videos():
         out.append({"key": v.stem, "name": v.stem, "title": title, "episode": ep, "url": f"/media/{v.name}",
                     "series": series if isinstance(series, dict) else None,
                     "batch": batch if isinstance(batch, dict) else None,
+                    "variation": variation if isinstance(variation, dict) else None,
+                    "remix": remix if isinstance(remix, dict) else None,
                     "cover": f"/media/{cover.name}?v={int(cover.stat().st_mtime)}" if cover.exists() else None,
                     "check": check.get("issues") if isinstance(check, dict) else None,
                     "sheet": f"/media/{sheet.name}" if sheet.exists() else None,
@@ -1291,22 +1315,94 @@ class Handler(BaseHTTPRequestHandler):
             p = episode_path(b.get("id"))
             if not p.exists():
                 return self.fail("save the episode first", 404)
-            remember_look(p)                        # the first render keeps the look this video is made with
-            cmd = [sys.executable, "-u", str(PIPE / "run_episode.py"), str(p)]
-            if b.get("fresh_voice"):
-                cmd.append("--fresh-voice")
-            if b.get("reuse_frames"):
-                cmd.append("--no-render")
-            name = slug(p.stem)
-            if not b.get("reuse_frames"):            # keep the video this render replaces (output/previous/)
-                when = stamp()                       # one stamp for both, so the sheet matches its video
-                for old in (OUTPUT / f"{name}.mp4", OUTPUT / f"{name}_shots.png", OUTPUT / f"{name}_cover.jpg"):
-                    if old.exists():
-                        (OUTPUT / "previous").mkdir(exist_ok=True)
-                        shutil.copy2(old, OUTPUT / "previous" / f"{old.stem}-{when}{old.suffix}")
-            job = Job("render", f"Render {p.stem}" + (" (look only)" if b.get("reuse_frames") else ""), cmd,
-                      result={"video": f"/media/{name}.mp4", "sheet": f"/media/{name}_shots.png", "episode": p.stem})
-            return self.send_json(submit(job).to_dict())
+            return self.send_json(queue_render(p, b.get("fresh_voice"), b.get("reuse_frames")).to_dict())
+
+        if head == "variation" and method == "POST":   # Videos: 🔁 part 2, or the same idea as another kind of video
+            b = self.body_json()
+            p = episode_path(b.get("episode"))
+            if not p.exists():
+                raise ValueError("no such video")
+            ep = json.loads(p.read_text(encoding="utf-8-sig"))
+            title = ep.get("title") or p.stem.replace("_", " ")
+            said = " / ".join(s.get("line", "") for s in ep.get("shots") or [] if s.get("line"))[:500]
+            part2 = b.get("mode") != "kind"
+            tpl = ep.get("template") if part2 else str(b.get("template") or "")
+            if tpl not in templates.TEMPLATES:
+                tpl = templates.DEFAULT
+            idea = {"id": None, "topic": title, "template": tpl, "titles": [],
+                    "angle": ("a follow-up with NEW facts or a new twist on the same topic" if part2
+                              else f"the same topic told as a {templates.get(tpl)['name']} video")}
+            note = (f"This is PART 2 of the video \"{title}\". Part 1 said: {said}. Don't repeat it - new facts, a "
+                    "new angle, and a quick nod to part 1 in the first line." if part2 else
+                    f"This retells the idea of the video \"{title}\" (it said: {said}) in a new form.")
+            spec = {"ideas": [idea], "length": str(b.get("length") or "medium"), "note": note, "model": "",
+                    "character": ep.get("character") if isinstance(ep.get("character"), str) else "",
+                    "variation_of": {"id": p.stem, "title": title, "mode": "part2" if part2 else "kind"},
+                    "render": True, "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}"}
+            f = ROOT / "build" / "series" / f"{stamp()}-variation.json"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(spec), encoding="utf-8")
+            label = "Part 2 of" if part2 else f"{templates.get(tpl)['name']} from"
+            return self.send_json(submit(Job("batch", f"{label} {title[:40]}",
+                                             [sys.executable, "-u", str(PIPE / "batch.py"), str(f)])).to_dict())
+
+        if head == "remix" and arg == "pick" and method == "POST":   # ⚖️ Compare -> ⭐ keep this one
+            p = episode_path((self.body_json() or {}).get("episode"))
+            ep = json.loads(p.read_text(encoding="utf-8-sig"))
+            group = (ep.get("remix") or {}).get("group")
+            if not group:
+                raise ValueError("not a remix")
+            for q in EPISODES.glob("*.json"):
+                try:
+                    e = json.loads(q.read_text(encoding="utf-8-sig"))
+                except Exception:
+                    continue
+                if (e.get("remix") or {}).get("group") == group:
+                    e["remix"]["picked"] = q == p
+                    q.write_text(json.dumps(e, indent=2), encoding="utf-8")
+            return self.send_json({"ok": True})
+
+        if head == "remix" and method == "POST":       # Videos: 🎛 the same script in another set / look / language
+            b = self.body_json()
+            p = episode_path(b.get("episode"))
+            if not p.exists():
+                raise ValueError("no such video")
+            src = json.loads(p.read_text(encoding="utf-8-sig"))
+            variants = [v for v in (b.get("variants") or []) if isinstance(v, dict) and any(v.values())][:3]
+            if not variants:
+                raise ValueError("pick at least one change")
+            group = (src.get("remix") or {}).get("group") or f"rmx{stamp()}"
+            if not src.get("remix"):                   # the original joins the group, so Compare shows it too
+                src["remix"] = {"group": group, "of": p.stem, "what": "original"}
+                p.write_text(json.dumps(src, indent=2), encoding="utf-8")
+            jobs = []
+            for n, v in enumerate(variants, 1):
+                ep = json.loads(json.dumps(src))
+                what = []
+                if v.get("set") and v["set"] != ep.get("set"):
+                    if v["set"] not in catalog.all_sets():
+                        raise ValueError(f"no such set: {v['set']}")
+                    # walks and pointing use the new set's places: direct the same script again there
+                    res = autodirect.direct(ep.get("script") or "\n".join(s.get("line", "") for s in ep["shots"]),
+                                            v["set"], None, ep.get("cast"), title=ep.get("title") or "",
+                                            **templates.pacing(ep.get("template")))
+                    ep.update(set=v["set"], start=res["start"], shots=res["shots"])
+                    ep["cast"] = {**(ep.get("cast") or {}), **(res.get("cast") or {})}
+                    what.append(catalog.all_sets()[v["set"]].get("name", v["set"]))
+                if v.get("look_preset"):
+                    ep["look_preset"] = v["look_preset"]
+                    ep.pop("look", None)
+                    what.append(v["look_preset"])
+                if v.get("language") and v["language"] in catalog.LANGUAGES:
+                    ep["language"] = v["language"]
+                    what.append(catalog.LANGUAGES[v["language"]].get("name", v["language"]) if isinstance(
+                        catalog.LANGUAGES[v["language"]], dict) else v["language"])
+                ep["remix"] = {"group": group, "of": src["remix"]["of"], "what": ", ".join(what) or "copy"}
+                ep.pop("translations", None) if v.get("language") else None
+                q = EPISODES / f"{p.stem[:50]}_rmx{n}_{stamp()[-6:]}.json"
+                q.write_text(json.dumps(ep, indent=2), encoding="utf-8")
+                jobs.append(queue_render(q).to_dict())
+            return self.send_json({"jobs": jobs, "group": group})
 
         if head == "home":                            # her room: make it, list / remove its souvenirs
             import home

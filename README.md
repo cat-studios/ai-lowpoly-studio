@@ -304,6 +304,10 @@ side so you see the arm and the thing.
 - **Her own reaction sounds**: a little gasp when she's surprised, a giggle when she laughs, "hmm" when she
   thinks, "yay", "aww" or "nya" - in her own voice, just before the line (up to 3 per video; Settings → Render &
   audio → "Her own reaction sounds").
+- **🔁 Variation** (Videos page): a **part 2** of a video (new facts, a nod to the first one) or the **same idea as
+  another kind of video** (a Top 5 as a Myth or fact...) - written, directed and rendered by itself.
+- **🎛 Remix** (Videos page): the same script in another set, look or language - up to 3 at once. **⚖️ Compare**
+  plays them side by side; ⭐ Keep this one marks the one you'll post.
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

@@ -783,6 +783,20 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   silence); the line's `lead` and the shot grow by that + `REACT_GAP`, `react_at` = the old lead, and the clip
   joins the voice mix as `("r<shot>", wav)`. Settings `audio.reactions` (default on). Checked in a dev render
   (`zz_check_react`): the gasp at 0.85-1.09 s, the line from 1.24 s.
+- **Variations** (`POST /api/variation {episode, mode part2|kind, template, length}`): a one-idea batch spec
+  (`idea.id` None, topic = the title, the template's own or the chosen one, a note with what part 1 said) with
+  `variation_of {id, title, mode}` -> `batch.py` writes, directs, saves (`variation_of` instead of `batch`/`idea`)
+  and queues the render. Videos: 🔁 Variation (`openVariation`), pill 🔁 Part 2 / Variation.
+- **Remixes** (`POST /api/remix {episode, variants: [{set?, look_preset?, language?}] <= 3}`): copies of the
+  episode (`<id>_rmxN_<stamp>`), a new set = the script directed again there (`autodirect.direct` with the
+  template's pacing; cast merged), a look preset drops the saved `look`, a language drops the translations; all
+  carry `remix {group, of, what}` (the original joins the group as "original") and are queued with
+  `queue_render` (the render route's job, shared). ⚖️ Compare (`openCompare`): the group's videos side by side,
+  ⭐ Keep this one = `POST /api/remix/pick` (`remix.picked`). Tested in dev (Game Boy + Legacy Park remixes).
+- **Big text server time limit** (found while testing): a call to it waited the full 5-minute chat timeout when the
+  80B model was slow, and it was tried again every 5 minutes - a script hung 10+ minutes. Now `REMOTE_TIMEOUT`
+  120 s, then this PC's Ollama, and a too-slow server is skipped `REMOTE_SLOW_SKIP` 30 min; `_remote_alive` (a
+  4-second `/api/tags` check, kept 60 s) skips an unreachable server or one without the model at once.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
