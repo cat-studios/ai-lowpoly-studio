@@ -281,6 +281,8 @@ def list_videos():
                     "variation": variation if isinstance(variation, dict) else None,
                     "remix": remix if isinstance(remix, dict) else None,
                     "cover": f"/media/{cover.name}?v={int(cover.stat().st_mtime)}" if cover.exists() else None,
+                    "cover_b": (f"/media/{v.stem}_cover_b.jpg?v={int(v.with_name(v.stem + '_cover_b.jpg').stat().st_mtime)}"
+                                if v.with_name(v.stem + "_cover_b.jpg").exists() else None),
                     "check": check.get("issues") if isinstance(check, dict) else None,
                     "sheet": f"/media/{sheet.name}" if sheet.exists() else None,
                     "size": v.stat().st_size, "updated": v.stat().st_mtime})
@@ -331,7 +333,7 @@ def delete_video(key):
     if key.startswith("previous/") and m:        # earlier versions keep their sheet as "<name>_shots-<stamp>.png"
         sheet = mp4.with_name(f"{m.group(1)}_shots-{m.group(2)}.png")
         cover = mp4.with_name(f"{m.group(1)}_cover-{m.group(2)}.jpg")
-    for f in (mp4, sheet, cover, mp4.with_name(mp4.stem + "_check.json")):
+    for f in (mp4, sheet, cover, mp4.with_name(mp4.stem + "_check.json"), mp4.with_name(mp4.stem + "_cover_b.jpg")):
         if f.exists():
             f.replace(trash / f"{f.stem}-{stamp()}{f.suffix}")
     labels = load_labels()
@@ -1445,6 +1447,21 @@ class Handler(BaseHTTPRequestHandler):
                 q.write_text(json.dumps(ep, indent=2), encoding="utf-8")
                 jobs.append(queue_render(q).to_dict())
             return self.send_json({"jobs": jobs, "group": group})
+
+        if head == "stats":                           # 📊 Stats: numbers per video, by kind / length / cover / set
+            import stats as ST
+            if method == "GET":
+                res = ST.summary()
+                res["videos"] = [{"key": v["key"], "title": v["title"] or v["name"].replace("_", " ")} for v in list_videos()]
+                res["connected"] = bool((S.load_settings().get("instagram") or {}).get("user_id"))
+                return self.send_json(res)
+            if method == "POST" and arg == "fetch":
+                cmd = [sys.executable, "-u", str(PIPE / "stats.py"), "fetch"]
+                return self.send_json(submit(Job("stats", "Instagram numbers", cmd)).to_dict())
+            if method == "PUT" and arg:
+                if not ID_RE.fullmatch(arg):
+                    raise ValueError("bad video")
+                return self.send_json(ST.update(arg, self.body_json() or {}))
 
         if head == "plan":                            # the weekly plan: its state, or ▶ run it now
             import weekly

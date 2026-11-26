@@ -311,6 +311,11 @@ side so you see the arm and the thing.
 - **📅 Weekly plan** (Settings → AI tools): pick a day and hour, and every week the studio makes that many videos
   from fresh ideas by itself (starred first, a mix of kinds) and leaves each one as a **Postiz draft** - you post
   them. The PC and the studio need to be on; ▶ Run it now on the Ideas page (📅 Weekly plan).
+- **A/B covers**: every render makes two covers - the picture model's favourite (A) and its runner-up (B). 🖼 Cover
+  shows both; tap "📤 I posted A/B" so 📊 Stats can tell you which kind of cover does better.
+- **📊 Stats** (new page): how your posted videos did next to what they were - averages by kind of video, length,
+  posted cover and set. 🔄 Get Instagram numbers needs your Instagram token and account id (Settings → Stats; read
+  only, the studio never posts with it) - or type a video's views in yourself.
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

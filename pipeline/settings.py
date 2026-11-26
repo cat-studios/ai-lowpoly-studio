@@ -77,6 +77,7 @@ DEFAULTS = {
                "design_scope": "3d"},                # "3d" = only 3D design goes there; "text" = all the AI's writing
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
     "home": {"souvenirs": True},
+    "instagram": {"token": "", "user_id": ""},   # Stats: your posts' numbers (Graph API, read only)
     # the weekly plan (pipeline/weekly.py): on that day + hour, fresh ideas -> a batch of videos -> Postiz drafts
     "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True},     # her room (sets/home.json) keeps one thing from every video
     "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic
@@ -179,7 +180,7 @@ def public_settings(data=None):
     return out
 
 
-SECRETS = [("postiz", "api_key"), ("ideas", "youtube_key"), ("ideas", "nasa_key")]   # never sent to the browser
+SECRETS = [("postiz", "api_key"), ("ideas", "youtube_key"), ("ideas", "nasa_key"), ("instagram", "token")]   # never sent to the browser
 
 
 def save_settings(data):

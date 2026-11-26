@@ -636,3 +636,12 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .cmp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
 .cmp-item video { width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 10px; }
 .cmp-item { display: grid; gap: 4px; }
+.cover-pair { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.cover-ab { display: grid; gap: 6px; justify-items: center; }
+.cover-pair .cover-big { width: min(220px, 42vw); }
+.stats-by { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.st-bar { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+.st-bar span:first-child { flex: 1; }
+.st-table { width: 100%; border-collapse: collapse; }
+.st-table td, .st-table th { padding: 6px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
+.st-table select { max-width: 220px; }

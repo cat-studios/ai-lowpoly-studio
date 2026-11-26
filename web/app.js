@@ -2113,6 +2113,39 @@ async function openPlan() {
   });
 }
 
+// 📊 Stats (pipeline/stats.py): how posted videos did, next to their kind, length, cover and set
+async function pageStats() {
+  const s = await api("GET", "/api/stats");
+  const num = (x) => x == null ? "-" : Number(x).toLocaleString();
+  const dims = { kind: "Kind of video", length: "Length", cover: "Cover posted", set: "Set" };
+  const tplName = (id) => { const t = tplOf(id); return t.name ? `${t.icon} ${t.name}` : id; };
+  app.innerHTML = `<div class="assets-head"><div><h2>📊 Stats</h2>
+      <p class="muted small">How your posted videos did, next to what they were - to see which kinds work. Numbers come from Instagram
+        (Settings → Stats: your token and account id) or you type the views in. Which cover you posted is noted on 🖼 Cover.</p></div></div>
+    <div class="panel"><div class="row" style="align-items:center;gap:10px">
+      <button id="st-fetch" class="primary" ${s.connected ? "" : "disabled"}>🔄 Get Instagram numbers</button>
+      <span class="muted small">${s.connected ? (s.fetched ? `Last fetched ${ago(s.fetched)}.` : "Not fetched yet.") : "Not connected - add your Instagram token and account id in Settings → Stats."}</span></div>
+      <div class="inline-job" id="st-job"></div></div>
+    ${s.rows.length ? `<div class="stats-by">${Object.entries(dims).map(([d, label]) => (s.by[d] || []).length ? `<div class="panel"><h4>${label}</h4>
+      ${(s.by[d] || []).map((e) => `<div class="st-bar"><span>${esc(d === "kind" ? tplName(e.value) : d === "set" ? (META.catalog.sets[e.value]?.name || e.value) : e.value)}</span><b>${num(e.avg)}</b> <span class="muted small">avg · ${e.videos} video${e.videos > 1 ? "s" : ""}</span></div>`).join("")}</div>` : "").join("")}</div>`
+      : '<p class="muted">No numbers yet - fetch them, or type a video\'s views below.</p>'}
+    <div class="panel"><h4>Videos</h4><table class="st-table"><tr><th>Video</th><th>Views</th><th>Likes</th><th>Saves</th><th>Instagram post</th></tr>
+      ${s.videos.map((v) => { const r = s.rows.find((x) => x.key === v.key) || {};
+        return `<tr data-key="${esc(v.key)}"><td>${esc(v.title)}<div class="muted small">${esc(r.template ? tplName(r.template) : "")}${r.seconds ? ` · ${r.seconds} s` : ""}${s.covers[v.key] ? ` · cover ${s.covers[v.key].toUpperCase()}` : ""}</div></td>
+          <td><input type="number" min="0" data-f="views" value="${r.views ?? ""}" style="width:90px"></td><td>${num(r.likes)}</td><td>${num(r.saved)}</td>
+          <td><select data-f="ig_id"><option value="">-</option>${s.posts.map((p) => `<option value="${esc(p.id)}" ${r.ig_id === p.id ? "selected" : ""}>${esc((p.timestamp || "").slice(0, 10) + " " + (p.caption || "").slice(0, 40))}</option>`).join("")}</select>
+            ${r.permalink ? `<a href="${esc(r.permalink)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`; }).join("")}</table></div>`;
+  $("#st-fetch").onclick = guard(async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    const job = await api("POST", "/api/stats/fetch");
+    watchJob(job, $("#st-job"), (j) => { btn.disabled = false; toast(j.status === "done" ? "Numbers updated" : "Couldn't get them - see the log", j.status !== "done"); if (location.hash === "#stats") pageStats(); });
+  });
+  $$(".st-table [data-f]").forEach((inp) => inp.onchange = guard(async () => {
+    await api("PUT", `/api/stats/${encodeURIComponent(inp.closest("tr").dataset.key)}`, { [inp.dataset.f]: inp.value });
+    toast("Saved"); pageStats();
+  }));
+}
+
 // 🎬 Batch from Ideas: the picked ideas -> one video each (pipeline/batch.py, through the studio's own API)
 async function openBatchDialog(ids, all) {
   const picked = ids.map((id) => all.find((x) => x.id === id)).filter(Boolean);
@@ -2169,10 +2202,13 @@ async function openGuests(episode) {
 }
 
 // 🖼 Cover: the video's cover picture (made with every render), downloaded for posting, or picked again
-function openCover(key, episode, img, title) {
-  const draw = (src) => src ? `<img src="${esc(src)}" alt="Cover" class="cover-big">` : `<p class="muted">No cover yet - this video was made before covers existed.</p>`;
+function openCover(key, episode, img, title, imgB = "") {
+  const one = (src, ab) => `<div class="cover-ab"><img src="${esc(src)}" alt="Cover ${ab}" class="cover-big">
+    <button class="small-btn" data-posted="${ab}">📤 I posted ${ab.toUpperCase()}</button></div>`;
+  const draw = (src) => src ? `<div class="cover-pair">${one(src, "a")}${imgB ? one(imgB, "b") : ""}</div>`
+    : `<p class="muted">No cover yet - this video was made before covers existed.</p>`;
   openModal({
-    title: `🖼 Cover - ${title}`,
+    title: `🖼 Cover - ${title}`, wide: !!imgB,
     body: `<div class="cover-wrap">${draw(img)}</div>
       <p class="muted small">The best frame of the video (the picture model picks it) with the title on top, in the video's look. Post it as the Reel's cover.</p>
       <div class="btns" style="align-items:center">
@@ -2200,6 +2236,13 @@ function openCover(key, episode, img, title) {
         });
       });
       if ($("#cv-again", box)) $("#cv-again", box).onclick = run(0);
+      const posted = () => $$("[data-posted]", box).forEach((b) => b.onclick = guard(async () => {     // A/B: which one went up
+        await api("PUT", `/api/stats/${encodeURIComponent(key)}`, { posted_cover: b.dataset.posted });
+        $$("[data-posted]", box).forEach((x) => x.classList.toggle("primary", x === b));
+        toast(`Cover ${b.dataset.posted.toUpperCase()} noted - 📊 Stats compares them`);
+      }));
+      posted();
+      api("GET", "/api/stats").then((s) => { const c = s.covers[key]; if (c) $(`[data-posted="${c}"]`, box)?.classList.add("primary"); }).catch(() => {});
       if ($("#cv-use", box)) $("#cv-use", box).onclick = (e) => {
         const n = Number($("#cv-shot", box).value);
         if (!n) { toast("Type a shot number (🎞 Shots shows them in order)", true); return; }
@@ -2225,12 +2268,12 @@ async function pageVideos() {
         ${!v.previous && v.episode ? `<button data-vary="${esc(v.episode)}" data-title="${esc(v.title || v.name)}" title="A part 2, or the same idea as another kind of video">🔁 Variation</button>` : ""}
         ${!v.previous && v.episode ? `<button data-remix="${esc(v.episode)}" data-title="${esc(v.title || v.name)}" title="The same script in another set, look or language">🎛 Remix</button>` : ""}
         ${v.remix ? `<button data-compare="${esc(v.remix.group)}" title="See the remixes side by side and pick one">⚖️ Compare</button>` : ""}
-        ${!v.previous && (v.cover || v.episode) ? `<button data-cover="${esc(v.key)}" data-ep="${esc(v.episode || "")}" data-img="${esc(v.cover || "")}" data-title="${esc(v.title || v.name)}" title="The cover picture for posting">🖼 Cover</button>` : ""}
+        ${!v.previous && (v.cover || v.episode) ? `<button data-cover="${esc(v.key)}" data-ep="${esc(v.episode || "")}" data-img="${esc(v.cover || "")}" data-imgb="${esc(v.cover_b || "")}" data-title="${esc(v.title || v.name)}" title="The cover pictures for posting (A and B)">🖼 Cover</button>` : ""}
         <button data-rename="${esc(v.key)}" data-title="${esc(v.title || v.name)}">✏️ Rename</button>
         <button data-delete="${esc(v.key)}" data-title="${esc(v.title || v.name)}" class="danger">🗑 Delete</button></div>
       <div class="pz-box" id="pz-${esc(v.key)}"></div></div>`).join("")}</div>`
     : '<p class="muted">No videos yet. Make one on the Create page.</p>'}`;
-  $$("[data-cover]").forEach((b) => b.onclick = () => openCover(b.dataset.cover, b.dataset.ep, b.dataset.img, b.dataset.title));
+  $$("[data-cover]").forEach((b) => b.onclick = () => openCover(b.dataset.cover, b.dataset.ep, b.dataset.img, b.dataset.title, b.dataset.imgb));
   $$("[data-check]").forEach((b) => b.onclick = () => {
     const v = vids.find((x) => x.key === b.dataset.check);
     openModal({
@@ -2507,6 +2550,10 @@ const S_TABS = {
       ["ideas.youtube", "▶️ YouTube popular videos (needs the key below)", "bool", {}],
       ["ideas.youtube_key", "YouTube API key", "password", {}, "Free: console.cloud.google.com → new project → enable “YouTube Data API v3” → Credentials → API key. Popular Science & Tech, Education, Pets & Animals and Gaming videos in each country."],
       ["ideas.nasa_key", "NASA API key (optional)", "password", {}, "Empty = NASA's shared demo key, which is enough for one fetch a day. A free personal key: api.nasa.gov."],
+    ]],
+    ["📊 Stats (your Instagram numbers - read only)", [
+      ["instagram.user_id", "Instagram account id", "text", {}, "Your Instagram professional account's id (developers.facebook.com → your app → Instagram → API setup, or Graph API Explorer: me?fields=instagram_business_account)."],
+      ["instagram.token", "Instagram access token", "password", {}, "A long-lived token with instagram_basic + instagram_manage_insights. Only read: the studio never posts with it."],
     ]],
     ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
       ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],
@@ -3083,7 +3130,7 @@ function editFx(f) {
 }
 
 /* ------------------------------------------------------------------ router */
-const PAGES = { create: pageCreate, ideas: pageIdeas, sets: pageSets, assets: () => pageAssets(), audio: pageAudio, videos: pageVideos, characters: pageCharacters, settings: pageSettings };
+const PAGES = { create: pageCreate, ideas: pageIdeas, sets: pageSets, assets: () => pageAssets(), audio: pageAudio, videos: pageVideos, stats: pageStats, characters: pageCharacters, settings: pageSettings };
 async function route() {
   const page = (location.hash || "#create").slice(1);
   $$("nav a").forEach((a) => a.classList.toggle("on", a.dataset.page === (page === "audio" ? "assets" : page)));

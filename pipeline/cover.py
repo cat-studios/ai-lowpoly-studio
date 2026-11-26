@@ -58,27 +58,40 @@ def grid(cands, path, ffmpeg):
     return cols, rows
 
 
+def runner_up(cands, k):
+    """Cover B: the best other candidate, preferably from another shot camera-wise far from A (a different look)."""
+    others = [j for j in range(len(cands)) if j != k]
+    if not others:
+        return None
+    return max(others, key=lambda j: (cands[j][2], abs(cands[j][0] - cands[k][0])))
+
+
 def pick(cands, title, grid_png, cols, rows, ollama, log=print):
-    """Index into cands: the vision model's pick, else the best heuristic score."""
+    """(index into cands, why, index of cover B or None): the vision model's two favourites, else the best
+    heuristic scores."""
     best = max(range(len(cands)), key=lambda k: cands[k][2])
     if not ollama or len(cands) < 2:
-        return best, "the clearest shot of her"
+        return best, "the clearest shot of her", runner_up(cands, best)
     import llm
     try:
         r = llm.chat_json(ollama["url"], ollama.get("vision_model") or ollama["model"],
                           f"These are {len(cands)} frames from a short cartoon video, in a grid of {cols} columns and "
                           f"{rows} rows, numbered 1 to {len(cands)} from left to right, top row first. Pick the best "
                           "one for the video's cover picture: the character's face clearly visible and expressive, "
-                          "the picture clear, bright and uncluttered, fitting the title. Reply with JSON only: "
-                          '{"best": number, "why": "a few words"}',
+                          "the picture clear, bright and uncluttered, fitting the title. Also name a DIFFERENT "
+                          'second-best one. Reply with JSON only: {"best": number, "second": number, "why": "a few words"}',
                           f"Title: {title or 'a fun short video'}", 0.1,
                           images=[base64.b64encode(grid_png.read_bytes()).decode("ascii")])
         k = int(float(r.get("best"))) - 1
         if 0 <= k < len(cands):
-            return k, str(r.get("why") or "")[:120]
+            try:
+                k2 = int(float(r.get("second"))) - 1
+            except Exception:
+                k2 = -1
+            return k, str(r.get("why") or "")[:120], k2 if 0 <= k2 < len(cands) and k2 != k else runner_up(cands, k)
     except Exception as exc:
         log(f"  cover: the picture model couldn't choose ({exc.__class__.__name__}) - using the clearest shot")
-    return best, "the clearest shot of her"
+    return best, "the clearest shot of her", runner_up(cands, best)
 
 
 def title_ass(path, title, res, cap):
@@ -131,20 +144,26 @@ def make(ep, timing, build, name, look, cap, ffmpeg, ollama=None, shot=None, log
     if shot is not None:                                   # chosen by hand (the Videos page)
         tm = timing["shots"][shot]
         f = frames / f"f_{tm['f0'] + max(0, tm['n'] // 2):04d}.png"
-        cands, k, why = [(shot, f, 0)], 0, "picked by you"
+        cands, k, why, k2 = [(shot, f, 0)], 0, "picked by you", None
     elif not cands:
         all_f = sorted(frames.glob("f_*.png"))
         if not all_f:
             return None, {}
-        cands, k, why = [(0, all_f[len(all_f) // 3], 0)], 0, "no clear shot of her - a frame a third of the way in"
+        cands, k, why, k2 = [(0, all_f[len(all_f) // 3], 0)], 0, "no clear shot of her - a frame a third of the way in", None
     else:
         gp = build / "cover_grid.png"
         cols, rows = grid(cands, gp, ffmpeg)
-        k, why = pick(cands, ep.get("title", ""), gp, cols, rows, ollama, log)
+        k, why, k2 = pick(cands, ep.get("title", ""), gp, cols, rows, ollama, log)
     out = ROOT / "output" / f"{name}_cover.jpg"
     res = ep.get("render_res") or [216, 384]
     render(cands[k][1], ep.get("title") or "", out, build, res, look, cap, ffmpeg)
     info = {"shot": cands[k][0], "why": why}
+    out_b = ROOT / "output" / f"{name}_cover_b.jpg"
+    if k2 is not None:                                     # cover B: another frame, to try against A
+        render(cands[k2][1], ep.get("title") or "", out_b, build, res, look, cap, ffmpeg)
+        info["b_shot"] = cands[k2][0]
+    elif out_b.exists() and shot is None:
+        out_b.unlink()                                     # an old B of a different render would mislead
     (build / "cover.json").write_text(json.dumps(info), encoding="utf-8")
     return out, info
 

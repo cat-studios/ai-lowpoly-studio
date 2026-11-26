@@ -804,6 +804,17 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   before a second. With Postiz set up and `plan.drafts`, the spec has `drafts: true` and `batch.drafts` waits for
   each render job (`/api/jobs/<id>`, up to 4 h) and calls `/api/postiz/draft {video}` for the done ones (drafts
   only). `GET /api/plan`, `POST /api/plan/run` (Ideas page → 📅 Weekly plan → ▶ Run it now).
+- **A/B covers**: `cover.pick` asks the picture model for "best" and "second" (a different frame; else
+  `runner_up` = the next score, further away on a tie) and `make` also renders `output/<name>_cover_b.jpg`
+  (`cover.json` `b_shot`; an old B is removed when none). `list_videos` gives `cover_b`; 🖼 Cover shows A and B side
+  by side (wide) with "📤 I posted A/B" -> `PUT /api/stats/<key> {posted_cover}`. Delete takes the B too.
+- **Stats** (`pipeline/stats.py`, `assets/stats/stats.json`, gitignored; 📊 Stats page `pageStats`, nav "Stats"):
+  `fetch` (job `stats.py fetch`, `POST /api/stats/fetch`) = Instagram Graph API v21 with Settings `instagram.token`
+  (a secret) + `instagram.user_id`: the last 50 media + insights (views, likes, comments, shares, saved, reach),
+  each matched to a video by its title's words in the caption (`match`) or linked by hand (`ig_id`); typed views
+  (`manual`) work without a token. `summary()` = rows (+ `facts`: kind, seconds from timing.json, set, hook) and
+  averages by kind / length bucket / posted cover / set. The Instagram fetch is untested (no token in dev); Postiz
+  isn't used for numbers (no analytics in its public API that we use).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
