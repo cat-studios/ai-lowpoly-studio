@@ -1904,7 +1904,8 @@ async function pageIdeas() {
       <div class="chips-row"><button class="chip-btn ${IDEA_REGION ? "" : "on"}" data-ir="">🌍 Everywhere</button>${Object.entries(regions).map(([k, v]) =>
         `<button class="chip-btn ${k === IDEA_REGION ? "on" : ""}" data-ir="${k}">${esc(v)}</button>`).join("")}</div>
       <span class="muted small" id="id-count"></span>
-      <button id="id-pick" class="${IDEA_PICK ? "primary" : ""}" title="Tick several ideas and make one video from each">☑ ${IDEA_PICK ? "Done picking" : "Pick several"}</button></div>
+      <button id="id-pick" class="${IDEA_PICK ? "primary" : ""}" title="Tick several ideas and make one video from each">☑ ${IDEA_PICK ? "Done picking" : "Pick several"}</button>
+      <button id="id-plan" title="Fresh ideas → videos → Postiz drafts, every week">📅 Weekly plan</button></div>
     ${IDEA_PICK ? `<div class="panel id-batch"><b>🎬 Batch:</b> <span id="id-picked">${IDEA_PICK.size}</span> picked (up to 10) - one video each, in its own kind of video, queued to render one after another.
       <button id="id-batch" class="primary" ${IDEA_PICK.size ? "" : "disabled"}>🎬 Make the videos</button></div>` : ""}
     <div class="chips-row id-sources"><span class="muted small">Source:</span>
@@ -1935,6 +1936,7 @@ async function pageIdeas() {
     ? "Nothing here - try another filter." : d.fetching ? "Getting today's ideas…" : "No ideas yet - press 🔄 Get what's trending now, or add your own."}</p></div>`;
   $$("[data-if]").forEach((b) => b.onclick = () => { IDEA_FILTER = b.dataset.if; pageIdeas(); });
   $("#id-pick").onclick = () => { IDEA_PICK = IDEA_PICK ? null : new Set(); pageIdeas(); };
+  $("#id-plan").onclick = guard(() => openPlan());
   $$("[data-pick]").forEach((cb) => cb.onchange = () => {
     const id = cb.closest(".idea-card").dataset.idea;
     if (cb.checked && IDEA_PICK.size >= 10) { cb.checked = false; toast("Up to 10 at a time", true); return; }
@@ -2090,6 +2092,24 @@ async function openHome() {
       b.closest(".chip").remove();
       toast("Taken out of her room");
     })),
+  });
+}
+
+// 📅 the weekly plan (pipeline/weekly.py): its settings in short, when it last ran, ▶ run it now
+async function openPlan() {
+  const st = await api("GET", "/api/plan");
+  const p = st.plan || {};
+  const days = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+  openModal({
+    title: "📅 Weekly plan",
+    body: `<p>${p.on ? `<b>On</b>: every <b>${days[p.day] || p.day}</b> from <b>${p.hour}:00</b>, ${p.count} ${p.length} videos from fresh ideas${p.drafts ? ", each left as a Postiz draft" : ""}.`
+        : "<b>Off.</b> Turn it on in Settings → AI tools → 📅 Weekly plan."}</p>
+      <p class="muted small">${st.last_run ? `Last ran ${ago(st.last_run)} (${esc(st.last_week || "")}).` : "Hasn't run yet."} It picks never-used ideas, starred first, a mix of kinds - and drafts are only drafts: you post them yourself.</p>`,
+    buttons: [{ label: "▶ Run it now", primary: true, onClick: async () => {
+      const r = await api("POST", "/api/plan/run");
+      if (r.error) { toast(r.error, true); return false; }
+      toast("This week's videos are on their way - follow them at the top right ✓");
+    } }, { label: "Close" }],
   });
 }
 
@@ -2487,6 +2507,14 @@ const S_TABS = {
       ["ideas.youtube", "▶️ YouTube popular videos (needs the key below)", "bool", {}],
       ["ideas.youtube_key", "YouTube API key", "password", {}, "Free: console.cloud.google.com → new project → enable “YouTube Data API v3” → Credentials → API key. Popular Science & Tech, Education, Pets & Animals and Gaming videos in each country."],
       ["ideas.nasa_key", "NASA API key (optional)", "password", {}, "Empty = NASA's shared demo key, which is enough for one fetch a day. A free personal key: api.nasa.gov."],
+    ]],
+    ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
+      ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],
+      ["plan.day", "Day", "select", { options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], labels: { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" } }],
+      ["plan.hour", "Hour (24 h)", "range", { min: 0, max: 23, step: 1 }, "The PC and the studio must be on then - it runs the first time it's on after that hour that day."],
+      ["plan.count", "Videos", "range", { min: 1, max: 10, step: 1 }],
+      ["plan.length", "Length", "select", { options: ["short", "medium", "long"] }],
+      ["plan.drafts", "Make Postiz drafts", "bool", {}, "Drafts only - you post them yourself."],
     ]],
     ["ComfyUI (set textures, prop pictures, music)", [
       ["comfy.mode", "Use ComfyUI", "select", { options: ["required", "auto", "off"], labels: { required: "Required - always texture sets (floor, walls/sky, pictures)", auto: "Only when needed - just picture props", off: "Off - never" } }],

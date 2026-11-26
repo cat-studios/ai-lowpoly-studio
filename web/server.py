@@ -158,6 +158,48 @@ def episode_path(eid):
 FONT_CACHE = {}
 
 
+def run_weekly_plan():
+    """Start this week's plan now: a batch of fresh ideas (+ Postiz drafts when Postiz is set up). None if there are
+    no unused ideas."""
+    import ideas as IDB
+    import weekly
+    cfg = S.load_settings()
+    spec = weekly.spec_for(cfg.get("plan") or {}, IDB.load(), f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}",
+                           bool((cfg.get("postiz") or {}).get("url")))
+    if not spec["ideas"]:
+        logs.event("WEEKLY PLAN: no unused ideas - nothing made")
+        weekly.mark_ran()
+        return None
+    f = ROOT / "build" / "series" / f"{stamp()}-weekly.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(spec), encoding="utf-8")
+    job = submit(Job("batch", f"Weekly plan: {len(spec['ideas'])} videos" + (" + Postiz drafts" if spec["drafts"] else ""),
+                     [sys.executable, "-u", str(PIPE / "batch.py"), str(f)]))
+    weekly.mark_ran(job=job.id)
+    logs.event(f"WEEKLY PLAN started: {len(spec['ideas'])} ideas (job {job.id})")
+    return job
+
+
+def plan_loop():
+    """Every 5 minutes: is it time for the weekly plan? (the ideas are refreshed first when they're old)"""
+    import ideas as IDB
+    import weekly
+    while True:
+        time.sleep(300)
+        try:
+            if not weekly.due(S.load_settings().get("plan") or {}, weekly.state()):
+                continue
+            db = IDB.load()
+            if time.time() - float(db.get("fetched") or 0) > 12 * 3600:      # old ideas: get today's first
+                fetch = submit(Job("ideas", "Trending ideas (weekly plan)",
+                                   [sys.executable, "-u", str(PIPE / "ideas.py"), "fetch"]))
+                while fetch.status in ("queued", "running"):
+                    time.sleep(15)
+            run_weekly_plan()
+        except Exception as exc:
+            logs.event(f"WEEKLY PLAN error: {exc.__class__.__name__}: {str(exc)[:200]}")
+
+
 def queue_render(p, fresh_voice=False, reuse_frames=False):
     """The render job for an episode file (the render route, remixes)."""
     remember_look(p)                            # the first render keeps the look this video is made with
@@ -1404,6 +1446,15 @@ class Handler(BaseHTTPRequestHandler):
                 jobs.append(queue_render(q).to_dict())
             return self.send_json({"jobs": jobs, "group": group})
 
+        if head == "plan":                            # the weekly plan: its state, or ▶ run it now
+            import weekly
+            if method == "GET":
+                st = weekly.state()
+                return self.send_json({**st, "plan": S.load_settings().get("plan") or {}})
+            if method == "POST" and arg == "run":
+                job = run_weekly_plan()
+                return self.send_json(job.to_dict() if job else {"error": "no fresh ideas to make"})
+
         if head == "home":                            # her room: make it, list / remove its souvenirs
             import home
             if method == "GET":
@@ -1750,6 +1801,7 @@ def main():
             print(f"  On your phone (same Wi-Fi):  http://{ip}:{args.port}")
         print("  PIN: " + ("on" if current_pin() else "off - anyone on your network can use the app "
                                                      "(set one in Settings -> Phone & network)"))
+    threading.Thread(target=plan_loop, daemon=True).start()      # the weekly plan (Settings -> Weekly plan)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

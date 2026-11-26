@@ -797,6 +797,13 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   80B model was slow, and it was tried again every 5 minutes - a script hung 10+ minutes. Now `REMOTE_TIMEOUT`
   120 s, then this PC's Ollama, and a too-slow server is skipped `REMOTE_SLOW_SKIP` 30 min; `_remote_alive` (a
   4-second `/api/tags` check, kept 60 s) skips an unreachable server or one without the model at once.
+- **Weekly plan** (`pipeline/weekly.py`, Settings `plan {on, day, hour, count, length, drafts}`, default off):
+  `server.plan_loop` (a thread started in `main`) checks every 5 min; `weekly.due` = on, that weekday, at/after
+  the hour, not yet this ISO week (`build/weekly_plan.json`). Old ideas (> 12 h) are fetched first, then
+  `run_weekly_plan` submits a batch: `weekly.pick` = never used / hidden, starred first, newest, one of each kind
+  before a second. With Postiz set up and `plan.drafts`, the spec has `drafts: true` and `batch.drafts` waits for
+  each render job (`/api/jobs/<id>`, up to 4 h) and calls `/api/postiz/draft {video}` for the done ones (drafts
+  only). `GET /api/plan`, `POST /api/plan/run` (Ideas page → 📅 Weekly plan → ▶ Run it now).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

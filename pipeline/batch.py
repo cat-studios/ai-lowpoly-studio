@@ -40,7 +40,7 @@ def main(spec_path):
     char = S.load_character(spec.get("character") or S.load_settings()["active_character"])
     stamp = time.strftime("%m%d%H%M")
     print(f"Batch: {len(ideas)} idea(s) -> one video each" + ("" if spec.get("render", True) else " (saved, not rendered)"))
-    made, failed = [], []
+    made, failed, renders = [], [], {}
     for i, idea in enumerate(ideas, 1):
         step = lambda f, what: report(0.02 + 0.96 * ((i - 1) + f) / len(ideas), f"Video {i}/{len(ideas)}: {what}")  # noqa: E731
         tpl_id = idea.get("template") if idea.get("template") in templates.TEMPLATES else templates.DEFAULT
@@ -82,6 +82,7 @@ def main(spec_path):
             call(base, "PUT", f"/api/episodes/{eid}", ep)
             if spec.get("render", True):
                 job = call(base, "POST", "/api/render", {"id": eid, "fresh_voice": False, "reuse_frames": False})
+                renders[eid] = job.get("id")
                 print(f"  saved as {eid}, render job {job.get('id')} queued")
             else:
                 print(f"  saved as {eid} (open it from the Videos page's ✏️ Edit after a render, or Custom Video)")
@@ -94,8 +95,43 @@ def main(spec_path):
     print(f"\nDone: {len(made)} video(s) " + ("queued to render - they appear on the Videos page as they finish."
                                              if spec.get("render", True) else "saved.")
           + (f" Failed: {', '.join(failed)}." if failed else ""))
+    if spec.get("drafts") and renders:
+        drafts(base, renders)
     if failed and not made:
         sys.exit("No video could be made - see above.")
+
+
+def drafts(base, renders, wait=4 * 3600):
+    """The weekly plan: as each render finishes, a Postiz draft for it (captions written by the studio, as on the
+    Videos page). Drafts only - nothing is scheduled or published."""
+    print(f"\nWaiting for {len(renders)} render(s) to make the Postiz drafts...")
+    left, t0 = dict(renders), time.time()
+    while left and time.time() - t0 < wait:
+        for eid, jid in list(left.items()):
+            try:
+                st = call(base, "GET", f"/api/jobs/{jid}?from=0")["status"]
+            except Exception:
+                continue
+            if st in ("done", "failed"):
+                left.pop(eid)
+                if st == "failed":
+                    print(f"  {eid}: the render failed - no draft")
+                    continue
+                try:
+                    call(base, "POST", "/api/postiz/draft", {"video": eid_key(eid)})
+                    print(f"  {eid}: Postiz draft queued")
+                except Exception as exc:
+                    print(f"  {eid}: couldn't make the draft ({exc.__class__.__name__}: {str(exc)[:120]})")
+        if left:
+            time.sleep(20)
+    if left:
+        print(f"  gave up waiting for: {', '.join(left)}")
+
+
+def eid_key(eid):
+    """The Videos page key of an episode (its slug, like run_episode names the mp4)."""
+    import re
+    return re.sub(r"[^a-z0-9]+", "_", eid.lower()).strip("_") or "episode"     # = run_episode.slug
 
 
 if __name__ == "__main__":

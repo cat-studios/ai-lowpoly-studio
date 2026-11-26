@@ -308,6 +308,9 @@ side so you see the arm and the thing.
   another kind of video** (a Top 5 as a Myth or fact...) - written, directed and rendered by itself.
 - **🎛 Remix** (Videos page): the same script in another set, look or language - up to 3 at once. **⚖️ Compare**
   plays them side by side; ⭐ Keep this one marks the one you'll post.
+- **📅 Weekly plan** (Settings → AI tools): pick a day and hour, and every week the studio makes that many videos
+  from fresh ideas by itself (starred first, a mix of kinds) and leaves each one as a **Postiz draft** - you post
+  them. The PC and the studio need to be on; ▶ Run it now on the Ideas page (📅 Weekly plan).
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):
