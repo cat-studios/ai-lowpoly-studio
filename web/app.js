@@ -2145,20 +2145,28 @@ async function pageStats() {
   const tplName = (id) => { const t = tplOf(id); return t.name ? `${t.icon} ${t.name}` : id; };
   app.innerHTML = `<div class="assets-head"><div><h2>📊 Stats</h2>
       <p class="muted small">How your posted videos did, next to what they were - to see which kinds work. Numbers come from Instagram
-        (Settings → Stats: your token and account id) or you type the views in. Which cover you posted is noted on 🖼 Cover.</p></div></div>
+        and YouTube (Settings → Stats) or you type the views in. Which cover you posted is noted on 🖼 Cover.</p></div></div>
     <div class="panel"><div class="row" style="align-items:center;gap:10px">
-      <button id="st-fetch" class="primary" ${s.connected ? "" : "disabled"}>🔄 Get Instagram numbers</button>
-      <span class="muted small">${s.connected ? (s.fetched ? `Last fetched ${ago(s.fetched)}.` : "Not fetched yet.") : "Not connected - add your Instagram token and account id in Settings → Stats."}</span></div>
+      <button id="st-fetch" class="primary" ${s.connected ? "" : "disabled"}>🔄 Get the numbers</button>
+      <span class="muted small">${s.connected ? (s.fetched ? `Last fetched ${ago(s.fetched)}.` : "Not fetched yet.") : "Not connected - add your Instagram or YouTube details in Settings → Stats."}</span></div>
       <div class="inline-job" id="st-job"></div></div>
+    ${s.youtube && s.youtube.channel ? `<div class="panel"><h4>▶ YouTube</h4>
+      <p><b>${s.youtube.subscribers == null ? "Subscribers hidden" : Number(s.youtube.subscribers).toLocaleString() + " subscribers"}</b>
+      ${(() => { const h = s.youtube.history || []; if (h.length < 2) return ""; const d = h[h.length - 1][1] - h[0][1]; return ` <span class="muted small">${d >= 0 ? "+" : ""}${d} since ${ago(h[0][0])}</span>`; })()}</p>
+      ${(s.yt_by || []).length ? `<table class="st-table"><tr><th>Kind of video</th><th>Videos</th><th>Avg views</th><th>Avg % watched</th><th>Avg seconds watched</th><th>Subscribers gained</th></tr>
+        ${s.yt_by.map((e) => `<tr><td>${esc(tplName(e.value))}</td><td>${e.videos}</td><td>${num(e.avg_views)}</td><td>${e.avg_view_pct == null ? "-" : e.avg_view_pct + "%"}</td><td>${num(e.avg_view_secs)}</td><td>${num(e.subs)}</td></tr>`).join("")}</table>` : '<p class="muted small">Matched uploads show here after a fetch.</p>'}
+    </div>` : ""}
     ${s.rows.length ? `<div class="stats-by">${Object.entries(dims).map(([d, label]) => (s.by[d] || []).length ? `<div class="panel"><h4>${label}</h4>
       ${(s.by[d] || []).map((e) => `<div class="st-bar"><span>${esc(d === "kind" ? tplName(e.value) : d === "set" ? (META.catalog.sets[e.value]?.name || e.value) : e.value)}</span><b>${num(e.avg)}</b> <span class="muted small">avg · ${e.videos} video${e.videos > 1 ? "s" : ""}</span></div>`).join("")}</div>` : "").join("")}</div>`
       : '<p class="muted">No numbers yet - fetch them, or type a video\'s views below.</p>'}
-    <div class="panel"><h4>Videos</h4><table class="st-table"><tr><th>Video</th><th>Views</th><th>Likes</th><th>Saves</th><th>Instagram post</th></tr>
+    <div class="panel"><h4>Videos</h4><table class="st-table"><tr><th>Video</th><th>Instagram views</th><th>Likes</th><th>Saves</th><th>Instagram post</th><th>YouTube views</th><th>% watched</th><th>YouTube</th></tr>
       ${s.videos.map((v) => { const r = s.rows.find((x) => x.key === v.key) || {};
         return `<tr data-key="${esc(v.key)}"><td>${esc(v.title)}<div class="muted small">${esc(r.template ? tplName(r.template) : "")}${r.seconds ? ` · ${r.seconds} s` : ""}${s.covers[v.key] ? ` · cover ${s.covers[v.key].toUpperCase()}` : ""}</div></td>
           <td><input type="number" min="0" data-f="views" value="${r.views ?? ""}" style="width:90px"></td><td>${num(r.likes)}</td><td>${num(r.saved)}</td>
           <td><select data-f="ig_id"><option value="">-</option>${s.posts.map((p) => `<option value="${esc(p.id)}" ${r.ig_id === p.id ? "selected" : ""}>${esc((p.timestamp || "").slice(0, 10) + " " + (p.caption || "").slice(0, 40))}</option>`).join("")}</select>
-            ${r.permalink ? `<a href="${esc(r.permalink)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`; }).join("")}</table></div>`;
+            ${r.permalink ? `<a href="${esc(r.permalink)}" target="_blank" rel="noopener">↗</a>` : ""}</td>
+          <td>${num((r.yt || {}).views)}</td><td>${(r.yt || {}).avg_view_pct == null ? "-" : r.yt.avg_view_pct + "%"}</td>
+          <td>${(r.yt || {}).id ? `<a href="https://youtu.be/${esc(r.yt.id)}" target="_blank" rel="noopener">↗</a>` : "-"}</td></tr>`; }).join("")}</table></div>`;
   $("#st-fetch").onclick = guard(async (e) => {
     const btn = e.currentTarget; btn.disabled = true;
     const job = await api("POST", "/api/stats/fetch");
@@ -2591,7 +2599,8 @@ const S_TABS = {
     ["Ollama (script & title writing)", [
       ["ollama.url", "Server URL", "text"],
       ["ollama.model", "Default model", "ollamapick", { from: "ollama.url" }, "The models your Ollama has (🔄 after changing the address)."],
-      ["ollama.design_url", "Big model server", "text", { placeholder: "empty = the server above" }, "Another Ollama with bigger models (e.g. a stronger computer on your network). If it can't be reached, the server above is used."],
+      ["ollama.big_server", "Use the big model server", "bool", {}, "Off = everything runs on this PC. The address below is kept, so you can switch it back on."],
+      ["ollama.design_url", "Big model server", "text", { placeholder: "empty = the server above" },"Another Ollama with bigger models (e.g. a stronger computer on your network). If it can't be reached, the server above is used."],
       ["ollama.design_model", "Model on the big server", "ollamapick", { from: "ollama.design_url", big: true, first: "Same as the default model" }, "The models that server already has (🔄 after changing the address). Nothing is ever downloaded there."],
       ["ollama.design_scope", "Use the big server for", "select", { options: ["3d", "text"], labels: { "3d": "Only building 3D props & explainer models", text: "All the AI's writing too (scripts, titles, sets, cast, translations, captions)" } }, "Picture checks, drawings and voices always run on this PC."],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
@@ -2615,9 +2624,13 @@ const S_TABS = {
       ["ideas.youtube_key", "YouTube API key", "password", {}, "Free: console.cloud.google.com → new project → enable “YouTube Data API v3” → Credentials → API key. Popular Science & Tech, Education, Pets & Animals and Gaming videos in each country."],
       ["ideas.nasa_key", "NASA API key (optional)", "password", {}, "Empty = NASA's shared demo key, which is enough for one fetch a day. A free personal key: api.nasa.gov."],
     ]],
-    ["📊 Stats (your Instagram numbers - read only)", [
+    ["📊 Stats (read only: nothing is posted)", [
       ["instagram.user_id", "Instagram account id", "text", {}, "Your Instagram professional account's id (developers.facebook.com → your app → Instagram → API setup, or Graph API Explorer: me?fields=instagram_business_account)."],
       ["instagram.token", "Instagram access token", "password", {}, "A long-lived token with instagram_basic + instagram_manage_insights. Only read: the studio never posts with it."],
+      ["youtube.channel_id", "YouTube channel id", "text", {}, "Starts with UC. YouTube Studio → Settings → Channel → Advanced settings. Uses the YouTube API key from Ideas above (public numbers: views, likes, comments, subscribers)."],
+      ["youtube.client_id", "YouTube Analytics: OAuth client id (optional)", "text", {}, "For retention numbers (average % watched, seconds watched, subscribers per video). Google Cloud → your project → Credentials → OAuth client ID (Desktop app), with YouTube Analytics API enabled."],
+      ["youtube.client_secret", "YouTube Analytics: OAuth client secret (optional)", "password", {}],
+      ["youtube.refresh_token", "YouTube Analytics: refresh token (optional)", "password", {}, "Made once with the OAuth Playground (developers.google.com/oauthplayground, scope youtube.readonly and yt-analytics.readonly, your own OAuth client). Read only."],
     ]],
     ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
       ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],

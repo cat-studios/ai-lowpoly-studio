@@ -35,9 +35,9 @@ def checks(root, jobs):
         return "ok", f"running - {o['model']} + picture model {o.get('vision_model') or '-'}", ""
 
     def big_server():
-        url = (o.get("design_url") or "").strip()
+        url = "" if o.get("big_server") is False else (o.get("design_url") or "").strip()
         if not url:
-            return "ok", "not set up (everything runs on this PC)", ""
+            return "ok", "off or not set up (everything runs on this PC)", ""
         names = [m["name"] for m in llm.list_models(url)]
         want = (o.get("design_model") or "").strip()
         if want and want not in names:

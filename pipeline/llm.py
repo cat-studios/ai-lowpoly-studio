@@ -48,7 +48,7 @@ def _remote_for(url, has_images):
         o = S.load_settings()["ollama"]
     except Exception:
         return None
-    big = str(o.get("design_url") or "").strip()
+    big = "" if o.get("big_server") is False else str(o.get("design_url") or "").strip()
     if not big or o.get("design_scope") != "text" or url.rstrip("/") != str(o.get("url", "")).rstrip("/"):
         return None
     if time.time() - _REMOTE_DOWN.get(big, 0) < REMOTE_RETRY:

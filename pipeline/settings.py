@@ -74,10 +74,13 @@ DEFAULTS = {
                "vision_model": "qwen3.5:4b",         # reads pictures (scene from a picture); must support images
                "design_model": "",                   # builds props / explainer models in 3D ("" = "model")
                "design_url": "",                     # another Ollama just for that ("" = "url"; unreachable = "url")
+               "big_server": True,                   # off = never use design_url (the address is kept)
                "design_scope": "3d"},                # "3d" = only 3D design goes there; "text" = all the AI's writing
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
     "home": {"souvenirs": True},
     "instagram": {"token": "", "user_id": ""},   # Stats: your posts' numbers (Graph API, read only)
+    # Stats: YouTube numbers. The API key is ideas.youtube_key. client/refresh = optional OAuth for retention numbers
+    "youtube": {"channel_id": "", "client_id": "", "client_secret": "", "refresh_token": ""},
     # the weekly plan (pipeline/weekly.py): on that day + hour, fresh ideas -> a batch of videos -> Postiz drafts
     "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True},     # her room (sets/home.json) keeps one thing from every video
     "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic
@@ -180,7 +183,8 @@ def public_settings(data=None):
     return out
 
 
-SECRETS = [("postiz", "api_key"), ("ideas", "youtube_key"), ("ideas", "nasa_key"), ("instagram", "token")]   # never sent to the browser
+SECRETS = [("postiz", "api_key"), ("ideas", "youtube_key"), ("ideas", "nasa_key"), ("instagram", "token"),
+           ("youtube", "client_secret"), ("youtube", "refresh_token")]   # never sent to the browser
 
 
 def save_settings(data):

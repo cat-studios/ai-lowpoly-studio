@@ -1458,7 +1458,8 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET":
                 res = ST.summary()
                 res["videos"] = [{"key": v["key"], "title": v["title"] or v["name"].replace("_", " ")} for v in list_videos()]
-                res["connected"] = bool((S.load_settings().get("instagram") or {}).get("user_id"))
+                res["connected"] = bool((S.load_settings().get("instagram") or {}).get("user_id")
+                                        or (S.load_settings().get("youtube") or {}).get("channel_id"))
                 return self.send_json(res)
             if method == "POST" and arg == "fetch":
                 cmd = [sys.executable, "-u", str(PIPE / "stats.py"), "fetch"]
