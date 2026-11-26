@@ -583,6 +583,7 @@ def p_model(r, p, d):
     if d.get("person"):                          # a person: facing the camera, and arms down from a T-pose
         BM.face_front(objs)
         BM.relax_tpose(objs)
+        BM.brighten_person(objs)                 # her flat cartoon light, not the set's sun alone
     box = BM.bounds(objs)
     if box is None:                              # nothing usable in the file: a plain stand-in
         P("cube", f"{p['kind']}_missing", (0, 0, 0.5), (0.4, 0.4, 0.5), "#ff00ff", r)

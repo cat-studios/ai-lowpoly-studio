@@ -43,6 +43,42 @@ def load_model(path, fmt):
     return [o for o in new if o.parent is None or o.parent.name not in names]
 
 
+def brighten_person(objs, glow=0.45, lift=1.25, log=print):
+    """Imported people (actors, background people) next to her looked dark and muddy: their plain Principled
+    colours are lit by the set's sun alone, while her own materials are flat and cartoon-lit. Each material gets a
+    soft glow of its own colour and a gentle lift, and loses most of its shine - the same flat look. Textured colours
+    glow from their texture."""
+    done = set()
+    meshes = [o for o in objs if o.type == "MESH"] + [c for o in objs for c in o.children_recursive if c.type == "MESH"]
+    for o in meshes:
+        for m in o.data.materials:
+            if not m or m.name in done or not m.node_tree:
+                continue
+            done.add(m.name)
+            n = next((x for x in m.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
+            if not n:
+                continue
+            base = n.inputs["Base Color"]
+            if base.is_linked:
+                src = base.links[0].from_socket
+                if "Emission Color" in n.inputs:
+                    m.node_tree.links.new(src, n.inputs["Emission Color"])
+            else:
+                c = list(base.default_value)
+                c = [min(1.0, v * lift) for v in c[:3]] + [c[3] if len(c) > 3 else 1.0]
+                base.default_value = c
+                if "Emission Color" in n.inputs:
+                    n.inputs["Emission Color"].default_value = c
+            if "Emission Strength" in n.inputs:
+                n.inputs["Emission Strength"].default_value = glow
+            for k, v in (("Specular IOR Level", 0.15), ("Roughness", 0.9), ("Metallic", 0.0)):
+                if k in n.inputs and not n.inputs[k].is_linked:
+                    n.inputs[k].default_value = v
+    if done:
+        log(f"[models] {len(done)} material(s) given the flat cartoon light")
+    return len(done)
+
+
 def face_front(objs, log=print):
     """Turn a person model so it faces -Y (the camera side, the studio's front) - packs come facing any way (the
     "100 Avatars" ones face sideways: profile to the camera). The shoulder line is the wider horizontal axis at

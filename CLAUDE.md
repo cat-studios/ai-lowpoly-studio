@@ -849,6 +849,10 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   file's first clip all video (Mom clapping, the worker's "Death"). Checked in a dev storyboard with the production
   Mom model: a real walk in, idle while talking. Also: `resolve_co_stars` kept dropping the lines of a speaker that
   is a thing - a thing with a person model (`def.person`) keeps them now.
+- **Imported people's light**: next to her they rendered dark and muddy (plain Principled colours lit by the sun
+  alone; her own materials are flat, cartoon-lit). `blender_models.brighten_person` (in `p_model` for person defs,
+  after `face_front` / `relax_tpose`): base colour x1.25, an emission of the same colour at 0.45 (a textured base
+  colour feeds the emission), specular 0.15, roughness 0.9. Checked on the production Mom (Female_Dress.fbx).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
