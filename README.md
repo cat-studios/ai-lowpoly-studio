@@ -25,6 +25,11 @@ question of at most 8 words - the AI writer is told so, and its editor checks it
 she says it (no more walking in), and the hook's key word pops up twice the size as she says it (Settings → Text &
 branding → "Hook word pops up big").
 
+**Batch from Ideas**: on the 💡 Ideas page press **☑ Pick several**, tick up to 10 ideas and **🎬 Make the
+videos**: each idea becomes its own video (its own kind of video, its first title or a new one, script, scene and
+shots), queued to render one after another. Pick a length, regulars for every video and a note if you like. One
+idea failing doesn't stop the others.
+
 **Regulars (recurring cast)**: people who come back from video to video, with the same look and voice.
 - Keep a guest from a finished video: Videos → **🎭 Guests** → ⭐ Keep (give them a name - "Mom", "Grandma Rose").
 - Or make one by hand: Assets → Actors → + New, tick **⭐ Regular**, and write their **Personality** ("grumpy,

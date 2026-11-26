@@ -1173,6 +1173,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(submit(Job("series", f"Series: {idea[:40]} ({spec['count']} episodes)",
                                              cmd)).to_dict())
 
+        if head == "batch" and method == "POST":       # Ideas page: several ideas -> one video each, queued to render
+            import ideas as IDB
+            b = self.body_json()
+            want = [str(x) for x in (b.get("ideas") or [])][:10]
+            have = {it["id"]: it for it in IDB.load().get("ideas", [])}
+            picked = [have[x] for x in want if x in have]
+            if not picked:
+                raise ValueError("pick at least one idea")
+            spec = {"ideas": [{k: it.get(k) for k in ("id", "topic", "angle", "template", "titles")} for it in picked],
+                    "length": str(b.get("length") or "medium"), "character": str(b.get("character") or ""),
+                    "note": str(b.get("note") or "")[:300], "model": str(b.get("model") or ""),
+                    "regulars": [str(r) for r in (b.get("regulars") or []) if re.fullmatch(r"[a-z0-9_]{1,48}", str(r))],
+                    "render": True, "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}"}
+            f = ROOT / "build" / "series" / f"{stamp()}-batch.json"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(spec), encoding="utf-8")
+            cmd = [sys.executable, "-u", str(PIPE / "batch.py"), str(f)]
+            return self.send_json(submit(Job("batch", f"{len(picked)} videos from ideas", cmd)).to_dict())
+
         if head == "scenes" and arg == "plan" and method == "POST":    # the Create popup's Scenes step
             b = self.body_json()
             policy = "new" if b.get("scene_policy") == "new" else "reuse"

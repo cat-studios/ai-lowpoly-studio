@@ -614,3 +614,7 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .status-row .muted { overflow-wrap: anywhere; }
 .cover-wrap { text-align: center; }
 .cover-big { width: min(300px, 100%); aspect-ratio: 9 / 16; object-fit: cover; border-radius: 12px; background: #000; }
+.idea-card.picked { outline: 2px solid var(--accent, #c9a2ff); }
+.idea-tick { display: flex; gap: 6px; align-items: center; font-size: 12px; margin-bottom: 4px; cursor: pointer; }
+.id-batch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.batch-list { display: grid; gap: 6px; margin-bottom: 10px; }

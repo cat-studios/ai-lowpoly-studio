@@ -1813,6 +1813,7 @@ const IDEA_SRC = { google: "🔥 Google Trends", wikipedia: "📖 Wikipedia", on
   calendar: "🎉 Coming up", mine: "✍ Yours" };
 const IDEA_FILTERS = { new: "New", starred: "⭐ Starred", used: "Used", mine: "Yours", hidden: "Hidden", all: "All" };
 let IDEA_FILTER = "new", IDEA_REGION = "", IDEA_SOURCE = "";
+let IDEA_PICK = null;            // a Set of idea ids while "☑ Pick several" is on (Batch from Ideas)
 const ideaSrc = (it) => (it.source === "calendar" ? "holidays" : it.source);      // older ideas said "calendar"
 const tplOf = (id) => (META.catalog.templates || []).find((t) => t.id === id) || {};
 // start the Custom Video popup from an idea (and maybe one of its titles)
@@ -1853,7 +1854,10 @@ async function pageIdeas() {
       <div class="chips-row">${Object.entries(IDEA_FILTERS).map(([k, v]) => `<button class="chip-btn ${k === IDEA_FILTER ? "on" : ""}" data-if="${k}">${v}</button>`).join("")}</div>
       <div class="chips-row"><button class="chip-btn ${IDEA_REGION ? "" : "on"}" data-ir="">🌍 Everywhere</button>${Object.entries(regions).map(([k, v]) =>
         `<button class="chip-btn ${k === IDEA_REGION ? "on" : ""}" data-ir="${k}">${esc(v)}</button>`).join("")}</div>
-      <span class="muted small" id="id-count"></span></div>
+      <span class="muted small" id="id-count"></span>
+      <button id="id-pick" class="${IDEA_PICK ? "primary" : ""}" title="Tick several ideas and make one video from each">☑ ${IDEA_PICK ? "Done picking" : "Pick several"}</button></div>
+    ${IDEA_PICK ? `<div class="panel id-batch"><b>🎬 Batch:</b> <span id="id-picked">${IDEA_PICK.size}</span> picked (up to 10) - one video each, in its own kind of video, queued to render one after another.
+      <button id="id-batch" class="primary" ${IDEA_PICK.size ? "" : "disabled"}>🎬 Make the videos</button></div>` : ""}
     <div class="chips-row id-sources"><span class="muted small">Source:</span>
       <button class="chip-btn ${IDEA_SOURCE ? "" : "on"}" data-isrc="">All</button>${Object.entries(d.sources || {}).map(([k, v]) =>
         `<button class="chip-btn ${k === IDEA_SOURCE ? "on" : ""} ${srcCount[k] ? "" : "src-empty"}" data-isrc="${k}" ${srcCount[k] ? "" : ' title="No ideas from it yet - switched off in Settings, unreachable, or nothing family-friendly there today"'}>${esc(v)} <span class="seg-n">${srcCount[k] || 0}</span></button>`).join("")}</div>
@@ -1862,7 +1866,8 @@ async function pageIdeas() {
   $("#id-count").textContent = `${list.length} of ${d.ideas.length}`;
   const card = (it) => {
     const t = tplOf(it.template);
-    return `<div class="idea-card" data-idea="${esc(it.id)}">
+    return `<div class="idea-card ${IDEA_PICK && IDEA_PICK.has(it.id) ? "picked" : ""}" data-idea="${esc(it.id)}">
+      ${IDEA_PICK ? `<label class="idea-tick"><input type="checkbox" data-pick ${IDEA_PICK.has(it.id) ? "checked" : ""}> pick</label>` : ""}
       <div class="idea-top"><span>${esc(srcLabel(it))}${it.region && it.source !== "mine" && it.region !== "WW" ? " · " + esc(it.region === "GB" ? "UK" : it.region) : ""}</span>
         <span title="${esc(t.name || "")}">${t.icon || ""}</span></div>
       <h4>${it.starred ? "⭐ " : ""}${esc(it.topic)}</h4>
@@ -1880,6 +1885,16 @@ async function pageIdeas() {
   $("#id-grid").innerHTML = list.map(card).join("") || `<div class="empty"><div class="empty-ic">💡</div><p>${d.ideas.length
     ? "Nothing here - try another filter." : d.fetching ? "Getting today's ideas…" : "No ideas yet - press 🔄 Get what's trending now, or add your own."}</p></div>`;
   $$("[data-if]").forEach((b) => b.onclick = () => { IDEA_FILTER = b.dataset.if; pageIdeas(); });
+  $("#id-pick").onclick = () => { IDEA_PICK = IDEA_PICK ? null : new Set(); pageIdeas(); };
+  $$("[data-pick]").forEach((cb) => cb.onchange = () => {
+    const id = cb.closest(".idea-card").dataset.idea;
+    if (cb.checked && IDEA_PICK.size >= 10) { cb.checked = false; toast("Up to 10 at a time", true); return; }
+    if (cb.checked) IDEA_PICK.add(id); else IDEA_PICK.delete(id);
+    cb.closest(".idea-card").classList.toggle("picked", cb.checked);
+    $("#id-picked").textContent = IDEA_PICK.size;
+    $("#id-batch").disabled = !IDEA_PICK.size;
+  });
+  if ($("#id-batch")) $("#id-batch").onclick = guard(() => openBatchDialog([...IDEA_PICK], d.ideas));
   $$("[data-ir]").forEach((b) => b.onclick = () => { IDEA_REGION = b.dataset.ir; pageIdeas(); });
   $$("[data-isrc]").forEach((b) => b.onclick = () => { IDEA_SOURCE = b.dataset.isrc; pageIdeas(); });
   $("#id-add").onclick = guard(async () => {
@@ -1909,6 +1924,36 @@ async function pageIdeas() {
     $("[data-ia=series]", c).onclick = guard(() => openSeriesDialog({ idea: it.topic + (it.angle ? ` - ${it.angle}` : ""), template: it.template, idea_id: it.id }));
     $("[data-ia=star]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { starred: !it.starred }); pageIdeas(); });
     $("[data-ia=hide]", c).onclick = guard(async () => { await api("PUT", `/api/ideas/${encodeURIComponent(it.id)}`, { hidden: !it.hidden }); pageIdeas(); });
+  });
+}
+
+// 🎬 Batch from Ideas: the picked ideas -> one video each (pipeline/batch.py, through the studio's own API)
+async function openBatchDialog(ids, all) {
+  const picked = ids.map((id) => all.find((x) => x.id === id)).filter(Boolean);
+  const regs = await api("GET", "/api/actors").then((r) => r.actors.filter((a) => a.regular)).catch(() => []);
+  const chosen = new Set();
+  await openModal({
+    title: `🎬 Make ${picked.length} video${picked.length > 1 ? "s" : ""}`,
+    body: `<div class="batch-list">${picked.map((it) => `<div>${tplOf(it.template).icon || "💭"} <b>${esc(it.topic)}</b>
+        <span class="muted small">${esc((it.titles || [])[0] || "a title is picked for it")}</span></div>`).join("")}</div>
+      <label class="modal-field">Length<select id="bt-len"><option value="short">Short (4-5 lines)</option>
+        <option value="medium" selected>Medium (each kind's own)</option><option value="long">Long (10-13 lines)</option></select></label>
+      ${regs.length ? `<p class="cw-label">⭐ Regulars in every video <span class="muted small">(optional)</span></p>
+        <div class="chips">${regs.map((a) => `<button class="chip-btn" data-breg="${esc(a.id)}">${esc(a.name)}</button>`).join("")}</div>` : ""}
+      <label class="modal-field">A note for every script <span class="muted">(optional)</span><input type="text" id="bt-note" placeholder="e.g. end with a question for the viewers"></label>
+      <p class="muted small">Each idea gets its own title, script, scene and shots, then waits in the render queue - follow them at the top right. New places are built as hand-built sets.</p>`,
+    buttons: [{ label: "Cancel", value: null }, { label: "🎬 Make them", primary: true, onClick: async (m) => {
+      const job = await api("POST", "/api/batch", { ideas: picked.map((it) => it.id), length: $("#bt-len", m).value,
+        note: $("#bt-note", m).value.trim(), regulars: [...chosen], model: CS.model });
+      IDEA_PICK = null;
+      toast(`Making ${picked.length} video${picked.length > 1 ? "s" : ""} - follow it at the top right ✓`);
+      watchJob(job, null, (j) => toast(j.status === "done" ? "All batch videos are queued to render" : "The batch had a problem - see its log", j.status !== "done"));
+      pageIdeas();
+    } }],
+    onOpen: (m) => $$("[data-breg]", m).forEach((b) => b.onclick = () => {
+      if (chosen.has(b.dataset.breg)) chosen.delete(b.dataset.breg); else chosen.add(b.dataset.breg);
+      b.classList.toggle("on", chosen.has(b.dataset.breg));
+    }),
   });
 }
 

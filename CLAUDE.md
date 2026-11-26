@@ -658,6 +658,15 @@ delete / trash carry the cover like the shot sheet. `/media/` serves jpg.
   line's brackets - it was half spoken (", angry") and Mom's next line wasn't recognised as hers; "+ name" (space)
   = "+name"; "+name: words" = that person's line, brought in if they weren't yet.
 
+## Batch from Ideas (2026-11-26)
+`pipeline/batch.py` (job kind `batch`, other lane; `POST /api/batch {ideas: [ids] (<= 10), length, note, regulars,
+model}` writes a spec to `build/series/<stamp>-batch.json`): for each idea `title_for` (its first saved title,
+else `generate_titles` with its template's starts) → `/api/ai/script` (its own template, its angle + the note,
+`regulars`) → `/api/autodirect` → `PUT /api/episodes` (`idea` = its id, so it's marked used; `set_style` "base";
+regulars' cast entries get `actor`) → `/api/render`, reusing `series.call/slug/LENGTHS`. An idea that fails is
+logged and skipped. UI: Ideas page ☑ Pick several (`IDEA_PICK`, a Set; card tick boxes, `.picked`) → 🎬 Make the
+videos → `openBatchDialog`.
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and
@@ -729,6 +738,7 @@ delete / trash carry the cover like the shot sheet. `/media/` serves jpg.
 | `pipeline/llm.py` | Ollama: `generate_script`, `generate_titles`, `design_set` (text or `image=`), `make_coherent`, `make_theme`, `find_cast`, `find_scenes`, `place_for_title`, `social_copy`, `chat_json` (format=json). |
 | `pipeline/comfy.py` | ComfyUI client: status/models, `find_server`, Z-Image + checkpoint txt2img, `texture_set(mode=required|auto)`, `object_sprite`, `floor_prompt`, `colour_word`. |
 | `pipeline/postiz.py` | Postiz client: `channels()`, `upload()`, `captions()` (`llm.social_copy` + `TRENDY` tags), `draft()` (POST /posts type "draft", one per ticked channel, `settings_for()` per provider; discord needs a channel ID). Base `<url>/api/public/v1`, header `Authorization: <key>` (no Bearer). **Drafts only - never schedule/publish.** |
+| `pipeline/batch.py` | Batch from Ideas: several ideas -> one video each through the studio's own API. |
 | `pipeline/cover.py` | The Reel's cover picture: best frame (vision pick from a grid) + title in the video's look. |
 | `pipeline/gif.py` | Video → GIF: palette from all frames, Sierra dithering; keeps under 10 MB by stepping down fps, then size, then colours. |
 
