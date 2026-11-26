@@ -681,6 +681,10 @@ videos → `openBatchDialog`.
   unless the name/looks are a made thing (`MADE_THINGS`: a wing chair). Its spot: no free spot beside her, and
   `blender_cast._roomiest` chose 2.8 m IN FRONT of her (it counts as "in shot") - spots in front now score -2 - depth.
   `sfx_events`: a cast arrival's sound replaces any sound within 0.35 s (boing + pop played at once).
+- Top 5 (`zz_test_top5_fast`): a script cutaway landed on the 2-word beat "Number 5:" (half a second) - `_merge_cutaway_beats`
+  joins the line's next beats until `CUTAWAY_MIN_WORDS` 4 (in `direct` and after `add_scene_plan`); the AI scene step
+  adds no cutaway to a line (beat group) that has one ("faster than a speeding car" got a car); the hook keeps its
+  close-up push-in when the writer asked a far camera (`[wide, excited]` on line 1).
 - Fine in both: word-timed captions, cover pick (a close-up of her face), stream lengths, a new base set made at
   render (Grassy Field, 19 props). Whole-video loudness ~-16 LUFS (voice -14; the quiet intro/outro lowers it).
 

@@ -579,8 +579,12 @@ def add_scene_plan(result, plan, set_name, policy="reuse"):
             continue
         if re.search(r"\b(her|she|herself|catgirl|me|my|i|myself)\b", str(c.get("show", "")), re.I):
             continue                         # a cutaway shows something else - never her
-        if 0 < i < len(shots) and c.get("show") and "cutaway" not in shots[i] and not shots[i].get("events"):
+        g = shots[i].get("beat_group") if 0 < i < len(shots) else None
+        line_has = g is not None and any(s.get("cutaway") for s in shots if s.get("beat_group") == g)
+        if 0 < i < len(shots) and c.get("show") and "cutaway" not in shots[i] and not shots[i].get("events") \
+                and not line_has:
             shots[i]["cutaway"] = str(c["show"])[:80]
+    _merge_cutaway_beats(shots)
     for p in plan.get("particles") or []:
         try:
             i = int(p.get("line"))
@@ -597,6 +601,27 @@ def add_scene_plan(result, plan, set_name, policy="reuse"):
 
 
 SPEAKER = re.compile(r"^\s*([A-Za-z][A-Za-z '-]{0,30}?)\s*:\s+")   # "Ethan: hey there" - a named speaker
+
+
+CUTAWAY_MIN_WORDS = 4
+
+
+def _merge_cutaway_beats(shots):
+    """A cutaway on a beat of 1-3 words ("Number 5:") was on screen for half a second before cutting back to her:
+    the next beats of the same line join it until it has CUTAWAY_MIN_WORDS words ("Number 5: The Cheetah!")."""
+    k = 0
+    while k < len(shots):
+        sh = shots[k]
+        g = sh.get("beat_group")
+        while sh.get("cutaway") and g is not None and len(str(sh.get("line", "")).split()) < CUTAWAY_MIN_WORDS \
+                and k + 1 < len(shots) and shots[k + 1].get("beat_group") == g \
+                and not shots[k + 1].get("cutaway") and not shots[k + 1].get("events") \
+                and shots[k + 1].get("set") == sh.get("set") and shots[k + 1].get("speaker") == sh.get("speaker"):
+            nxt = shots.pop(k + 1)
+            sh["line"] = f"{sh.get('line', '')} {nxt.get('line', '')}".strip()
+            if nxt.get("wipe"):
+                sh["wipe"] = True
+        k += 1
 
 
 def expand_beats_grouped(lines, n, speakers=None):
@@ -822,7 +847,10 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                 if cb[0] == prev_cam:
                     cb = CAMERA_BEATS[(i // move_every + 1) % len(CAMERA_BEATS)]
                 shot.update(camera=cb[0], move=cb[1])
+        hook_cam = shot.get("camera") if i == 0 and opening == "hook" and shot.get("move") == "push_in" else None
         shot.update(d)
+        if hook_cam and shot.get("camera") in ("wide", "high", "tiny", "side", "back", "low"):
+            shot["camera"], shot["move"] = hook_cam, "push_in"   # the first seconds are on her face
         if shot_events_pre:
             shot["events"] = shot_events_pre + list(shot.get("events") or [])
         for ev in shot_events_pre:
@@ -980,6 +1008,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         s.pop("to", None)
         if s.get("move") == "follow":
             s["move"] = "push_in"
+    _merge_cutaway_beats(shots)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     return {"start": start,
             "shots": shots,
