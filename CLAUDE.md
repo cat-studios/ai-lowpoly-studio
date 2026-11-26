@@ -853,6 +853,9 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   alone; her own materials are flat, cartoon-lit). `blender_models.brighten_person` (in `p_model` for person defs,
   after `face_front` / `relax_tpose`): base colour x1.25, an emission of the same colour at 0.45 (a textured base
   colour feeds the emission), specular 0.15, roughness 0.9. Checked on the production Mom (Female_Dress.fbx).
+- `autodirect.cast_kind`: a name one of your actors has (name or role, `actors.pick`) or a `ROLE_PEOPLE` word
+  (worker, teacher, neighbour, vampire...) is a person - "+construction_worker ... Construction Worker: ..." was a
+  thing, so the catgirl read "Construction Worker: Careful..." aloud.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

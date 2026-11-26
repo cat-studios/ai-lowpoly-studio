@@ -229,7 +229,22 @@ def parse_directions(line, marks):
 def cast_kind(name):
     """'mom' -> person, 'car' -> thing (a guess; the episode's cast entry can say otherwise)."""
     words = set(re.split(r"[_\s]+", name.lower()))
-    return "person" if words & catalog.PERSON_WORDS or name.rstrip("s") in catalog.PERSON_WORDS else "thing"
+    if words & catalog.PERSON_WORDS or name.rstrip("s") in catalog.PERSON_WORDS or words & ROLE_PEOPLE:
+        return "person"
+    try:                         # one of your actors has this name or role ("construction_worker"): a person
+        import actors as AC
+        a = AC.pick(name)
+        if a and not a.get("builtin") and a.get("kind") != "thing":
+            return "person"
+    except Exception:
+        pass
+    return "thing"
+
+
+ROLE_PEOPLE = set("""worker builder teacher farmer pilot captain sailor pirate knight wizard witch vampire chef baker
+waiter waitress cashier clerk nurse doctor dentist firefighter fireman policeman policewoman officer guard soldier
+mailman postman plumber mechanic artist singer dancer coach referee scientist astronaut neighbour neighbor
+grandma grandpa auntie uncle cousin""".split())
 
 
 def _known_word(t, marks):
