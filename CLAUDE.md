@@ -840,6 +840,15 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   generic: the studio body), and `resolve_cast` plays them with `look={}` so `person_look` gives new colours from
   the name/looks (the same name = the same colours); no generic actor of yours = the built-in generic human.
   Assets → Actors: generic actors in their own group above "Your models" (rigged / imported).
+- **Animated imported actors** (the user's Animated Women Pack / Ultimate Modular Men: an armature + clips like
+  Female_Idle, Female_Walk, Wave, Interact): `p_model` records the clips that came in with the model
+  (`holder["clips"]`); `blender_cast.play_clips` (after a thing's movement is keyed) picks per frame - Idle (or
+  Standing), Walk / Run while it moves or on enter/exit/walk/run verbs (`MOVING`), the verb's clip (`CLIPS`: wave,
+  clap, jump, sit, angry -> punch, point -> interact...), a "talk" clip (Interact) on its lines when it has one - and
+  lays them out as NLA strips (`repeat` = run length / clip length; the last holds). Before, Blender showed the
+  file's first clip all video (Mom clapping, the worker's "Death"). Checked in a dev storyboard with the production
+  Mom model: a real walk in, idle while talking. Also: `resolve_co_stars` kept dropping the lines of a speaker that
+  is a thing - a thing with a person model (`def.person`) keeps them now.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

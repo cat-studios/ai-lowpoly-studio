@@ -576,7 +576,10 @@ def p_model(r, p, d):
     origin and scaled so it is d["height"] tall; the origin of the root empty stays where the prop was placed."""
     import blender_models as BM
     from mathutils import Matrix
+    import bpy as _bpy
+    had = {a.name for a in _bpy.data.actions}
     objs = BM.load_model(PROJECT / d["model"]["file"], d["model"]["format"])
+    clips = [a.name for a in _bpy.data.actions if a.name not in had]      # this model's own animation clips
     if d.get("person"):                          # a person: facing the camera, and arms down from a T-pose
         BM.face_front(objs)
         BM.relax_tpose(objs)
@@ -591,6 +594,8 @@ def p_model(r, p, d):
     holder = H.empty(f"{p['kind']}_model", r, (0, 0, 0))
     holder.location = (-(lo.x + hi.x) / 2 * s, -(lo.y + hi.y) / 2 * s, -lo.z * s)
     holder.scale = (s, s, s)
+    if clips:
+        holder["clips"] = clips                  # blender_cast.play_clips plays them (an animated pack's people)
     for o in objs:                               # re-parent under the holder, keeping each object's own transform
         o.parent = holder
         o.matrix_parent_inverse = Matrix.Identity(4)

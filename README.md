@@ -320,6 +320,9 @@ side so you see the arm and the thing.
   role fits, else one of your actors (the same one for the same name). Your imported people are used only for
   people who don't speak (background, crowds). Imported people that come in a T-pose or facing sideways are
   turned to the camera with their arms down.
+- **Animated imported people**: an actor from an animated pack (with a skeleton and clips like Idle, Walk, Wave)
+  plays its own animations - idle while standing or talking, walking when it moves, and the clip that matches what
+  it does (wave, clap, jump, sit...).
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

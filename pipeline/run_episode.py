@@ -379,7 +379,8 @@ def resolve_co_stars(ep, cfg, log=print):
         sp = shot.get("speaker")
         if not sp or sp == prim or sp == "main":
             shot.pop("speaker", None)
-        elif sp not in ids and not (sp in cast and (cast[sp] or {}).get("type") != "thing"):
+        elif sp not in ids and not (sp in cast and ((cast[sp] or {}).get("type") != "thing"
+                                                    or ((cast[sp] or {}).get("def") or {}).get("person"))):
             log(f"  (a line is spoken by '{sp}', who isn't in this video - {prim} says it)")
             shot.pop("speaker", None)
 

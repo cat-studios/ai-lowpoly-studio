@@ -316,6 +316,101 @@ def animate_person(who, info, side):
     print(f"[cast] {who}: person, {len(evs)} events, height {h:.2f}")
 
 
+# --------------------------------------------------------------------------- an imported model's own animations
+# what a verb / action plays from a rigged model's own clips (Quaternius "Animated Women Pack": Female_Idle,
+# Female_Walk...; "Ultimate Modular Men": Idle, Walk, Wave, Interact...) - the first clip name that matches wins
+CLIPS = {
+    "idle": ["idle", "idle_neutral", "standing", "breathing"],
+    "walk": ["walk", "walking"], "run": ["run", "running"],
+    "wave": ["wave", "waving"], "clap": ["clapping", "clap"], "jump": ["jump"], "sit": ["sitting", "sit"],
+    "angry": ["punch", "punch_right", "punch_left"], "point": ["interact", "idle_gun_pointing"],
+    "celebrate": ["clapping", "wave", "jump"], "dance": ["clapping", "wave"], "laugh": ["clapping"],
+    "talk": ["interact", "idle"],
+}
+MOVING = {"enter": "walk", "exit": "walk", "walk_to": "walk", "sneak_to": "walk", "run_to": "run", "crash_in": "run"}
+
+
+def _clip_names(root):
+    """{"idle": action, "walk": action...} - only the clips that came in with this model (p_model's "clips")."""
+    names = next((list(o["clips"]) for o in [root] + list(root.children_recursive) if "clips" in o.keys()), [])
+    out = {}
+    for n in names:
+        a = B.bpy.data.actions.get(n)
+        if not a:
+            continue
+        key = n.split("|")[-1].lower()
+        for pre in ("female_", "male_", "character_", "armature_"):
+            key = key[len(pre):] if key.startswith(pre) else key
+        out.setdefault(key, a)
+    return out
+
+
+def play_clips(root, who, plan, seen_at):
+    """A rigged imported model (an animated pack's person) plays its own clips: Idle when standing, Walk / Run
+    while it moves, Wave / Clapping / Jump / Sitting... on those verbs - each clip repeated to fill exactly its frames
+    (NLA strips). Without this Blender showed the file's first clip all video long (Mom clapping, the worker
+    lying dead). Nothing happens for a model without a skeleton or clips."""
+    arms = [o for o in root.children_recursive if o.type == "ARMATURE"]
+    if not arms:
+        return
+    arm = arms[0]
+    clips = _clip_names(root)
+    if not clips:
+        return
+
+    def find(kind):
+        for name in CLIPS.get(kind, []):
+            if name in clips:
+                return clips[name]
+        return None
+    idle = find("idle") or next(iter(clips.values()))
+    want = {}                                        # frame -> clip
+    for fr in range(1, B.TOTAL + 1):
+        want[fr] = idle
+    for si, shot in enumerate(B.SHOTS):              # they speak: a little "talking" clip if it has one
+        if B.speaker_of(shot) == who and shot.get("line") and find("talk") not in (None, idle):
+            f0 = B.shot_info[si]["f0"]
+            for fr in range(f0, f0 + B.shot_info[si]["n"]):
+                want[fr] = find("talk")
+    for f, n, verb, p0, p1 in plan:                 # the verbs and actions given to them
+        kind = MOVING.get(verb) or verb
+        c = find(kind)
+        if c:
+            for fr in range(f, min(B.TOTAL, f + max(n, 1)) + 1):
+                want[fr] = c
+    prev = None
+    for fr in range(2, B.TOTAL + 1):                # moving across the ground = walking, whatever the verb
+        a, b_ = seen_at.get(fr - 1), seen_at.get(fr)
+        if a is not None and b_ is not None and (a - b_).length * B.FPS > 0.4 and want[fr] is idle:
+            want[fr] = find("walk") or idle
+        prev = fr
+    ad = arm.animation_data or arm.animation_data_create()
+    ad.action = None
+    for t in list(ad.nla_tracks):
+        ad.nla_tracks.remove(t)
+    track = ad.nla_tracks.new()
+    runs, start = [], 1
+    for fr in range(2, B.TOTAL + 2):
+        if fr > B.TOTAL or want[fr] is not want[start]:
+            runs.append((start, fr - 1, want[start]))
+            start = fr
+    for i, (a0, a1, act) in enumerate(runs):
+        lo_, hi_ = act.frame_range
+        clip_len = max(1.0, hi_ - lo_)
+        try:
+            st = track.strips.new(f"{who}_{i}", int(a0), act)
+        except RuntimeError:
+            continue
+        try:
+            if hasattr(st, "action_slot") and getattr(act, "slots", None) and st.action_slot is None:
+                st.action_slot = act.slots[0]
+        except Exception:
+            pass
+        st.repeat = max(0.05, (a1 - a0 + 1) / clip_len)
+        st.extrapolation = "HOLD_FORWARD" if i == len(runs) - 1 else "NOTHING"
+    print(f"[cast] {who}: plays its own clips ({', '.join(sorted({r[2].name.split('|')[-1] for r in runs}))})")
+
+
 # --------------------------------------------------------------------------- things
 def debris(name, at, colors, f_hit, count=12):
     """Bits flying out where something crashes in (incl. glass)."""
@@ -488,6 +583,7 @@ def animate_thing(who, info, side):
         vis_h, vis_w = height * size, 2 * r
     if holds:
         attach_to_hand(root, shadow, holds, [f for f, e in evs if e.get("do") != "hold"])
+    play_clips(root, who, plan, seen_at)
     if any(B.speaker_of(sh) == who and sh.get("line") for sh in B.SHOTS):
         # a person played by an imported model (it moves as a whole) who has lines: the camera frames them when
         # they speak, like a cast person with the studio body (it stayed on her - the speaker was cut off)
@@ -496,6 +592,7 @@ def animate_thing(who, info, side):
                                        aim_body=B.empty(f"aim_body_{who}", root, (0, 0, h_vis * 0.55 / size)))
         B.CAST_TRACKS[who] = {"loc": seen_at, "yaw": seen_yaw, "rig": aims, "cam_scale": h_vis / 1.55,
                               "head_dist": 1.0}
+        print(f"[cast] {who}: the camera frames them when they speak")
     for si, verb, p0, p1 in cut_plan:
         tgt = B.empty(f"cut_target_{who}", root, (0, 0, max(0.05, vis_h / size / 2)))
         CUT[si] = {"target": tgt, "center": (p0 + p1) / 2 if verb == "fly_by" else p1.copy(),
