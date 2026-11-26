@@ -311,7 +311,9 @@ async function pageCreate() {
         <small>Pick fun cards - the studio writes, builds and renders it all</small></button>
       <button id="make-series" class="hero-btn" style="--d:1"><span class="hb-ico">📺</span><b>Make a Series</b>
         <small>One idea, 1-4 episodes, each made and rendered for you</small></button>
-      <button id="make-custom" class="hero-btn hb-custom" style="--d:2"><span class="hb-ico">🪄</span><b>Custom Video</b>
+      <button id="make-batch" class="hero-btn" style="--d:2"><span class="hb-ico">🎬</span><b>Make a Batch</b>
+        <small>Several ideas at once - one video each, queued to render</small></button>
+      <button id="make-custom" class="hero-btn" style="--d:3"><span class="hb-ico">🪄</span><b>Custom Video</b>
         <small>Step by step: your idea, your look, your script, your scenes</small></button>
     </div>
     <div class="hero-foot"><span id="make-status" class="muted small"></span></div>
@@ -655,6 +657,7 @@ async function pageCreate() {
   });
   $$(".hero-btn").forEach((b) => b.addEventListener("click", (ev) => sparkle(b, ev)));
   if (CS.openWiz) { CS.openWiz = false; $("#make-custom").click(); }     // "Open in Custom Video" from the Videos page
+  $("#make-batch").onclick = guard(() => openBatchPicker());
   $("#make-all").onclick = guard(async (e) => {
     const btnEl = e.currentTarget;
     const picks = await openMakeWizard();        // the cards: place, topic, vibe, guest, time, length + a note
@@ -2167,6 +2170,46 @@ async function pageStats() {
   }));
 }
 
+// 🎬 Make a Batch (Create page): tick ideas (fresh ones first, starred on top) and/or type your own topics, then the
+// same batch dialog as the Ideas page's "Pick several"
+async function openBatchPicker() {
+  const d = await api("GET", "/api/ideas");
+  const list = d.ideas.filter((it) => !it.hidden && !it.used.length)
+    .sort((a, b) => (b.starred - a.starred) || (b.added || 0) - (a.added || 0)).slice(0, 60);
+  const picked = new Set();
+  const ok = await openModal({
+    title: "🎬 Make a Batch", wide: true,
+    body: `<p class="muted small" style="margin-top:0">Pick up to 10 - each becomes its own video (its own kind, title, script and scene).</p>
+      <label class="modal-field">Your own topics <span class="muted">(optional, one per line)</span>
+        <textarea id="bp-own" rows="3" placeholder="why cats knock things off tables&#10;what if it rained candy"></textarea></label>
+      <p class="cw-label">💡 From your ideas <span class="muted small" id="bp-n"></span></p>
+      <div class="batch-pick">${list.map((it) => `<label class="check bp-item"><input type="checkbox" data-bp="${esc(it.id)}">
+        ${it.starred ? "⭐ " : ""}${tplOf(it.template).icon || "💭"} <b>${esc(it.topic)}</b>
+        <span class="muted small">${esc(it.angle || "")}</span></label>`).join("")
+        || '<div class="empty"><p>No fresh ideas yet - type your own above, or fetch some on the 💡 Ideas page.</p></div>'}</div>`,
+    buttons: [{ label: "Cancel", value: null }, { label: "Next →", primary: true, onClick: async (m) => {
+      const own = $("#bp-own", m).value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      if (own.length + picked.size > 10) { toast("Up to 10 videos in one batch", true); return false; }
+      for (const topic of own) {
+        const it = await api("POST", "/api/ideas", { topic });
+        picked.add(it.id);
+        if (!d.ideas.find((x) => x.id === it.id)) d.ideas.push(it);
+      }
+      if (!picked.size) { toast("Pick an idea or type a topic first", true); return false; }
+      return true;
+    } }],
+    onOpen: (m) => {
+      const count = () => { $("#bp-n", m).textContent = picked.size ? `- ${picked.size} picked` : ""; };
+      $$("[data-bp]", m).forEach((c) => c.onchange = () => {
+        if (c.checked && picked.size >= 10) { c.checked = false; toast("Up to 10 videos in one batch", true); return; }
+        if (c.checked) picked.add(c.dataset.bp); else picked.delete(c.dataset.bp);
+        count();
+      });
+    },
+  });
+  if (ok) await openBatchDialog([...picked], d.ideas);
+}
+
 // 🎬 Batch from Ideas: the picked ideas -> one video each (pipeline/batch.py, through the studio's own API)
 async function openBatchDialog(ids, all) {
   const picked = ids.map((id) => all.find((x) => x.id === id)).filter(Boolean);
@@ -2188,7 +2231,7 @@ async function openBatchDialog(ids, all) {
       IDEA_PICK = null;
       toast(`Making ${picked.length} video${picked.length > 1 ? "s" : ""} - follow it at the top right ✓`);
       watchJob(job, null, (j) => toast(j.status === "done" ? "All batch videos are queued to render" : "The batch had a problem - see its log", j.status !== "done"));
-      pageIdeas();
+      if (location.hash.startsWith("#ideas")) pageIdeas();
     } }],
     onOpen: (m) => $$("[data-breg]", m).forEach((b) => b.onclick = () => {
       if (chosen.has(b.dataset.breg)) chosen.delete(b.dataset.breg); else chosen.add(b.dataset.breg);

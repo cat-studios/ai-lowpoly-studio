@@ -326,6 +326,8 @@ side so you see the arm and the thing.
 - **VRoid actors**: Assets → Actors → open an actor (or ➕ New) → Kind "Rigged model" → 📤 Upload a VRoid model
   (.vrm). It's prepared like a main character (a minute or two) and its picture follows. A VRoid actor walks, talks
   with its mouth and faces, and poses like the catgirl, with the voice you set for that actor - good for regulars.
+- **Make a Batch** on the Create page: tick some ideas (fresh ones, starred first) and/or type your own topics,
+  one per line - each becomes its own video, queued to render one after another.
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

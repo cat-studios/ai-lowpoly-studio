@@ -479,6 +479,8 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .hero-btn:hover .hb-ico { transform: scale(1.2) rotate(-10deg); }
 .hero-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #8f6fa3, 0 4px 10px rgba(0, 0, 0, .3); }
 .hero-btn.hb-custom { grid-column: 1 / -1; justify-self: center; width: min(320px, 100%); }
+.batch-pick { max-height: 340px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.batch-pick .bp-item { padding: 6px 8px; border-radius: 10px; background: var(--panel2, rgba(255,255,255,.04)); }
 .hero-foot { display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
 .small-btn { font-size: 13px; padding: 5px 12px; }
 .hero-result:not(:empty) { margin-top: 14px; }

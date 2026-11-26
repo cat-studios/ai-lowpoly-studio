@@ -203,7 +203,7 @@ def animate_person(who, info, side):
     look = dict(info.get("look") or {})
     if info.get("actor_model"):                      # a rigged actor: their own .blend, animated like a character
         from pathlib import Path
-        R = B.VRoidRig(Path(info["actor_model"]), {})
+        R = B.VRoidRig(Path(info["actor_model"]), {"tail": False})   # no procedural tail (the model has its own, or none)
         print(f"[cast] {who}: rigged actor {Path(info['actor_model']).name}")
     else:
         R = B.build_catgirl(look, cat=False)

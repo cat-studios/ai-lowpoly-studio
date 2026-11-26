@@ -243,6 +243,8 @@ def set_cafe():
         prim("ico", f"plant{i}", (x, y, 1.0), (0.55, 0.55, 0.7), color="#4caf50", subdivisions=1)
     return dict(catalog.SETS["cafe"]["marks"])
 
+PARK_TREES = []     # (x, y, leaf radius) of set_park's random trees: cameras must not end up inside one
+
 
 def set_park():
     FOG.update(color=hexcol("#a8d4ff"), start=8.0, end=34.0)
@@ -261,6 +263,7 @@ def set_park():
         prim("cyl", f"trunk{placed}", (x, y, 0.6 * s), (0.18 * s, 0.18 * s, 0.6 * s), color="#7a4a2a", vertices=5)
         prim("cone", f"leaves{placed}", (x, y, 2.1 * s), (1.0 * s, 1.0 * s, 1.2 * s),
              color=rng.choice(["#2e8b3e", "#3fa34d", "#267a36"]), vertices=6)
+        PARK_TREES.append((x, y, 1.0 * s))
         placed += 1
     # one big hero tree near the "tree" mark
     prim("cyl", "hero_trunk", (-3.2, 4.8, 1.0), (0.3, 0.3, 1.0), color="#7a4a2a", vertices=6)
@@ -1455,7 +1458,8 @@ BUILTIN_OBST = {   # hand-built sets (set_cafe / set_park): their furniture as c
 def _obstacles():
     """Footprints (x, y, radius) of the set's floor props. Things up high (lamps, posters) don't count."""
     if EP.get("set") in BUILTIN_OBST and not EP.get("set_recipe"):
-        return list(BUILTIN_OBST[EP["set"]])
+        # the park's random trees too (leaves from 1 m up, up to 1.6 m wide: a side camera ended up inside one)
+        return list(BUILTIN_OBST[EP["set"]]) + (PARK_TREES if EP["set"] == "park" else [])
     recipe = EP.get("set_recipe") or {}
     custom = recipe.get("custom_props") or {}
     try:
@@ -1878,10 +1882,15 @@ def _view_blocked(cam, tgt, fr=None):
         p = Vector((ox, oy, 0.0))
         if (p - t).length < 0.3:                         # that's the speaker herself (a cast person speaking)
             continue
-        if not cast and (r < 0.35 or (p - t).length < r + 0.35):   # small props, or the furniture she stands at
+        tree = (ox, oy, r) in PARK_TREES      # leaves at head height: in the way even when she stands beside it
+        if not cast and not tree and (r < 0.35 or (p - t).length < r + 0.35):   # small props, the furniture she stands at
             continue
+        if tree and (p - c).length < r + 0.6:                       # a tree beside the lens fills half the frame
+            return True
         u = max(0.0, min(0.85, (p - c).dot(seg) / max(seg.length_squared, 1e-6)))
-        if (c + seg * u - p).length < r * 0.85:
+        # a tree's leaves fill the frame, not just the line to her: the 9:16 frame is ~0.3 x distance wide each side
+        reach = r + 0.25 * u * seg.length if tree else r * 0.85
+        if (c + seg * u - p).length < reach:
             return True
     return False
 

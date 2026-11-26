@@ -869,6 +869,12 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   character (`blender_cast.animate_person` → `VRoidRig`) and speak with the actor's voice; dev build check fine.
 - Director moods: a mood word right after a negation (`autodirect.NEGATION`: not / n't / never / no longer, up to
   2 words between) doesn't count (`_says`) - "Just kidding, I'm not mad" got the angry pose in the VRoid Mom test.
+- VRoid Mom test (`zz_test_vroid_mom`, production): the rigged actor walks in, talks (mouth, palm-up gesture) and
+  is framed on her lines. Fixed: actor rigs got the procedural tail (`VRoidRig(..., {"tail": False})`); the
+  park's 45 random trees weren't camera blockers (`PARK_TREES` join `_obstacles`; a tree counts even beside the
+  speaker, by the frame's width (~0.25 x distance) not the sight line, and when the lens is within r + 0.6 m) - a
+  side shot was half a tree. Create page: 🎬 Make a Batch (`openBatchPicker`: tick fresh ideas and/or type
+  topics, then the Ideas page's batch dialog).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
