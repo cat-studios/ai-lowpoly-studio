@@ -430,6 +430,9 @@ def fit_score(place, sid, s):
     return (2.0 * len(q & name_w) + 1.0 * len(q & desc_w)) / (2.0 * len(q))
 
 
+HOME_WORDS = re.compile(r"\b(her room|my room|my bedroom|her bedroom|at home|home|bedroom)\b", re.I)
+
+
 def match_set(place, sets, policy="reuse"):
     """The best existing set for a place description, or "new:<place>" if none fits (or policy == "new")."""
     if place.startswith("new:"):            # already decided (the Create popup's Scenes step)
@@ -437,6 +440,8 @@ def match_set(place, sets, policy="reuse"):
     key = re.sub(r"[^a-z0-9]+", "_", place.lower()).strip("_")
     if key in sets:
         return key
+    if "home" in sets and HOME_WORDS.search(place):       # her room is the home base of the channel
+        return "home"
     if policy == "new":
         return "new:" + place
     q = _words(place)

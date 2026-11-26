@@ -298,6 +298,9 @@ side so you see the arm and the thing.
 - **💬 Conversation** (a new kind of video): she and a co-star (pick one under "Also in it") talk *with each
   other* - each turns to the other while talking, with two-shots of both - and only the opening and the last line
   go to the viewer. Any script where two main characters go back and forth gets this too.
+- **🏠 Her room** (Sets → 🏠 Her room): make it once and "My Room" becomes her home set - any script that says
+  "her room", "home" or "bedroom" goes there. After every video she keeps one thing from it (a cutaway, something
+  she held) as a souvenir along the walls - the newest 10. Remove one there; switch collecting off in Settings.
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

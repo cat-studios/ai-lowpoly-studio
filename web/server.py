@@ -1308,6 +1308,20 @@ class Handler(BaseHTTPRequestHandler):
                       result={"video": f"/media/{name}.mp4", "sheet": f"/media/{name}_shots.png", "episode": p.stem})
             return self.send_json(submit(job).to_dict())
 
+        if head == "home":                            # her room: make it, list / remove its souvenirs
+            import home
+            if method == "GET":
+                rec = json.loads(home.path().read_text(encoding="utf-8-sig")) if home.exists() else {}
+                return self.send_json({"exists": home.exists(), "on": home.on(),
+                                       "souvenirs": [{k: v for k, v in s.items() if k != "def"}
+                                                     for s in rec.get("souvenirs") or []]})
+            if method == "POST" and arg == "make":
+                cmd = [sys.executable, "-u", str(PIPE / "home.py"), "make"]
+                return self.send_json(submit(Job("set", "Make her room", cmd, result={"set": home.HOME_ID})).to_dict())
+            if method == "DELETE" and arg == "souvenir" and len(parts) > 2:
+                home.remove(parts[2])
+                return self.send_json({"ok": True})
+
         if head == "castcards" and method == "POST":  # Custom Video: who and what appears, before the render
             import castcards
             ep = (self.body_json() or {}).get("episode") or {}

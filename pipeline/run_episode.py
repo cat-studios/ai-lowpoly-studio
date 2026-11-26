@@ -1689,6 +1689,11 @@ def main():
         AC.remember(ep)
     except Exception as exc:
         print(f"  (regulars not updated: {exc.__class__.__name__})")
+    try:                                            # her room keeps one thing from this video
+        import home
+        home.collect(ep)
+    except Exception as exc:
+        print(f"  (no souvenir: {exc.__class__.__name__}: {str(exc)[:120]})")
 
     # 6. the check: what a person reviewing the video would look for (shown as ⚠️ on the Videos page)
     report(0.995, "Checking the video")

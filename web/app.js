@@ -1638,7 +1638,8 @@ async function pageSets() {
       <label>Theme<select id="g-theme">${themeOptions(themes, "auto")}</select></label>
       <label>ComfyUI textures<select id="g-comfy">${options(["required", "auto", "off"], mode, COMFY_MODES)}</select></label>
       <button id="g-go" class="primary">🎲 Generate new set</button>
-      <button id="g-starter">Generate 3 Starter Sets</button></div>
+      <button id="g-starter">Generate 3 Starter Sets</button>
+      <button id="g-home" title="Her room: the home set that keeps a souvenir from every video">🏠 Her room</button></div>
       <div class="inline-job" id="g-starter-job"></div>
       <p class="muted small" style="margin:8px 0 0">ComfyUI: <span id="g-comfy-st"><span class="pill">checking…</span></span>
         — <b>Required</b>: always textures the floor, walls or sky and every picture (fails if ComfyUI is off) ·
@@ -1664,6 +1665,7 @@ async function pageSets() {
     const el = $("#g-comfy-st");
     if (el) el.innerHTML = cs.ok ? `<span class="pill ok">connected</span> ${esc((cs.checkpoints || []).join(", "))}` : `<span class="pill err">offline</span> ${esc(cs.error || "")}`;
   }).catch(() => {});
+  $("#g-home").onclick = guard(() => openHome());
   $("#g-starter").onclick = guard(async () => {
     const job = await api("POST", "/api/sets/starter", {});
     watchJob(job, $("#g-starter-job"), guard(async (j) => {
@@ -2010,6 +2012,28 @@ async function pickImportedModel(startCat = "", query = "") {
       $("#pm-q", m).oninput = () => { shown = 120; draw(); };
       draw();
     },
+  });
+}
+
+// 🏠 her room (pipeline/home.py): make it once, then see / remove the souvenirs it keeps from the videos
+async function openHome() {
+  const h = await api("GET", "/api/home");
+  openModal({
+    title: "🏠 Her room",
+    body: h.exists ? `<p class="muted small">“My Room” is her home set - pick it like any set. After every video she keeps one thing from it here (a cutaway, something she held), the newest ${10} along the walls.${h.on ? "" : " <b>Collecting is off</b> (Settings → Sets)."}</p>
+        ${h.souvenirs.length ? `<div class="chips">${h.souvenirs.slice().reverse().map((s) => `<span class="chip" title="From: ${esc(s.from || "")}">${esc(s.kind.replace(/_/g, " "))}<button class="chip-x" data-souv="${esc(s.kind)}" title="Take it out of her room">✕</button></span>`).join("")}</div>`
+          : '<p class="muted">No souvenirs yet - they arrive with your next videos.</p>'}`
+      : `<p>She doesn't have a room yet. Make it once (a hand-built bedroom, a few minutes) and it becomes her home set - and it starts collecting a souvenir from every video you make.</p>`,
+    buttons: [...(h.exists ? [] : [{ label: "🏠 Make her room", primary: true, onClick: async () => {
+      const job = await api("POST", "/api/home/make");
+      toast("Making her room - follow it at the top right");
+      watchJob(job, null, (j) => { toast(j.status === "done" ? "Her room is ready ✓" : "Couldn't make her room - see the log", j.status !== "done"); if (location.hash === "#sets") pageSets(); });
+    } }]), { label: "Close" }],
+    onOpen: (m, close) => $$("[data-souv]", m).forEach((b) => b.onclick = guard(async () => {
+      await api("DELETE", `/api/home/souvenir/${encodeURIComponent(b.dataset.souv)}`);
+      b.closest(".chip").remove();
+      toast("Taken out of her room");
+    })),
   });
 }
 
@@ -2385,6 +2409,7 @@ const S_TABS = {
       ["sets.use_ollama", "Ollama designs new sets & sounds", "bool", {}, "Off = sets and generated sounds are rolled purely at random."],
       ["sets.look_check", "Check that new sets look like the place", "bool", {}, "The picture model looks at each new set and the AI fixes ones that read as another place (adds a few minutes)."],
       ["sets.prop_check", "Check that new props look right", "bool", {}, "Each new prop is looked at; one that fails is rebuilt, then drawn as a picture (about a minute per new prop)."],
+      ["home.souvenirs", "Her room keeps a souvenir from every video", "bool", {}, "After each render one thing from the video (a cutaway, something she held) is placed in “My Room” (Sets → 🏠 Her room)."],
     ]],
     ["Ideas (trending topics for the Ideas page)", [
       ["ideas.google_trends", "🔥 Google Trends (US, UK, Lithuania)", "bool", {}],

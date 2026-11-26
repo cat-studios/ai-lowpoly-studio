@@ -75,6 +75,7 @@ DEFAULTS = {
                "design_url": "",                     # another Ollama just for that ("" = "url"; unreachable = "url")
                "design_scope": "3d"},                # "3d" = only 3D design goes there; "text" = all the AI's writing
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
+    "home": {"souvenirs": True},     # her room (sets/home.json) keeps one thing from every video
     "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic
              "use_ollama": True,           # let Ollama design new sets (falls back to pure random)
              "look_check": True,           # the picture model checks new sets (and redesigns ones that don't fit)

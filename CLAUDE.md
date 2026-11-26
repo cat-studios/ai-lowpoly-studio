@@ -767,6 +767,14 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   every other line of the run is a two-shot (`both`, unless the brackets chose the camera). Blender `fix_faces(segs,
   who)`: a speaker with `talk_to` turns `TALK_TURN` 0.65 of the way towards them (`_pos_at`). Checked with a
   dev-only copy of her profile as a co-star (`assets/characters/twin.json`, `episodes/zz_check_talk.json`).
+- **Her room** (`pipeline/home.py`, set id `home`, "My Room"): `make()` = `make_set.create_set(keep_id="home",
+  style="base")` once (Sets → 🏠 Her room → Make, `POST /api/home/make`, job kind `set`). After every render
+  `home.collect(ep)` (Settings `home.souvenirs`, default on) keeps one thing from the video - a cutaway subject
+  first, then something she held, then another thing; never people, crowds or explainers - in the recipe's
+  `souvenirs` (newest `MAX_SOUVENIRS` 10) and `place()` lays them out at `SPOTS` along the walls inside the wide
+  shot, clear of the room's own props (0.9 m), as `souv_<kind>` custom props scaled to ~`SOUVENIR_H` 0.6 m,
+  `souvenir: True`. `GET /api/home`, `DELETE /api/home/souvenir/<kind>`. `autodirect.match_set`: `HOME_WORDS`
+  ("her room", "home", "bedroom") pick it when it exists. Not made in dev (needs the AI dresser): try it in production.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
