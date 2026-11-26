@@ -417,6 +417,7 @@ def animate_thing(who, info, side):
     pos, present, yaw = (Vector((*B.MARKS[start], 0.0)) if start in B.MARKS else spot({}, 1, side, r, claim=False)), \
         bool(start) or (evs and first not in ("enter", "crash_in", "fall", "fly_by", "appear", "hold")), 0.0
     pi = 0
+    seen_at, seen_yaw = {}, {}            # where it is each frame (a speaking imported person needs a camera track)
     for fr in range(1, B.TOTAL + 1):
         while pi < len(plan) and fr >= plan[pi][0] + plan[pi][1] + (round(0.6 * B.FPS) if plan[pi][2] == "crash_in" else 0):
             f, n, verb, p0, p1 = plan[pi]
@@ -471,6 +472,7 @@ def animate_thing(who, info, side):
         root.location = loc
         root.rotation_euler = (tilt, 0.0, ry)
         root.scale = (max(sc * size, 1e-4),) * 3
+        seen_at[fr], seen_yaw[fr] = loc.copy(), ry
         for path in ("location", "rotation_euler", "scale"):
             root.keyframe_insert(path, frame=fr)
         shadow["r"] = max(0.2, r * 0.8) * max(sc, 1e-4)
@@ -486,6 +488,14 @@ def animate_thing(who, info, side):
         vis_h, vis_w = height * size, 2 * r
     if holds:
         attach_to_hand(root, shadow, holds, [f for f, e in evs if e.get("do") != "hold"])
+    if any(B.speaker_of(sh) == who and sh.get("line") for sh in B.SHOTS):
+        # a person played by an imported model (it moves as a whole) who has lines: the camera frames them when
+        # they speak, like a cast person with the studio body (it stayed on her - the speaker was cut off)
+        h_vis = max(0.3, height * size)
+        aims = B.types.SimpleNamespace(aim_head=B.empty(f"aim_head_{who}", root, (0, 0, h_vis * 0.9 / size)),
+                                       aim_body=B.empty(f"aim_body_{who}", root, (0, 0, h_vis * 0.55 / size)))
+        B.CAST_TRACKS[who] = {"loc": seen_at, "yaw": seen_yaw, "rig": aims, "cam_scale": h_vis / 1.55,
+                              "head_dist": 1.0}
     for si, verb, p0, p1 in cut_plan:
         tgt = B.empty(f"cut_target_{who}", root, (0, 0, max(0.05, vis_h / size / 2)))
         CUT[si] = {"target": tgt, "center": (p0 + p1) / 2 if verb == "fly_by" else p1.copy(),

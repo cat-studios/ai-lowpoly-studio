@@ -815,6 +815,13 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   (`manual`) work without a token. `summary()` = rows (+ `facts`: kind, seconds from timing.json, set, hook) and
   averages by kind / length bucket / posted cover / set. The Instagram fetch is untested (no token in dev); Postiz
   isn't used for numbers (no analytics in its public API that we use).
+- **Production test** (`zz_test_new_features`, 2026-11-26): hold (imported "Gold Coin Stack"), gasp, regular's
+  lines remembered, blush, rain at sunset, eye-roll, wink, confetti, night at the end, cover A + B, check clean.
+  Fixed after it: a cast person played by an IMPORTED model (an actor of kind imported, `imported.person_def`, a
+  card's `model_id`) is a thing in Blender, and the camera only knew speakers with a body track - on her lines it
+  stayed on the catgirl and cut her off. `blender_cast` now records a speaking thing's position/facing per frame
+  (`seen_at`/`seen_yaw`) and registers `CAST_TRACKS[who]` with `aim_head`/`aim_body` empties on it. Not used for the
+  test: the `pokemon` co-star profile (a franchise character - original content only).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
