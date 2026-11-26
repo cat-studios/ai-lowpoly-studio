@@ -504,10 +504,27 @@ def hook_rule(rng=random):
     return f"Open this one with {rng.choice(HOOK_STYLES)}."
 
 
+def pick_brainrot_words(bank, n=3, rng=random):
+    """The words a brain rot video uses: n random ones from the bank (Settings -> Brain rot mode)."""
+    bank = [str(w).strip() for w in (bank or []) if str(w).strip()]
+    return rng.sample(bank, min(max(1, int(n)), len(bank))) if bank else []
+
+
+def brainrot_rule(words):
+    """The writer's brain rot style: short chaotic lines, a story that jumps about, and the chosen words."""
+    return ("BRAIN ROT STYLE: very short, chaotic lines (3-8 words), the story jumps and escalates absurdly, a random "
+            "tangent every few lines, and a nonsense callback at the end. Use each of these words at least once, where "
+            "it fits naturally (never force one into a sentence that doesn't need it): "
+            + ", ".join(words) + ". Still family-friendly.")
+
+
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
-                    others=None, polish=True, scenes="auto", explain=False):
+                    others=None, polish=True, scenes="auto", explain=False, brainrot=None):
     """others: the other main characters in the video, [{"name", "about"}] - they get some lines too.
-    scenes: "stay" (one place), "move" (the story travels: 1-3 [@ place] changes) or "auto" (only when it moves)."""
+    scenes: "stay" (one place), "move" (the story travels: 1-3 [@ place] changes) or "auto" (only when it moves).
+    brainrot: the words to use (pick_brainrot_words) - the brain rot style is added to the writer's extra notes."""
+    if brainrot:
+        extra = (extra + " " + brainrot_rule(brainrot)).strip()
     others = [o for o in (others or []) if isinstance(o, dict) and o.get("name")]
     cams = ", ".join(catalog.CAMERAS)
     anims = ", ".join(k for k in catalog.ANIMS if k not in ("sit", "fall", "float", "turn"))   # no floor-sitting

@@ -306,6 +306,8 @@ async function pageCreate() {
   app.innerHTML = `
   <section class="panel create-hero">
     <h2 class="hero-title">✨ What shall we make today?</h2>
+    <label class="check brainrot-check" style="display:flex;justify-content:center;align-items:center;gap:8px;margin:4px 0 12px;cursor:pointer" title="Short chaotic lines, fast cuts, one word at a time, with the words from Settings → Brain rot mode">
+      <input type="checkbox" id="br-on" ${brainrotOn() ? "checked" : ""}> 🧠 Brain rot mode</label>
     <div class="hero-btns">
       <button id="make-all" class="hero-btn" style="--d:0"><span class="hb-ico make-roll">🎲</span><b>Make a Random Video</b>
         <small>Pick fun cards - the studio writes, builds and renders it all</small></button>
@@ -583,8 +585,10 @@ async function pageCreate() {
   $("#ai-go").onclick = guard(async (e) => busy(e.currentTarget, "🤖 Writing…", async () => {
     if (!CS.ep.title.trim()) throw new Error("Give the episode a title first (or use ✨ Title ideas)");
     const t0 = Date.now();
+    CS.ep.brainrot = brainrotOn();
     const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: CS.ep.set, scene_policy: $("#scene-policy")?.value || "reuse", character: $("#ep-char").value,
-      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template || "" });
+      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template || "",
+      brainrot: brainrotOn() });
     $("#script").value = r.script; CS.scriptDraft = r.script;
     if (r.set && r.set !== CS.ep.set) { CS.ep.set = r.set; refreshScene(); toast(`Set: ${META.catalog.sets[r.set]?.name || "new - " + r.set.slice(4)}`); }
     $("#ai-status").textContent = `${r.lines.length} lines from ${r.model} in ${((Date.now() - t0) / 1000).toFixed(1)}s`;
@@ -598,7 +602,8 @@ async function pageCreate() {
     if (!script.trim()) throw new Error("Write a script first");
     if (ask && CS.ep.shots.length && !(await uiConfirm("Replace the current shots with new ones from the script? Changes you made to the shots are lost.", { title: "Direct shots", ok: "Replace shots" }))) return;
     const castAI = $("#cast-ai")?.checked;
-    const r = await api("POST", "/api/autodirect", { script, set: CS.ep.set, start: CS.ep.start, cast: CS.ep.cast || {}, co_stars: CS.ep.co_stars || [], beat_words: CS.beats === false ? 0 : 4,
+    const r = await api("POST", "/api/autodirect", { script, set: CS.ep.set, start: CS.ep.start, cast: CS.ep.cast || {}, co_stars: CS.ep.co_stars || [],
+      beat_words: brainrotOn() ? brainrotBeats() : (CS.beats === false ? 0 : 4),
       beat_sets: (CS.places.length + CS.newPlaces.length) > 1 ? [...CS.places, ...CS.newPlaces.map((p) => "new:" + p)] : [],
       cast_ai: castAI, character: $("#ep-char")?.value, scene_ai: $("#scene-ai")?.checked, title: CS.ep.title,
       scene_policy: $("#scene-policy")?.value || "reuse", template: CS.ep.template || "" });
@@ -657,6 +662,7 @@ async function pageCreate() {
     $(r.how === "render" ? "#render" : "#save").click();
   });
   $$(".hero-btn").forEach((b) => b.addEventListener("click", (ev) => sparkle(b, ev)));
+  $("#br-on").onchange = (e) => { localStorage.setItem("lp_brainrot", e.target.checked ? "1" : "0"); toast(e.target.checked ? "Brain rot mode on" : "Brain rot mode off"); };
   if (CS.openWiz) { CS.openWiz = false; $("#make-custom").click(); }     // "Open in Custom Video" from the Videos page
   $("#make-batch").onclick = guard(() => openBatchPicker());
   $("#idle-toggle").onclick = guard(async (e) => {
@@ -707,8 +713,10 @@ async function pageCreate() {
     setVal("#ep-music", ""); setVal("#ep-amb", ""); setVal("#ep-look", "");
     status("2/5 Writing the script…");
     // the script is written for the picked place (the set is made after it) - not for whatever set was selected
+    CS.ep.brainrot = brainrotOn();
     const r = await api("POST", "/api/ai/script", { title: CS.ep.title, set: "new:" + picks.scene, scene_policy: "reuse", character: $("#ep-char")?.value || "",
-      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template });
+      model: CS.model, lines: CS.lines, tone: CS.tone, extra: CS.extra, co_stars: CS.ep.co_stars || [], template: CS.ep.template,
+      brainrot: brainrotOn() });
     setVal("#script", r.script); CS.scriptDraft = r.script;
     // the scene comes from the title and the script, not the other way round
     status("3/5 Making a scene that fits the script (a few minutes)…");
@@ -812,6 +820,10 @@ const MW_STEPS_BASE = [
     "a foggy dawn", "a stormy night", "night turning into dawn"] },
   { key: "length", q: "How long?", icon: "⏱", cards: ["short (about 20 s)", "medium (about 40 s)", "long (about a minute)"] },
 ];
+// 🧠 Brain rot mode: the checkmark on the Create page (kept in this browser). Its words and pacing: Settings → Brain rot mode
+const brainrotOn = () => localStorage.getItem("lp_brainrot") === "1";
+const brainrotBeats = () => Number(META?.settings?.brainrot?.beat_words ?? 2);
+
 const MW_LIGHT = { day: "day", sunny: "day", morning: "day", sunset: "sunset", golden: "sunset", evening: "sunset",
   night: "night", starry: "night", stormy: "night", dawn: "sunset", foggy: "sunset", rainy: "sunset", snowy: "day" };
 
@@ -2249,7 +2261,7 @@ async function openBatchDialog(ids, all) {
       <label class="modal-field">A note for every script <span class="muted">(optional)</span><input type="text" id="bt-note" placeholder="e.g. end with a question for the viewers"></label>
       <p class="muted small">Each idea gets its own title, script, scene and shots, then waits in the render queue - follow them at the top right. New places are built as hand-built sets.</p>`,
     buttons: [{ label: "Cancel", value: null }, { label: "🎬 Make them", primary: true, onClick: async (m) => {
-      const job = await api("POST", "/api/batch", { ideas: picked.map((it) => it.id), length: $("#bt-len", m).value,
+      const job = await api("POST", "/api/batch", { ideas: picked.map((it) => it.id), length: $("#bt-len", m).value, brainrot: brainrotOn(),
         note: $("#bt-note", m).value.trim(), regulars: [...chosen], model: CS.model });
       IDEA_PICK = null;
       toast(`Making ${picked.length} video${picked.length > 1 ? "s" : ""} - follow it at the top right ✓`);
@@ -2545,6 +2557,19 @@ const S_TABS = {
       ["look.vignette", "Vignette", "bool"],
     ]],
   ]],
+  brainrot: ["🧠 Brain rot mode", [
+    ["Word bank", [
+      ["brainrot.words", "Word bank", "list", {}, "One word or phrase per line. Each brain rot video uses a few of these at random (how many: below). Keep them family-friendly - they're spoken and shown."],
+      ["brainrot.words_per_video", "Words used per video", "range", { min: 1, max: 8, step: 1 }, "How many bank words each script is asked to use."],
+    ]],
+    ["Pace & captions", [
+      ["brainrot.beat_words", "Words per shot", "range", { min: 1, max: 6, step: 1 }, "Smaller = faster cuts (the reference video changes about every second)."],
+      ["brainrot.one_word_captions", "One word on screen at a time", "bool", {}, "The captions show a single word at a time, like the reference video."],
+    ]],
+    ["How it's used", [
+      ["brainrot.note", "", "note", {}, "Turn it on with the 🧠 checkmark on the Create page. It applies to random videos, Custom Video, and batches from the Ideas page. Scripts are written short and chaotic, with a story that jumps about, using the words above. The checkmark is remembered in this browser."],
+    ]],
+  ]],
   text: ["🔤 Text & branding", [
     ["Captions", [
       ["captions.mode", "Caption style", "select", { options: ["words", "line", "off"] }, "words = a few words at a time mid-screen (how many: the Create page's caption style), line = the whole line."],
@@ -2777,6 +2802,7 @@ function drawSettingsTab(st) {
     return;
   }
   const row = ([key, label, type, o = {}, help]) => {
+    if (type === "note") return `<p class="muted small">${esc(help)}</p>`;
     const v = getPath(st, key);
     let input = "", val = "<span></span>";
     const opts = typeof o.options === "function" ? o.options() : o.options;
@@ -2793,7 +2819,8 @@ function drawSettingsTab(st) {
         <select data-key="${key}" data-async="ollamapick" data-from="${esc(o.from)}" ${o.big ? 'data-big="1"' : ""} data-first="${esc(o.first || "")}" style="flex:1"><option value="${esc(v)}">${esc(v || o.first || "")}</option></select>
         <button type="button" class="om-refresh" title="Look again at the server's models">🔄</button></div><div class="om-status small" style="margin-top:4px"></div></div>`;
     else if (type === "comfyckpt") input = `<select data-key="${key}" data-async="ckpt"><option value="${esc(v)}">${esc(v || "First available")}</option></select>`;
-    else if (type === "triple") input = `<div class="triple">${[0, 1, 2].map((i) => `<input type="number" data-key="${key}" data-idx="${i}" min="${o.min}" max="${o.max}" step="${o.step}" value="${v[i]}">`).join("")}</div>`;
+    else if (type === "list") input = `<textarea data-key="${key}" data-list="1" rows="8">${esc((v || []).join("\n"))}</textarea>`;
+    else if (type === "triple") input =`<div class="triple">${[0, 1, 2].map((i) => `<input type="number" data-key="${key}" data-idx="${i}" min="${o.min}" max="${o.max}" step="${o.step}" value="${v[i]}">`).join("")}</div>`;
     return `<div class="setting"><label style="color:var(--text);font-size:13px">${esc(label)}</label>${input}${val}${help ? `<div class="help muted small">${esc(help)}</div>` : ""}</div>`;
   };
   body.innerHTML = (S_TAB === "look" ? `<div class="panel"><h3>Presets</h3><div class="presets">${Object.keys(META.presets).map((p) => `<button data-preset="${esc(p)}">${esc(p)}</button>`).join("")}</div>
@@ -2808,6 +2835,7 @@ function drawSettingsTab(st) {
   $$("[data-key]", body).forEach((el) => el.addEventListener(el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input", () => {
     const key = el.dataset.key;
     let v = el.type === "checkbox" ? el.checked : el.value;
+    if (el.dataset.list) v = el.value.split("\n").map((s) => s.trim()).filter(Boolean);     // one per line
     if (el.type === "range" || el.type === "number" || ["render.fps", "comfy.texture_size"].includes(key)) v = Number(v);
     if (el.dataset.idx !== undefined) { const arr = [...getPath(st, key)]; arr[+el.dataset.idx] = v; v = arr; }
     setPath(st, key, v);

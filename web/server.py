@@ -1073,13 +1073,16 @@ class Handler(BaseHTTPRequestHandler):
                 import actors as AC                            # regulars picked in Custom Video: the writer knows them
                 regs = [str(r) for r in (b.get("regulars") or []) if re.fullmatch(r"[a-z0-9_]{1,48}", str(r))]
                 extra = " ".join(x for x in (tpl["script"], AC.writer_note(regs), b.get("extra", "")) if x)
+                br = S.load_settings().get("brainrot") or {}           # 🧠 brain rot mode: the words from its bank
                 lines = llm.generate_script(o["url"], model, b.get("title") or "an ordinary day", char,
                                             {"name": s["name"], "description": s["description"],
                                              "marks": list(s["marks"])},
                                             lines=int(b.get("lines", 6)), tone=b.get("tone") or tpl["tone"],
                                             extra=extra, temperature=o["temperature"], others=others,
                                             scenes=str(b.get("scenes") or "auto"),
-                                            explain=b.get("template") == "how_it_works")   # [show:] models only there
+                                            explain=b.get("template") == "how_it_works",   # [show:] models only there
+                                            brainrot=(llm.pick_brainrot_words(br.get("words"), br.get("words_per_video", 3))
+                                                      if b.get("brainrot") else None))
                 return self.send_json({"lines": lines, "script": "\n".join(lines), "model": model, "set": chosen})
             if arg == "titles":
                 tpl = templates.get(b.get("template")) if b.get("template") else None
@@ -1340,7 +1343,8 @@ class Handler(BaseHTTPRequestHandler):
                     "length": str(b.get("length") or "medium"), "character": str(b.get("character") or ""),
                     "note": str(b.get("note") or "")[:300], "model": str(b.get("model") or ""),
                     "regulars": [str(r) for r in (b.get("regulars") or []) if re.fullmatch(r"[a-z0-9_]{1,48}", str(r))],
-                    "render": True, "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}"}
+                    "render": True, "base": f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}",
+                    "brainrot": bool(b.get("brainrot"))}                  # 🧠 the Create page's checkmark
             f = ROOT / "build" / "series" / f"{stamp()}-batch.json"
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(json.dumps(spec), encoding="utf-8")

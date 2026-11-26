@@ -83,6 +83,11 @@ DEFAULTS = {
     "youtube": {"channel_id": "", "client_id": "", "client_secret": "", "refresh_token": ""},
     "facts": {"check": True},            # Quick facts / Myth or fact: claims checked on Wikipedia before the render
     # the weekly plan (pipeline/weekly.py): on that day + hour, fresh ideas -> a batch of videos -> Postiz drafts
+    # 🧠 brain rot mode (the Create page's checkmark): the word bank and how it's made (Settings -> Brain rot mode)
+    "brainrot": {"words": ["skibidi", "rizz", "sigma", "ohio", "aura", "mewing", "fanum tax", "bussin", "no cap",
+                           "lowkey", "sus", "it's giving", "delulu", "npc", "main character energy", "goofy", "chat",
+                           "unhinged", "gigachad", "on god"],
+                 "words_per_video": 3, "beat_words": 2, "one_word_captions": True},
     # idle auto-make: after `minutes` with nobody using the studio (and nothing running), make `count` videos from fresh ideas
     "idle": {"on": False, "minutes": 10, "count": 1, "per_day": 3, "random_chance": 50},
     "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True},     # her room (sets/home.json) keeps one thing from every video

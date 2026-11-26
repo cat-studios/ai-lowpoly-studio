@@ -1583,8 +1583,10 @@ def main():
 
     # 3. captions + ffmpeg
     res = ep.get("render_res", [216, 384])
-    write_captions(build / "captions.ass", ep, ep["shots"], timing, res,
-                   S.deep_merge(cfg["captions"], ep.get("captions", {})),
+    cap = S.deep_merge(cfg["captions"], ep.get("captions", {}))
+    if ep.get("brainrot") and (cfg.get("brainrot") or {}).get("one_word_captions", True):
+        cap["group"] = 1                       # brain rot mode: one word at a time, like the reference video
+    write_captions(build / "captions.ass", ep, ep["shots"], timing, res, cap,
                    S.deep_merge(cfg["branding"], ep.get("branding", {})))
     out_dir = ROOT / "output" / ("previews" if args.preview else "")
     out_dir.mkdir(parents=True, exist_ok=True)

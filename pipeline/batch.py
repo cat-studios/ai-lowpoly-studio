@@ -66,6 +66,9 @@ def main(spec_path):
             rnd = idea.get("random")                     # a random video: its place, vibe and length (randomvid.py)
             if rnd:
                 lo, hi = rnd["lines"]
+            br_on = bool(spec.get("brainrot") or idea.get("brainrot"))       # 🧠 brain rot mode (Settings tab)
+            br = S.load_settings().get("brainrot") or {}
+            beat = int(br.get("beat_words", 2)) if br_on else 4
             step(0.1, "writing the script")
             r = call(base, "POST", "/api/ai/script", {
                 "title": title, "set": f"new:{rnd['scene']}" if rnd else "auto", "scene_policy": "reuse",
@@ -74,7 +77,8 @@ def main(spec_path):
                 "template": tpl_id, "regulars": spec.get("regulars") or [],
                 "extra": randomvid.extra(rnd) if rnd else
                 ((f"The video's angle: {idea['angle']}." if idea.get("angle") else "")
-                 + (f" {spec['note']}" if spec.get("note") else ""))})
+                 + (f" {spec['note']}" if spec.get("note") else "")),
+                "brainrot": br_on})                      # the server picks the words from the bank
             print(f"\n== {i}. {title}  [{tpl['name']}, set {r.get('set')}]\n{r['script']}")
             set_id, start = r["set"], None
             if rnd:                                      # the set for the picked place, made from the title and the script
@@ -85,13 +89,15 @@ def main(spec_path):
                 set_id, start = wait_job(base, job["id"])["result"]["set"], "front"
             step(0.5, "directing the shots")
             d = call(base, "POST", "/api/autodirect", {
-                "script": r["script"], "set": set_id, "start": start, "cast": {}, "co_stars": [], "beat_words": 4,
+                "script": r["script"], "set": set_id, "start": start, "cast": {}, "co_stars": [], "beat_words": beat,
                 "beat_sets": [], "cast_ai": True, "scene_ai": True, "character": spec.get("character") or "",
                 "title": title, "scene_policy": "reuse", "template": tpl_id})
             ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],
                   "template": tpl_id, "idea": idea.get("id"),
                   "set_style": rnd["style"] if rnd else (spec.get("set_style") or "base"),
                   "batch": {"id": stamp, "part": i, "of": len(ideas)}}      # the Videos page's 🎬 Batch pill
+            if br_on:
+                ep["brainrot"] = True                  # one-word captions at render (run_episode.py)
             if spec.get("variation_of"):              # 🔁 a part 2 / another kind of video of an earlier one
                 ep.pop("batch")
                 ep["variation_of"] = spec["variation_of"]
