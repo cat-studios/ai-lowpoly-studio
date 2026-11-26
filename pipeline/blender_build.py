@@ -434,8 +434,13 @@ FACE = {
     "sad":       {"Fcl_EYE_Sorrow": 1.0, "Fcl_BRW_Sorrow": 1.0, "Fcl_MTH_Sorrow": 0.6},
     "smug":      {"Fcl_EYE_Fun": 0.8, "Fcl_BRW_Fun": 1.0, "Fcl_MTH_Fun": 0.8},
     "scared":    {"Fcl_EYE_Surprised": 0.7, "Fcl_BRW_Sorrow": 1.0, "Fcl_MTH_Small": 0.6},
+    # close-up reactions (2026-11-26): one eye shut + a sly smile; a shy smile with worried brows (+ the cheek
+    # blush discs); half-lidded "ugh" (+ the eye bones rolling up, face_extras)
+    "wink":      {"Fcl_EYE_Close_R": 1.0, "Fcl_MTH_Fun": 0.8, "Fcl_BRW_Fun": 0.7},
+    "blush":     {"Fcl_EYE_Joy": 0.45, "Fcl_BRW_Sorrow": 0.5, "Fcl_MTH_Small": 0.5},
+    "eyeroll":   {"Fcl_EYE_Fun": 0.45, "Fcl_BRW_Angry": 0.3, "Fcl_MTH_Down": 0.4},
 }
-EYES_CLOSED_EXPR = {"happy"}   # don't blink over closed "^^" eyes
+EYES_CLOSED_EXPR = {"happy", "wink"}   # don't blink over closed "^^" eyes (or the wink's shut eye)
 
 
 def attach_to_bone(obj, arm, bone_name, world_loc):
@@ -482,6 +487,13 @@ class VRoidRig:
             p.rotation_mode = "QUATERNION"
         # rest orientation of each bone in world space (armature sits at the origin)
         self.rest = {k: p.bone.matrix_local.to_quaternion() for k, p in self.pb.items()}
+        for side in "LR":                   # VRoid eye bones (eye-roll); other models just don't roll their eyes
+            n = f"J_Adj_{side}_FaceEye"
+            if n in bones:
+                pb = self.arm.pose.bones[n]
+                pb.rotation_mode = "QUATERNION"
+                self.pb["eye" + side] = pb
+                self.rest["eye" + side] = pb.bone.matrix_local.to_quaternion()
         # T-pose -> arms down: rotation taking the rest arm direction to straight down
         self.arm_down = {}
         for side in "LR":
@@ -501,6 +513,21 @@ class VRoidRig:
         self.face_now = {}
         self.hand = (self.arm, B["handR"] if B["handR"] in bones else B["armR"])   # what held things follow
         self.height = head.z + 0.25
+        # blush: two soft pink discs on her cheeks, placed from the eyes (any VRoid face), grown in by face_extras
+        self.blush = []
+        eyes = [bones.get(f"J_Adj_{s}_FaceEye") for s in "LR"]
+        if all(eyes) and B["head"] in bones:
+            eL, eR = eyes[0].head_local, eyes[1].head_local
+            d = max(0.01, (eL - eR).length)
+            for i, e in enumerate((eL, eR)):
+                out = 1 if e.x >= (eL.x + eR.x) / 2 else -1
+                pos = Vector(((eL.x + eR.x) / 2 + out * 1.25 * d, e.y - 1.75 * d, e.z - 1.15 * d))
+                holder = empty(f"blush{i}")
+                attach_to_bone(holder, self.arm, B["head"], pos)
+                prim("cyl", f"blushdisc{i}", (0, 0, 0), (0.5 * d, 0.22 * d, 0.004), rot=(math.pi / 2, 0, 0),
+                     color=look.get("blush_color", "#ffa3bd"), parent=holder, vertices=12, unlit=True)
+                holder.scale = (1e-4,) * 3
+                self.blush.append(holder)
         # aim points for the cameras
         self.aim_head = empty("aim_head")
         attach_to_bone(self.aim_head, self.arm, BONES["head"], Vector((0, 0, head.z + 0.08)))
@@ -559,6 +586,12 @@ class VRoidRig:
         E = lambda x, y, z: Euler((x, y, z), "XYZ").to_quaternion()
         self.root.location = p["loc"]
         self.root.rotation_euler = (0, 0, p["yaw"])
+        up, across = p.get("eye_up", 0.0), p.get("eye_side", 0.0)          # eye-roll (keyed every frame)
+        self._set("eyeL", E(-up, 0, across), fr)
+        self._set("eyeR", E(-up, 0, across), fr)
+        for b in self.blush:
+            b.scale = (max(1e-4, p.get("blush", 0.0)),) * 3
+            b.keyframe_insert("scale", frame=fr)
         self.root.keyframe_insert("location", frame=fr)
         self.root.keyframe_insert("rotation_euler", frame=fr)
         write_shadow(self.shadow, p["loc"], fr)
@@ -1320,7 +1353,23 @@ EXPRESSIONS = {
     "sad":       dict(eye=[1.0, 0.8], brow=-0.45, brow_up=-0.005, mouth=[0.8, 1.0]),
     "smug":      dict(eye=[1.0, 0.5], brow=-0.15, brow_up=0.015, mouth=[1.5, 1.0]),
     "scared":    dict(eye=[0.8, 1.2], brow=-0.4, brow_up=0.03, mouth=[1.0, 2.0]),
+    "wink":      dict(eye=[1.0, 0.5], brow=-0.15, brow_up=0.015, mouth=[1.5, 1.0]),
+    "blush":     dict(eye=[1.05, 0.5], brow=-0.3, brow_up=0.01, mouth=[0.9, 1.0]),
+    "eyeroll":   dict(eye=[1.0, 0.55], brow=0.2, brow_up=0.0, mouth=[1.2, 0.8]),
 }
+
+
+def face_extras(p, t, name):
+    """What the face shapes can't do alone: the blush grows in; an eye-roll sweeps the eyes up and across and back
+    (with a small head tilt) - both start with the shot."""
+    if name == "blush":
+        p["blush"] = smooth(min(1.0, t / 0.4))
+    elif name == "eyeroll":
+        u = min(1.0, max(0.0, (t - 0.15) / 0.9))                  # 0.9 s up, across and back down
+        p["eye_up"] = 0.42 * math.sin(math.pi * u)
+        p["eye_side"] = 0.25 * math.sin(2 * math.pi * u)
+        p["tilt"] = p.get("tilt", 0.0) + 0.12 * math.sin(math.pi * u)
+        p["nod"] = p.get("nod", 0.0) - 0.08 * math.sin(math.pi * u)
 
 
 def apply_expression(p, name):
@@ -1731,6 +1780,7 @@ for who, tr in TRACKS.items():
             if who == PRIMARY:
                 holding_pose(p, t, s)
             apply_expression(p, s["expr"])
+            face_extras(p, t, s["expr"])
             ts = (fr - sf0) / FPS - float(shot.get("lead", AUDIO_LEAD))   # first shot has a longer intro
             p["gesture_side"] = "R" if s["shot"] % 2 == 0 else "L"
             secondary(p, (fr - 1) / FPS, ts if speaks and 0 <= ts <= talk_len else None)   # only the speaker talks

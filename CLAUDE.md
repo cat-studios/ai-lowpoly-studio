@@ -747,6 +747,15 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   storyboards: palm_up_out stuck the arm out sideways, arm_forward / elbow 1.0 brought it to her face) unless the
   shot's move uses that arm (`RIGHT_ARM_ANIMS`); `blender_cast` keeps a `held` thing 15-35 cm (the "show tiny
   things bigger" rule made the cup 5.5x).
+- **Close-up reactions**: expressions `wink` (`Fcl_EYE_Close_R` + MTH/BRW Fun), `blush` (shy smile + two pink discs
+  on her cheeks: `VRoidRig.blush`, placed from the `J_Adj_?_FaceEye` bones - 1.25 x eye distance out, 1.75 forward,
+  1.15 down - parented to the head bone, scaled in by `face_extras`), `eyeroll` (half lids + the eye bones turned up
+  and across over 0.9 s, `eye_up`/`eye_side`, a small head tilt). Eye bones are added outside `BONES` (other
+  models: no eye-roll, no warning). In `catalog.EXPRESSIONS` (writer, pickers), `MOOD_WORDS` (wink, blushing, shy,
+  unimpressed...). Director `face_closeups`: `FACE_CUES` ("just kidding" -> wink, "aww / stop it" -> blush, "ugh /
+  seriously / whatever" -> eyeroll) set the line's expression and a static close-up on the beat with the cue,
+  unless the brackets set expression or camera (`_set_expr`/`_set_cam`, removed before returning); never line 1,
+  another speaker or a cutaway; `MAX_FACES` 3. Checked in a 540x960 close-up render (`episodes/zz_check_faces.json`).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

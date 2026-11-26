@@ -266,7 +266,10 @@ MOOD_WORDS = {   # -> expression
     **dict.fromkeys("worried nervous afraid terrified panicked frightened anxious".split(), "scared"),
     **dict.fromkeys("upset gloomy disappointed sorry heartbroken".split(), "sad"),
     **dict.fromkeys("proud confident cocky sassy sly smirking".split(), "smug"),
-    **dict.fromkeys("smile smiling grin grinning beaming blush blushing wink winking".split(), "happy"),
+    **dict.fromkeys("smile smiling grin grinning beaming".split(), "happy"),
+    **dict.fromkeys("wink winking".split(), "wink"),
+    **dict.fromkeys("blush blushing shy flustered embarrassed".split(), "blush"),
+    **dict.fromkeys("eyeroll eye_roll eyerolling unimpressed".split(), "eyeroll"),
     **dict.fromkeys("frown frowning pout pouting sulk sulking teary".split(), "sad"),
     **dict.fromkeys("glare glaring scowl scowling".split(), "angry"),
     **dict.fromkeys("gasp gasping wide_eyed".split(), "surprised"),
@@ -707,6 +710,49 @@ def held_things(shots, cast, text_of=lambda s: s.get("line", "")):
         made += 1
 
 
+FACE_CUES = [   # close-up reactions: the face shapes she has (blender_build FACE wink / blush / eyeroll)
+    ("wink", re.compile(r"\b(just kidding|kidding|jk|between (?:you and me|us)|(?:our|a) (?:little )?secret|"
+                        r"trust me|wink\w*|hehe+|you know what i mean)\b", re.I)),
+    ("blush", re.compile(r"\b(blush\w*|embarrass\w*|aww+|so cute|stop it|too kind|flatter\w*|crush|shy|"
+                         r"compliment\w*|oh my|you think so)\b", re.I)),
+    ("eyeroll", re.compile(r"\b(ugh+|seriously|whatever|obviously|as if|of course not|so boring|typical|"
+                           r"here we go again|eye ?roll\w*|yeah,? right)\b", re.I)),
+]
+MAX_FACES = 3
+
+
+def face_closeups(shots, text_of=lambda s: s.get("line", "")):
+    """A wink, a blush or an eye-roll in a close-up on lines that call for it ("just kidding", "aww, stop it",
+    "ugh, seriously?") - only when the script set neither the expression nor the camera; never the opening line
+    (the hook), someone else's line or a cutaway; at most MAX_FACES per video."""
+    groups, order = {}, []
+    for k, s in enumerate(shots):
+        g = s.get("beat_group", f"s{k}")
+        if g not in groups:
+            order.append(g)
+        groups.setdefault(g, []).append(k)
+    made = 0
+    for gi, g in enumerate(order):
+        idx = groups[g]
+        if gi == 0 or made >= MAX_FACES:
+            continue
+        line = [shots[k] for k in idx]
+        if any(s.get("speaker") or s.get("cutaway") or s.get("_set_expr") or s.get("_set_cam") for s in line):
+            continue
+        text = " ".join(text_of(s) for s in line)
+        face = next((f for f, rx in FACE_CUES if rx.search(text)), None)
+        if not face:
+            continue
+        # the beat with the cue word gets the close-up (the whole line keeps the face)
+        hit = next((s for s in line if dict(FACE_CUES)[face].search(text_of(s))), line[0])
+        for s in line:
+            s["expression"] = face
+        if hit.get("action") not in MOVE_ANIMS_SET:
+            hit["camera"], hit["move"] = "closeup", "static"
+        made += 1
+
+
+MOVE_ANIMS_SET = set(catalog.MOVE_ANIMS)
 CUTAWAY_MIN_WORDS = 4
 
 
@@ -953,6 +999,10 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                 shot.update(camera=cb[0], move=cb[1])
         hook_cam = shot.get("camera") if i == 0 and opening == "hook" and shot.get("move") == "push_in" else None
         shot.update(d)
+        if "expression" in d:
+            shot["_set_expr"] = True     # the script chose it: face_closeups leaves it
+        if "camera" in d:
+            shot["_set_cam"] = True
         if hook_cam and shot.get("camera") in ("wide", "high", "tiny", "side", "back", "low"):
             shot["camera"], shot["move"] = hook_cam, "push_in"   # the first seconds are on her face
         if shot_events_pre:
@@ -1115,6 +1165,10 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
     if story_fx:
         story_weather(shots, f"{title} {script}", set_name)
         held_things(shots, cast)
+        face_closeups(shots)
+    for s in shots:
+        s.pop("_set_expr", None)
+        s.pop("_set_cam", None)
     _merge_cutaway_beats(shots)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     return {"start": start,

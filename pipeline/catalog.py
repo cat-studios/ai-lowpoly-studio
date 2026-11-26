@@ -52,7 +52,7 @@ try:
 except Exception as _exc:          # a broken library never stops the studio
     print(f"[catalog] animations library skipped: {_exc}")
 
-EXPRESSIONS = ["neutral", "happy", "surprised", "angry", "sad", "smug", "scared"]
+EXPRESSIONS = ["neutral", "happy", "surprised", "angry", "sad", "smug", "scared", "wink", "blush", "eyeroll"]
 
 CAMERAS = {
     "wide": "Whole scene",

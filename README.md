@@ -290,6 +290,8 @@ side so you see the arm and the thing.
   "day in the life" video goes from day to sunset to night - unless your script sets those itself.
 - **She holds what she talks about**: "look at this cup", "my lucky coin", "holding a cookie" - she holds it up in
   front of her for that line and puts it away after (up to 3 per video).
+- **Close-up reactions**: "just kidding" gets a wink, "aww, stop it" a blush, "ugh, seriously?" an eye-roll - each
+  in a close-up (up to 3 per video). Write `[wink]`, `[blush]` or `[eyeroll]` in a line's brackets to choose.
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):
