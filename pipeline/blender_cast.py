@@ -356,6 +356,9 @@ def animate_thing(who, info, side):
     size = float(info.get("scale", 0) or 0) or min(1.0, 2.2 / max(radius, 0.01), 3.5 / max(height, 0.01))
     if not info.get("scale") and height * size < 0.55:     # tiny things (a pizza, a phone) are shown bigger
         size = 0.55 / max(height, 0.01)
+    if info.get("held") and not info.get("scale"):
+        # in her hand ("look at this cup"): hand-sized, 15-35 cm - the "show tiny things bigger" rule made it 5.5x
+        size = min(0.35, max(0.15, height)) / max(height, 0.01)
     if d and d.get("explainer") and not info.get("scale"):
         # an explainer object is a demonstration model beside her: about her height, whatever its real size
         size = max(0.25, min(4.0, 1.5 / max(height, 0.01), 1.3 / max(radius, 0.01)))

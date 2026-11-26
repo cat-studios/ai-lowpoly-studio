@@ -738,6 +738,15 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   a sad line loses festive particles a word gave it (`FESTIVE_FX`: "nobody came to my party" got confetti),
   celebrate/dance get `confetti`; `DAY_ARC` words in the title/script ("a day in the life", "from morning to night")
   set the light day -> sunset (45 %) -> night (80 %) over the lines when no shot sets a light.
+- **Holding** (`autodirect.held_things`, after `story_weather`): a `HOLDABLE` noun (cup, book, coin, plush...) with a
+  `HOLD_CUES` word up to 4 words before it ("look at this cup", "my lucky coin", "holding a cookie") -> cast
+  `{type: thing, looks: "a small hand-held X", held: True}`, a `hold` event on that line's first shot and `vanish`
+  on the next line's; at most `MAX_HOLDS` 3, never on cutaway/show lines, someone else's line, or a thing the script
+  brings in; a `point` on that line becomes idle (she pointed with the cup hand). Blender: `_held_shots()` -> `HELD`,
+  `holding_pose` blends her right arm to (-0.9, 0.15, 0.3, 0.45) = held up in front at chest height (picked from
+  storyboards: palm_up_out stuck the arm out sideways, arm_forward / elbow 1.0 brought it to her face) unless the
+  shot's move uses that arm (`RIGHT_ARM_ANIMS`); `blender_cast` keeps a `held` thing 15-35 cm (the "show tiny
+  things bigger" rule made the cup 5.5x).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

@@ -288,6 +288,8 @@ side so you see the arm and the thing.
 ### More ways to make videos (2026-11-26)
 - **Weather and time follow the story**: a sad line outdoors gets rain, a celebration gets confetti, and a
   "day in the life" video goes from day to sunset to night - unless your script sets those itself.
+- **She holds what she talks about**: "look at this cup", "my lucky coin", "holding a cookie" - she holds it up in
+  front of her for that line and puts it away after (up to 3 per video).
 
 ### Kinds of video (templates)
 Create → 1 Idea → **Kind of video** steers the title ideas, the script and the pacing (the look never changes):

@@ -659,6 +659,54 @@ def story_weather(shots, text, set_name):
                 s.pop("_arc", None)
 
 
+# small things she can pick up and show while she talks about them ("look at this cup", "my favourite book")
+HOLDABLE = set("""cup mug glass bottle book notebook phone letter card map key keys pencil pen crayon brush wand umbrella
+flower rose apple banana cookie cupcake donut sandwich candy lollipop sweet icecream cone plush plushie teddy toy
+ball balloon remote camera ticket coin gem crystal shell leaf feather egg potion jar box gift present spoon fork
+fish magnifier compass torch flashlight lantern clock watch hat sock shoe""".split())
+HOLD_CUES = {"this", "my", "holding", "hold", "grab", "grabbed", "picked", "brought", "here's", "heres", "look"}
+MAX_HOLDS = 3
+
+
+def held_things(shots, cast, text_of=lambda s: s.get("line", "")):
+    """She picks up the small thing a line is about ("look at this cup") and holds it out for that line; it's put
+    away (vanishes) at the next line. At most MAX_HOLDS per video, never on a cutaway line, never a thing the script
+    already brings in itself."""
+    groups, order = {}, []
+    for k, s in enumerate(shots):
+        g = s.get("beat_group", f"s{k}")
+        if g not in groups:
+            order.append(g)
+        groups.setdefault(g, []).append(k)
+    made = 0
+    for gi, g in enumerate(order):
+        idx = groups[g]
+        if made >= MAX_HOLDS or any(shots[k].get("cutaway") or shots[k].get("show") for k in idx):
+            continue
+        if any(shots[k].get("speaker") for k in idx):
+            continue                                     # someone else's line: it's their cup, not hers
+        words = re.findall(r"[a-z']+", " ".join(text_of(shots[k]) for k in idx).lower())
+        thing = None
+        for j, w in enumerate(words):                    # a holdable noun with "this/my/holding..." just before it
+            noun = w if w in HOLDABLE else w[:-1] if w.endswith("s") and w[:-1] in HOLDABLE else None
+            if noun and HOLD_CUES & set(words[max(0, j - 4):j]):
+                thing = noun
+                break
+        if not thing:
+            continue
+        if thing in cast or any(e.get("who") == thing for s in shots for e in s.get("events") or []):
+            continue
+        cast[thing] = {"type": "thing", "looks": f"a small hand-held {thing}", "held": True}
+        shots[idx[0]].setdefault("events", []).append({"who": thing, "do": "hold"})
+        for k in idx:                                    # she shows it in her hand - no pointing at it with that hand
+            if shots[k].get("action") == "point":
+                shots[k]["action"] = "idle"
+                shots[k].pop("at", None)
+        if gi + 1 < len(order):
+            shots[groups[order[gi + 1]][0]].setdefault("events", []).append({"who": thing, "do": "vanish"})
+        made += 1
+
+
 CUTAWAY_MIN_WORDS = 4
 
 
@@ -1066,6 +1114,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             s["move"] = "push_in"
     if story_fx:
         story_weather(shots, f"{title} {script}", set_name)
+        held_things(shots, cast)
     _merge_cutaway_beats(shots)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     return {"start": start,

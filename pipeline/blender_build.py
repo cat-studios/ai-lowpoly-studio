@@ -1678,6 +1678,35 @@ def _is_cutaway(s):
 
 
 HAS_CUTAWAY = any(_is_cutaway(s) for s in SHOTS)
+
+
+def _held_shots():
+    """Shots in which she holds a small thing (a "hold" event, not the balloons) - from the hold until that thing's
+    next event (the director puts it away on the next line)."""
+    held, active = set(), set()
+    for k, s in enumerate(SHOTS):
+        for e in s.get("events") or []:
+            if e.get("do") == "hold" and e.get("who") != "balloons":
+                active.add(e.get("who"))
+            elif e.get("who") in active:
+                active.discard(e.get("who"))
+        if active:
+            held.add(k)
+    return held
+
+
+HELD = _held_shots()
+RIGHT_ARM_ANIMS = {"wave", "point", "celebrate", "clap", "blow_kiss", "facepalm", "sneeze", "dance", "think",
+                   "float_up", "land", "fall", "float"}
+
+
+def holding_pose(p, t, seg):
+    """Something small in her right hand: forearm out in front, palm up (animlib "palm_up_out"), so it's shown."""
+    if seg["shot"] not in HELD or seg["anim"] in RIGHT_ARM_ANIMS:
+        return
+    w = smooth(min(1.0, t / 0.3))
+    for ch, v in zip(("armR", "raiseR", "rotR", "elbowR"), (-0.9, 0.15, 0.3, 0.45)):
+        p[ch] = lerp(p.get(ch, 0.0), v, w)
 print(f"[build] {len(SHOTS)} shots, {len(TRACKS)} character(s), {TOTAL} frames @ {FPS}fps")
 
 for who, tr in TRACKS.items():
@@ -1699,6 +1728,8 @@ for who, tr in TRACKS.items():
             p["yaw"] = lerp_angle(s["y0"], s["y1"], smooth(t / 0.3)) if s["anim"] not in MOVE_ANIMS else s["y0"]
             ANIMS[s["anim"]](p, t, T, s)
             airborne(p, t, T, s)
+            if who == PRIMARY:
+                holding_pose(p, t, s)
             apply_expression(p, s["expr"])
             ts = (fr - sf0) / FPS - float(shot.get("lead", AUDIO_LEAD))   # first shot has a longer intro
             p["gesture_side"] = "R" if s["shot"] % 2 == 0 else "L"
