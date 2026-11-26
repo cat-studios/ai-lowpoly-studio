@@ -12,6 +12,12 @@ import run_episode as R  # noqa: E402
 
 
 class CleanLines(unittest.TestCase):
+    def test_myth_or_fact_words_in_brackets_are_said(self):
+        # the first production try: "Myth!" inside the brackets, and "+second_claim" brought in as a person
+        out = llm._clean_lines("[medium, laugh, Myth!] They remember for months!\n"
+                               "[+second_claim enter, wide, sad] Second claim: do they sleep?", main=["Catgirl"])
+        self.assertEqual(out, ["[medium, laugh] Myth! They remember for months!", "[wide, sad] Second claim: do they sleep?"])
+
     def test_list_labels_are_said_not_people(self):
         # the Top 5 / Myth or fact / Guess what formats: "Number 5:" brought in a person called number_5
         out = llm._clean_lines("Number 5: [cutaway: an owl] Owls turn their heads.\n[closeup] Clue 2: It swims.\n"

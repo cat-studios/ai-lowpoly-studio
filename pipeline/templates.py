@@ -83,11 +83,14 @@ TEMPLATES = {
         "about": "She reads out things people believe, asks 'myth or fact?' and reveals the truth.",
         "title_starts": ["Is it true that", "Do", "Can", "Does"],
         "title_hint": "a common belief people are not sure about",
-        "script": ("This is MYTH OR FACT. First line: a hook. Then 3 claims about the topic, each in TWO lines: the "
-                   "claim, ending with \"Myth or fact?\" ([think]), then the reveal starting with \"Myth!\" or "
-                   "\"Fact!\" ([surprised] or [laugh], [closeup]) with the real reason in plain words. Mix myths and "
-                   "facts, save the most surprising for last, and keep every answer TRUE. End with one short line "
-                   "asking the viewer which one fooled them."),
+        "script": ("This is MYTH OR FACT. First line: a hook. Then 3 claims about the topic, each in TWO lines. "
+                   "Line A says the claim as a plain sentence and ends with the words \"Myth or fact?\" - e.g. "
+                   "\"[think] <the claim>. Myth or fact?\". Line B is the answer and STARTS with the spoken word "
+                   "\"Myth!\" or \"Fact!\" (outside the brackets) followed by the real reason - e.g. \"[closeup, "
+                   "surprised] Myth! <what is really true>.\". One of the claims is the title's own question, and "
+                   "its answer is the true, well-known one. Only use claims you are SURE about; never invent a fact "
+                   "for a joke - the joke goes in how she reacts. No labels like \"Claim 1:\" and nobody else comes "
+                   "in. End with one short line asking the viewer which one fooled them."),
         "tone": "silly",
         "lines": (7, 8),
         "direct": {"beat_words": 4, "walk_every": 0, "move_every": 2, "wipe_every": 4},

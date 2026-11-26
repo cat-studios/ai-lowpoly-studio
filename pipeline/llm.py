@@ -402,6 +402,12 @@ def _clean_lines(text, keep=(), main=(), people=True):
                 b = re.match(r"^\[([^\]]*)\]\s*", s)
                 s = (f"[{pending}, {b.group(1)}] " + s[b.end():]) if b else f"[{pending}] {s}"
                 pending = ""
+            b = re.match(r"^\[([^\]]*)\]\s*", s)
+            if b:
+                toks = [t.strip() for t in b.group(1).split(",")]
+                said = [t for t in toks if SAID_IN_BRACKETS.match(t)]
+                inner = LABEL_CAST.sub("", ", ".join(t for t in toks if t and t not in said)).strip(" ,")
+                s = (f"[{inner}] " if inner else "") + " ".join(said + [s[b.end():]]).strip()
         s = re.sub(r"^\*{1,2}([^*:]{1,30})(?:\*{1,2}:|:\*{1,2})\s*", r"\1: ", s)   # **Name:** / **Name**: -> Name:
         s = re.sub(r"^(\d+[.)]|[-*•]|line\s*\d+:)\s*", "", s, flags=re.I)   # numbering / bullets
         m = re.match(r"^(\[[^\]]*\]\s*)?([A-Z][\w ]{0,20}):\s+", s)
@@ -436,8 +442,13 @@ def _clean_lines(text, keep=(), main=(), people=True):
 
 
 # list labels the formats (Top 5, Myth or fact, Guess what) start lines with: part of what she says, not a person
-SPOKEN_LABEL = re.compile(r"(?i)(number|no|clue|round|reason|step|tip|question|myth|fact|truth|bonus|option|choice)"
-                          r"(\s+(\d+|one|two|three|four|five|a|b))?$|.*\d")
+LABEL_WORDS = r"(number|no|clue|round|reason|step|tip|question|myth|fact|truth|bonus|option|choice|claim|belief)"
+ORDINALS = r"(first|second|third|fourth|fifth|final|last|next|another)"
+SPOKEN_LABEL = re.compile(rf"(?i)({ORDINALS}\s+)?{LABEL_WORDS}(\s+(\d+|one|two|three|four|five|a|b))?$|.*\d")
+# "[+second_claim enter]": the writer brought a list label in as a person - never one
+LABEL_CAST = re.compile(rf"(?i)\+({ORDINALS}_)?{LABEL_WORDS}(_(\d+|one|two|three|four|five))?(?![a-z0-9_])[^,\]]*,?\s*")
+# "[medium, laugh, Myth!]": words with ! or ? in the brackets are meant to be said - out of the brackets, first
+SAID_IN_BRACKETS = re.compile(r"^[A-Z][\w' ]{0,24}[!?]$")
 NOT_SPEAKERS = {"narrator", "character", "main character", "host", "me", "i", "she", "you", "speaker", "voice",
                 "voiceover", "voice over", "catgirl", "line", "scene", "shot", "note", "wait", "fact", "fun fact",
                 "bonus", "ps", "update", "warning", "title", "script", "hook", "ending", "intro", "outro"}
