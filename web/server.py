@@ -158,26 +158,64 @@ def episode_path(eid):
 FONT_CACHE = {}
 
 
-def run_weekly_plan():
-    """Start this week's plan now: a batch of fresh ideas (+ Postiz drafts when Postiz is set up). None if there are
-    no unused ideas."""
+def run_weekly_plan(plan=None, label="WEEKLY PLAN", mark=True):
+    """Start a batch of fresh ideas now (the weekly plan's settings unless `plan` says otherwise; + Postiz drafts when
+    Postiz is set up and the plan wants them). mark=False: this batch doesn't count as this week's plan (idle
+    auto-make). None if there are no unused ideas."""
     import ideas as IDB
     import weekly
     cfg = S.load_settings()
-    spec = weekly.spec_for(cfg.get("plan") or {}, IDB.load(), f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}",
+    spec = weekly.spec_for(plan if plan is not None else (cfg.get("plan") or {}), IDB.load(),
+                           f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}",
                            bool((cfg.get("postiz") or {}).get("url")))
     if not spec["ideas"]:
-        logs.event("WEEKLY PLAN: no unused ideas - nothing made")
-        weekly.mark_ran()
+        logs.event(f"{label}: no unused ideas - nothing made")
+        if mark:
+            weekly.mark_ran()
         return None
     f = ROOT / "build" / "series" / f"{stamp()}-weekly.json"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(spec), encoding="utf-8")
     job = submit(Job("batch", f"Weekly plan: {len(spec['ideas'])} videos" + (" + Postiz drafts" if spec["drafts"] else ""),
                      [sys.executable, "-u", str(PIPE / "batch.py"), str(f)]))
-    weekly.mark_ran(job=job.id)
-    logs.event(f"WEEKLY PLAN started: {len(spec['ideas'])} ideas (job {job.id})")
+    if mark:
+        weekly.mark_ran(job=job.id)
+    logs.event(f"{label} started: {len(spec['ideas'])} ideas (job {job.id})")
     return job
+
+
+ACTIVITY = {"at": time.time()}                  # last time someone used the studio (see route())
+IDLE_IGNORE = ("/api/jobs", "/api/status", "/api/comfy/status", "/static/", "/media/", "/propimg/", "/favicon",
+               "/apple-touch-icon", "/manifest", "/sfx/", "/music/", "/fxprev/", "/setimg/", "/animimg/", "/actorimg/")
+
+
+def idle_loop():
+    """Every minute: after `idle.minutes` with nobody using the studio and nothing queued or running, make a batch
+    (`idle.count` videos from fresh ideas, Settings -> Idle auto-make). Once per quiet spell, `idle.per_day` a day
+    at most. Not a weekly-plan week, so the Monday plan still runs."""
+    import weekly
+    while True:
+        time.sleep(60)
+        try:
+            cfg = S.load_settings().get("idle") or {}
+            if not cfg.get("on") or time.time() - ACTIVITY["at"] < float(cfg.get("minutes", 10)) * 60:
+                continue
+            if any(j.status in ("queued", "running") for j in JOBS.values()):
+                continue
+            st = weekly.state()
+            today = time.strftime("%Y-%m-%d")
+            if st.get("idle_fired_for") == ACTIVITY["at"]:          # this quiet spell already made its batch
+                continue
+            made = int(st.get("idle_count") or 0) if st.get("idle_day") == today else 0
+            if made >= int(cfg.get("per_day", 3)):
+                continue
+            st.update(idle_fired_for=ACTIVITY["at"], idle_day=today, idle_count=made + 1)
+            weekly.save_state(st)
+            plan = {"count": int(cfg.get("count", 1)), "length": (S.load_settings().get("plan") or {}).get("length", "medium"),
+                    "drafts": False}                                  # idle batches never reach Postiz
+            run_weekly_plan(plan, label="IDLE AUTO-MAKE", mark=False)
+        except Exception as exc:
+            logs.event(f"IDLE AUTO-MAKE error: {exc.__class__.__name__}: {str(exc)[:200]}")
 
 
 def plan_loop():
@@ -836,6 +874,8 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(urlparse(self.path).path)
         self._t0, self._logbody, self._raw_body = time.time(), "", None
         logs.set_request(self.client_address[0], method, path)
+        if not path.startswith(IDLE_IGNORE):              # someone is using the studio (polling doesn't count)
+            ACTIVITY["at"] = time.time()
         if method != "GET" and "json" in (self.headers.get("Content-Type") or "") and path != "/login":
             n = int(self.headers.get("Content-Length") or 0)
             if 0 < n <= 256 * 1024:                      # small JSON changes: keep the body for the log
@@ -1825,6 +1865,7 @@ def main():
         print("  PIN: " + ("on" if current_pin() else "off - anyone on your network can use the app "
                                                      "(set one in Settings -> Phone & network)"))
     threading.Thread(target=plan_loop, daemon=True).start()      # the weekly plan (Settings -> Weekly plan)
+    threading.Thread(target=idle_loop, daemon=True).start()      # idle auto-make (Settings -> Idle auto-make)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

@@ -316,7 +316,8 @@ async function pageCreate() {
       <button id="make-custom" class="hero-btn" style="--d:3"><span class="hb-ico">🪄</span><b>Custom Video</b>
         <small>Step by step: your idea, your look, your script, your scenes</small></button>
     </div>
-    <div class="hero-foot"><span id="make-status" class="muted small"></span></div>
+    <div class="hero-foot"><span id="make-status" class="muted small"></span>
+      <button id="idle-toggle" class="ghost small" title="Makes a video from fresh ideas after a quiet spell (Settings → Idle auto-make)">${idleLabel()}</button></div>
     <div class="make-bar"><i id="make-fill"></i></div>
     <div class="inline-job" id="make-job"></div>
     <div id="job"></div>
@@ -658,6 +659,14 @@ async function pageCreate() {
   $$(".hero-btn").forEach((b) => b.addEventListener("click", (ev) => sparkle(b, ev)));
   if (CS.openWiz) { CS.openWiz = false; $("#make-custom").click(); }     // "Open in Custom Video" from the Videos page
   $("#make-batch").onclick = guard(() => openBatchPicker());
+  $("#idle-toggle").onclick = guard(async (e) => {
+    const btnEl = e.currentTarget;
+    const st = await api("GET", "/api/settings");
+    st.idle = { ...(st.idle || {}), on: !(st.idle || {}).on };
+    META.settings = await api("PUT", "/api/settings", st);
+    btnEl.textContent = idleLabel();
+    toast(st.idle.on ? `Auto-make is on: a video after ${st.idle.minutes} min with nobody using the studio` : "Auto-make is off");
+  });
   $("#make-all").onclick = guard(async (e) => {
     const btnEl = e.currentTarget;
     const picks = await openMakeWizard();        // the cards: place, topic, vibe, guest, time, length + a note
@@ -2137,6 +2146,12 @@ async function openPlan() {
   });
 }
 
+// 🌙 Idle auto-make button label (Create page; state in Settings -> Idle auto-make)
+function idleLabel() {
+  const i = (META.settings && META.settings.idle) || {};
+  return i.on ? `🌙 Auto-make when idle: on (after ${i.minutes || 10} min)` : "🌙 Auto-make when idle: off";
+}
+
 // 📊 Stats (pipeline/stats.py): how posted videos did, next to their kind, length, cover and set
 async function pageStats() {
   const s = await api("GET", "/api/stats");
@@ -2632,6 +2647,12 @@ const S_TABS = {
       ["youtube.client_id", "YouTube Analytics: OAuth client id (optional)", "text", {}, "For retention numbers (average % watched, seconds watched, subscribers per video). Google Cloud → your project → Credentials → OAuth client ID (Desktop app), with YouTube Analytics API enabled."],
       ["youtube.client_secret", "YouTube Analytics: OAuth client secret (optional)", "password", {}],
       ["youtube.refresh_token", "YouTube Analytics: refresh token (optional)", "password", {}, "Made once with the OAuth Playground (developers.google.com/oauthplayground, scope youtube.readonly and yt-analytics.readonly, your own OAuth client). Read only."],
+    ]],
+    ["🌙 Idle auto-make (the studio makes videos while nobody uses it)", [
+      ["idle.on", "Make a video after a quiet spell", "bool", {}, "When nobody has used the studio for the time below and nothing is rendering, it makes videos from fresh ideas (the Create page's 🌙 button does the same). Stays off until you turn it on."],
+      ["idle.minutes", "Quiet minutes before it starts", "range", { min: 5, max: 120, step: 5 }, "Polling and the status dot don't count as using the studio."],
+      ["idle.count", "Videos each time", "range", { min: 1, max: 3, step: 1 }],
+      ["idle.per_day", "Most per day", "range", { min: 1, max: 10, step: 1 }, "Never reaches Postiz - these stay on your Videos page."],
     ]],
     ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
       ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],
