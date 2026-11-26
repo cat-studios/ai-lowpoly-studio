@@ -295,7 +295,10 @@ def animate_person(who, info, side):
             for f0, n, verb in scale_ev:
                 if f0 <= fr < f0 + n:
                     u = (fr - f0) / n
-                    g = h * (B.smooth(u) * (1 + 0.25 * math.sin(math.pi * u)) if verb == "appear" else 1 - B.smooth(u))
+                    # a vanish is counted from 1 (as for things): a one-frame vanish at a cutaway's end is gone on
+                    # that frame instead of standing full size inside her
+                    g = h * (B.smooth(u) * (1 + 0.25 * math.sin(math.pi * u)) if verb == "appear"
+                             else 1 - B.smooth(min(1.0, (fr - f0 + 1) / n)))
             sm.apply(p)
             visible = s["present"] or (s.get("gone_after") and k < s["n"] - 1)
             if not visible:
