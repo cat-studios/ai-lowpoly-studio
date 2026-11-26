@@ -45,16 +45,21 @@ function assetsActors(box, data) {
       <span class="muted small" id="ac-count"></span>
     </div>
     <p class="muted small" style="margin:0 0 10px">Actors play the extra people in scenes: a store clerk behind the counter, a customer, a passer-by.
-      A scene that names one (<code>+clerk</code>, <code>+store clerk</code>) gets the actor whose role matches; anyone unmatched gets the generic human.
-      Main characters live on the Characters page.</p>
-    <div class="asset-grid" id="ac-grid"></div>`;
+      A scene that names one (<code>+clerk</code>, <code>+store clerk</code>) gets the actor whose role matches. A speaking person no role fits gets one of the
+      <b>generic</b> actors in new colours; your imported people only play people who don't speak. Main characters live on the Characters page.</p>
+    <div id="ac-grid"></div>`;
   const draw = () => {
     const list = data.actors.filter(keep);
     $("#ac-count").textContent = `${list.length} of ${data.actors.length}`;
-    $("#ac-grid").innerHTML = list.map((a) => `<div class="asset-card" tabindex="0" data-ac="${esc(a.id)}" title="${esc(a.description)}">
+    const card = (a) => `<div class="asset-card" tabindex="0" data-ac="${esc(a.id)}" title="${esc(a.description)}">
         <div class="asset-thumb checker">${actorPicture(a)}</div>
         <div class="asset-info"><div class="asset-name">${esc(a.name)}</div>
-          <div class="asset-meta">${a.regular ? '<span class="chip" title="A regular: offered in Custom Video">⭐</span>' : ""}<span class="chip">${esc(a.role || "no role")}</span><span class="chip dim">${ACT_KIND_SHORT[a.kind] || a.kind}</span></div></div></div>`).join("")
+          <div class="asset-meta">${a.regular ? '<span class="chip" title="A regular: offered in Custom Video">⭐</span>' : ""}<span class="chip">${esc(a.role || "no role")}</span><span class="chip dim">${ACT_KIND_SHORT[a.kind] || a.kind}</span></div></div></div>`;
+    // generic actors (the studio body in any colours) first, in their own group - they stand in when no role fits
+    const generic = list.filter((a) => a.kind === "generic"), others = list.filter((a) => a.kind !== "generic");
+    const group = (title, sub, items) => items.length ? `<h4 class="ac-group">${title} <span class="muted small">${sub}</span></h4><div class="asset-grid">${items.map(card).join("")}</div>` : "";
+    $("#ac-grid").innerHTML = (group("🧍 Generic actors", "- the studio's body in their own colours; one stands in (new colours) when no role fits", generic)
+      + group("🎭 Your models", "- rigged and imported characters", others))
       || `<div class="empty"><div class="empty-ic">🧍</div><p>${data.actors.length ? "Nothing matches." : "No actors yet."}</p></div>`;
     $$("[data-ac]", $("#ac-grid")).forEach((card) => {
       const open = () => actorEditor(data.actors.find((x) => x.id === card.dataset.ac), data);

@@ -233,12 +233,13 @@ def save(data, aid=None):
 
 
 def side_character(who, looks=""):
-    """One of your actors for a speaking cast person no actor's role matches ("mom", "a grumpy neighbour"): the
-    user's rule - speaking people come from the Actors page, imported people are only for ones who don't speak.
-    Prefers an actor of the same kind (woman / man / child, from the words), the same name always gets the same one.
-    None when you have no actors (the studio body plays them)."""
+    """A GENERIC actor of yours (the studio body) for a speaking cast person no actor's role matches ("mom", "a
+    grumpy neighbour") - the user: imported people are for people who don't speak, and a role that doesn't fit gets
+    a generic actor with random colours (run_episode does the colours), not a random imported character. Prefers
+    one of the same kind (woman / man / child, from the words); the same name always gets the same one. None when
+    you have no generic actors (the built-in generic human plays them)."""
     import hashlib
-    mine = [a for a in all_actors() if not a.get("builtin")]
+    mine = [a for a in all_actors() if not a.get("builtin") and a.get("kind") == "generic"]
     if not mine:
         return None
     want = words(f"{who} {looks}")

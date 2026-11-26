@@ -645,3 +645,4 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .st-table { width: 100%; border-collapse: collapse; }
 .st-table td, .st-table th { padding: 6px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
 .st-table select { max-width: 220px; }
+.ac-group { margin: 14px 0 8px; }

@@ -836,6 +836,10 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   > 2.2 x the body: each arm turned 1.2 rad down round a pivot just outside the body - the body width measured just
   below the arms, the body itself never moves, the arm root eases over 0.35 x the shoulder distance; shape keys are
   bent too, they hold the real positions). Checked on the Candycane Lady and a posed Quaternius woman (untouched).
+- **No role fits a speaker** (the user, 2026-11-26): `actors.side_character` picks only GENERIC actors (kind
+  generic: the studio body), and `resolve_cast` plays them with `look={}` so `person_look` gives new colours from
+  the name/looks (the same name = the same colours); no generic actor of yours = the built-in generic human.
+  Assets → Actors: generic actors in their own group above "Your models" (rigged / imported).
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

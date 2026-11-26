@@ -60,7 +60,9 @@ def card_for(who, info, setting="", speaks=False):
     if person:
         act = AC.pick(who, info.get("actor"), looks=looks, person=True)
         if (not act or act.get("builtin")) and speaks:
-            act = AC.side_character(who, looks)
+            gen = AC.side_character(who, looks)
+            return {"source": "actor", "label": f"A generic actor ({gen['name'] if gen else 'the studio body'}) in "
+                                                "new colours - no actor's role fits", "picture": None}
         if act and not act.get("builtin"):
             return {"source": "actor", "label": f"Your actor: {act['name']}" + (" ⭐" if act.get("regular") else ""),
                     "picture": actor_pic(act), "actor": act["id"]}

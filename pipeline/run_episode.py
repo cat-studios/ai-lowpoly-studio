@@ -915,10 +915,10 @@ def resolve_cast(ep, cfg, log=print):
         if info["type"] == "person" and speaks and not info.get("actor") and (not act or act.get("builtin")):
             # speaking people come from your Actors (the user): one of them, not a random imported person - those
             # are posed background figures with no animation, for people who don't speak
-            side = AC.side_character(who, info.get("looks") or "")
+            side = AC.side_character(who, info.get("looks") or "") or AC.get(AC.GENERIC_ID)
             if side:
-                act = side
-                log(f"  cast: {who} speaks - played by your actor '{side['name']}'")
+                act = dict(side, look={})                # a generic body in new colours (from the name/looks)
+                log(f"  cast: {who} speaks, no actor's role fits - a generic actor ({side['name']}) in their own colours")
         if act and act["kind"] == "imported":        # a real model: it moves as a whole, like a thing
             info["type"] = "thing"
             info["def"] = AC.imported_def(act) or info.get("def")
