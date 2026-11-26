@@ -57,14 +57,23 @@ CAMERA_BEATS = [("side", "orbit"), ("low", "push_in"), ("high", "pull_out"), ("w
                 ("dramatic", "push_in"), ("side", "pull_out")]
 
 
+# "I'm not mad", "don't be sad", "never scared": a mood word right after a negation isn't that mood
+NEGATION = re.compile(r"(?:\bnot|n't|\bnever|\bno longer|\bno need to be)\s+(?:\w+\s+){0,2}$", re.I)
+
+
+def _says(rx, text):
+    """rx matches somewhere in text that isn't negated."""
+    return any(not NEGATION.search(text[:m.start()]) for m in rx.finditer(text))
+
+
 def mood_of(text):
-    if SCARED.search(text):
+    if _says(SCARED, text):
         return "scared"
     if "?!" in text or "!?" in text or CAPS.search(text):
         return "surprised"
-    if ANGRY.search(text):
+    if _says(ANGRY, text):
         return "angry"
-    if SAD.search(text):
+    if _says(SAD, text):
         return "sad"
     if LAUGH.search(text):
         return "laugh"

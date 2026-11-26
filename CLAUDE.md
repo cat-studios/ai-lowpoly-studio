@@ -867,6 +867,8 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   actor becomes kind `rigged`, then `character_preview.py --actor <id>` draws `rigs/<id>.preview.png` (served at
   `/actorimg/`). A new actor is saved (as a body) before the upload. Rigged actors were already animated like a
   character (`blender_cast.animate_person` → `VRoidRig`) and speak with the actor's voice; dev build check fine.
+- Director moods: a mood word right after a negation (`autodirect.NEGATION`: not / n't / never / no longer, up to
+  2 words between) doesn't count (`_says`) - "Just kidding, I'm not mad" got the angry pose in the VRoid Mom test.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**

@@ -90,5 +90,14 @@ class Opening(unittest.TestCase):
         self.assertEqual(R.hook_word("WHAT IF THE MOON VANISHED?".split()), 4)
         self.assertIsNone(R.hook_word("WHAT IF IT IS".split()))
 
+class Negation(unittest.TestCase):
+    def test_a_negated_mood_word_is_not_that_mood(self):
+        self.assertEqual(A.mood_of("I'm not mad."), "neutral")
+        self.assertEqual(A.mood_of("Don't be sad"), "neutral")
+        self.assertEqual(A.mood_of("I'm never scared"), "neutral")
+        self.assertEqual(A.mood_of("I'm so mad!"), "angry")
+        self.assertEqual(A.mood_of("Ugh, seriously?"), "angry")
+
+
 if __name__ == "__main__":
     unittest.main()
