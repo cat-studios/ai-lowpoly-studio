@@ -120,10 +120,12 @@ and everything else runs in its own lane.
 ## The pages
 
 ### Create
-Three big buttons:
+Four big buttons:
 - **🎲 Make a Random Video** - pick fun cards (kind of video, place, topic, vibe, guest, time, length); the studio
   writes, builds and renders it all.
 - **📺 Make a Series** - one idea, 1-4 episodes, each made and rendered for you.
+- **🎬 Make a Batch** - tick several ideas (or type your own topics, one per line, up to 10): one video each, in its
+  own kind of video, queued to render one after another.
 - **🪄 Custom Video** - a step-by-step popup with everything in your hands. Tap the cards; every step can be
   changed later (tap a step at the top, or a pill on the last step). Closing it keeps your picks.
   1. **💡 Idea** - kind of video, the title (or ✨ Give me ideas), who stars and who else is in it.
@@ -202,7 +204,8 @@ never.
   video that uses it on its next render.
 - **📦 Imported** - asset packs you upload as a zip of OBJ, FBX, BLEND or MDL models (folders inside are fine).
   Click a model (or ✏️) to give it your own name, description and category - scenes and scripts find it by that
-  name. People in a story (Mom, a teacher, a pedestrian) are played by your imported people.
+  name. Imported people are for people who **don't** speak (a pedestrian, a crowd, background) - anyone who talks
+  is one of your Actors.
   Each model gets a picture. MDL files from Quake 1, Half-Life and Source are converted (not yet tried on real
   game files). Models are sorted into categories made from their own names (Vehicles, Animals, Furniture, Food...)
   with search; the AI sorts names it doesn't recognise on every import (or press **🏷 Categorize**). A model that is
@@ -214,8 +217,16 @@ never.
   model; with no exact match the closest one is used (a mail van → the ambulance, a dog → the pug, a police car →
   the cop car). Models are scaled to the real thing's size (a pug is 0.35 m, not the size in its file), and parts a
   pack left plain grey get colours from their names ("Red", "Windows", "Lights").
-- **🧍 Actors** - the extra people in your scenes (a mom, a store clerk…): a generic body dressed from a
-  description, a rigged `.blend`, or an imported model, each with a voice.
+- **🧍 Actors** - the people who join her in a video (a mom, a store clerk…), each with a voice. Three kinds:
+  - **Generic body** (listed first) - the studio's own body in colours you pick. When someone speaks and none of your
+    actors' roles fits them, a generic actor plays them in new colours (the same name keeps the same colours).
+  - **Rigged model** - a VRoid character like the main ones: **📤 Upload a VRoid model (.vrm)** and it walks, talks
+    with its mouth and faces, and poses like the catgirl. Best for regulars.
+  - **Imported model** - any of your imported models; ones from an animated pack play their own clips (idle, walk,
+    wave...). They're lit like her so they don't look dark next to her.
+  Tick **⭐ Regular** to offer them in Custom Video; give them a personality, a catchphrase and a running gag, and
+  the writer brings those back (it remembers what they said last time). **🎭 Guests** on the Videos page keeps a
+  person from a video as an actor.
 - **✨ Effects** - the particle effects with looping previews. Change colours, amount, speed and size; **Save &
   preview** renders a new clip, **Reset to default** undoes your changes.
 - **🎵 Music** - upload royalty-free tracks once, pick one per episode or set a default (plays at 5 % with fades).
@@ -233,6 +244,12 @@ Every render, with download and:
   filters, text, watermark, music and sound, and the models used. It saves and re-renders the same video.
 - 📤 **Postiz** - send it as a draft (see below). Earlier versions are kept (tagged "Earlier version") and can be
   sent too.
+- 🖼 **Cover** - two cover pictures (A and B) made with every render; tap which one you posted.
+- **⚠️ / ✓ checked** - the check after every render (is she visible, short cutaways, weak props, sound clashes,
+  stream lengths); tap it to see the shots it means.
+- 🎭 **Guests**, 🔁 **Variation** (a part 2, or the idea as another kind of video), 🎛 **Remix** + ⚖️ **Compare**
+  (same script in another set, look or language) - see "More ways to make videos".
+- Pills show where a video came from: 📺 series, 🎬 batch, 🔁 variation, 🎛 remix.
 - **Rename** (display name only) and **Delete** (moved to `output/.trash`).
 
 A video remembers the look it was made with, so changing your global look doesn't change old videos.
@@ -317,8 +334,8 @@ side so you see the arm and the thing.
   posted cover and set. 🔄 Get Instagram numbers needs your Instagram token and account id (Settings → Stats; read
   only, the studio never posts with it) - or type a video's views in yourself.
 - **Who plays people**: anyone who **speaks** is played by one of your **Actors** (Assets → Actors) - the one whose
-  role fits, else one of your actors (the same one for the same name). Your imported people are used only for
-  people who don't speak (background, crowds). Imported people that come in a T-pose or facing sideways are
+  role fits, else one of your generic actors in new colours (the same one for the same name). Your imported people
+  are used only for people who don't speak (background, crowds). Imported people that come in a T-pose or facing sideways are
   turned to the camera with their arms down.
 - **Animated imported people**: an actor from an animated pack (with a skeleton and clips like Idle, Walk, Wave)
   plays its own animations - idle while standing or talking, walking when it moves, and the clip that matches what
@@ -616,13 +633,16 @@ Every request (with IP and browser) goes to the terminal and to `logs/server-YYY
 in `logs/jobs/`.
 
 ## Not tested yet
+- Her room and its souvenirs, the weekly plan running by itself (and its Postiz drafts), and getting numbers from
+  Instagram (📊 Stats) haven't been run for real yet.
 - The ElevenLabs voice, MDL converters with real game files, and the app on a real phone (only checked at phone
   size in a browser).
 - Starter sets and the regenerate popup from the browser; Postiz drafts of earlier versions; the 3D viewer beyond
   one scene.
 - Walking round furniture in a generated set and the job lanes under heavy load haven't been seen in a render yet.
 - Tested in renders: the language option (Lithuanian), people saying `Name: …` lines, co-stars, per-shot lighting,
-  and long encodes (an old bug cut videos to a few seconds of picture - fixed).
+  long encodes, holding things, reaction sounds, wink/blush/eye-roll, story weather, A/B covers, animated
+  imported actors, a VRoid actor, and the check after every render.
 
 ## Uploads
 Files with any name can be uploaded (accents and non-Latin letters included) - music, sounds, voices, VRM models,

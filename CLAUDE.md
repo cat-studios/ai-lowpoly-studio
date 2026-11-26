@@ -60,29 +60,66 @@ python -m unittest discover tests   # quick tests (director, script cleanup, cut
   `TextEncodeAceStepAudio1.5`). The only "checkpoint" is the music model, so `comfy.image_models()` filters out
   audio/video models.
 
-## Status (updated 2026-11-24)
-This dev copy starts as a fresh install: no characters, sets other than Legacy Cafe / Legacy Park, props, packs,
-music, episodes or videos, and no `config/settings.json` (defaults apply until Settings are saved). The first server
-start synthesises the built-in sounds. `tools/voice-venv` (the cloned voice, drawn props, scene from a picture) is not
-in git - see README "Installing on a new PC"; without it the free Edge voices are used. The only working copy is in
-production (`C:\Users\kat5\ai-lowpoly-studio\tools\voice-venv`, moved there 2026-11-24 - its `pip.exe` launchers
-still point at the old path, so use `python -m pip`); this dev copy has none yet. The old project folder
-`C:\Users\kat5\git\ai-low-poly` was deleted on 2026-11-24 (personal data moved to production first).
+## Status (updated 2026-11-26)
+- **Dev copy**: no `tools/voice-venv` (Edge voices only, no sprites, no picture colours - see README "Installing on
+  a new PC"); the user's imported packs were copied in for testing, `config/settings.json` points 3D design at the
+  brother's server. Test renders happen in production (see above); dev is for code, unit tests (73), Blender
+  build checks (`_no_render`) and `--preview storyboard` runs. The only voice-venv is production's
+  (`C:\Users\kat5\ai-lowpoly-studio\tools\voice-venv`; its `pip.exe` launchers point at an old path - use
+  `python -m pip`). The old folder `C:\Users\kat5\git\ai-low-poly` was deleted on 2026-11-24.
+- **Last production tests** (2026-11-26): `zz_test_new_features` (holding, reactions, faces, story weather, covers),
+  `zz_test_new_actors` (animated imported actors, generic stand-in), `zz_test_vroid_mom` (a VRoid actor; fixes for
+  her tail and the park-tree camera pushed after it, not re-rendered yet).
+- **Newest features, by area** (details in the dated sections below): Create = 🎲 Random / 📺 Series / 🎬 Batch /
+  🪄 Custom Video popup with storyboard + rough previews and the "who and what appears" cards; 💡 Ideas (trending
+  sources, batch, weekly plan); templates (9 kinds incl. Conversation); Actors (generic / rigged incl. VRoid upload /
+  imported incl. animated packs; regulars with catchphrase, gag, history); after every render: cover A + B, the
+  check (`_check.json`), regulars' lines remembered, her room's souvenir; Videos: Guests, Variation, Remix +
+  Compare; 📊 Stats.
+
 Open items:
+- Never run end to end: her room (`home.make`) and souvenirs, the weekly plan firing on its own, the Instagram stats
+  fetch (no token), Postiz drafts from the weekly plan, ElevenLabs (no API key), importing a VRM on the Characters
+  page (actors' VRoid upload works through the page), MDL converters on real game files, starter sets + regenerate
+  popup from the browser, the 3D viewer beyond one scene (three.js from unpkg), the app on a real phone.
+- VRoid actors keep their model's own size (the user's Mom is 1.92 m next to her 1.66 m); there's no height
+  control for rigged actors yet. Deleting a rigged actor leaves its `assets/actors/rigs/<id>.*` files.
+- Fact-heavy kinds (Myth or fact, Quick facts) can carry wrong facts from the local model - no fact check step yet.
+- `PROP_PASS` / `SPRITE_BELOW` were lowered while the look check judged her instead of the prop - worth revisiting.
+- Whole-video loudness is ~-16 LUFS (voice -14; quiet intro/outro); the reference videos are -14.
 - A cast member's spot is picked beside where she stands when they arrive; if she walks on during that shot they can
   end up between her and the camera for a moment.
-- Not seen in a render yet: walking round furniture in a generated set, "human" cast as a person, the three-lane
-  job queue under load (they build without errors in Blender no-render checks).
-- Sets made before 2026-11-24 can contain stacked props (a theme's tables at (0, 0.3)); older sets name imported
-  props' walk-to places `imp_table` (new sets: `table`).
-- Cast warning "no free spot ... moved to (x, y), clearance N m" = `spot()` found nothing beside her and
-  `_roomiest()` picked a place instead (expected in crowded sets); the message lists why each spot was refused.
+- Generated sets' trees/tall props only block cameras through `OBST` (floor props up to 1 m are skipped for
+  walking); the built-in park's trees are handled (`PARK_TREES`).
 - Scene jobs can run while a video renders: Blender and ComfyUI can fight for the 12 GB GPU, and regenerating a set
   changes it under a video that's rendering with it.
 - The local Ollama model's Lithuanian needs checking (🌐 Check translation) - it wrote "Laukinis" for a plane.
-- Never run end to end: ElevenLabs (no API key), importing a VRM through the web page (CLI import works), MDL
-  converters on real game files, starter sets + regenerate popup from the browser, Postiz drafts of earlier versions,
-  the 3D viewer beyond one scene (it needs internet: three.js from unpkg), the app on a real phone.
+- Sets made before 2026-11-24 can contain stacked props (a theme's tables at (0, 0.3)); older sets name imported
+  props' walk-to places `imp_table` (new sets: `table`).
+- Cast warning "no free spot ... moved to (x, y), clearance N m" = `spot()` found nothing beside her and
+  `_roomiest()` picked a place instead (expected in crowded sets; it stays within ~3.5 m of her now).
+
+## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
+- **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
+  procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours
+  (`side_character`), imported people only for non-speakers; generic actors grouped first on the Actors page;
+  animated imported actors play their own clips (`play_clips`); imported people are turned to face the camera, lose
+  their T-pose and get her flat cartoon light (`face_front`, `relax_tpose`, `brighten_person`); a speaking imported
+  model is framed on its lines (`CAST_TRACKS` for things); `cast_kind` knows actor names and job words.
+- **Cameras and placement**: the built-in park's trees block cameras by the frame's width (`PARK_TREES`); a crowded
+  arrival stays within ~3.5 m of her (`_roomiest`); "I'm not mad" isn't angry (`NEGATION`).
+- **Ideas round** (13 ideas): story weather, holding things, wink/blush/eye-roll close-ups, regulars' catchphrase /
+  gag / history, Conversation template, her room + souvenirs, her reaction sounds, Variation, Remix + Compare,
+  weekly plan, A/B covers, 📊 Stats, the big text server's time limit.
+- **Making videos**: 🎬 Make a Batch on the Create page and Batch from Ideas (`batch.py`); 5 new templates (Top 5,
+  Myth or fact, This or that, Guess what, Conversation); storyboard / rough previews; "who and what appears" cards;
+  stronger hook opening (close-up push-in, hook word pop); cover pictures; the check after every render
+  (`review.py`); recurring cast (regulars, Guests).
+- **Fixes from production renders**: the look check judged HER instead of the prop (`_is_cutaway`, `CHECK_V` 2);
+  weak cutaways are only dropped below 3/10; storyboard springs blew up at 2 fps; short cutaway beats merged;
+  whales copied from the writer's example; invisible Quaternius people; "Raw Hot Dog" as a dog; savanna as a beach.
+- **Status dot** in the top bar (`web/status_web.py`) and unit tests for the director, script cleanup, cutaways,
+  ideas filter and every new module (73, `python -m unittest discover tests`).
 
 ## Features and fixes from the 2026-11-24 review
 
@@ -930,9 +967,9 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
 | Path | What |
 |---|---|
 | `pipeline/prepare_character.py` | VRM → `.blend` (decimate, 128 px textures, hard alpha cut-out, fog-ready materials with `fog_in`/`fog_out` nodes) + `.report.json`. |
-| `pipeline/character_preview.py` | Still preview `assets/characters/<id>.preview.png`; runs after a model import and from the Characters page. |
+| `pipeline/character_preview.py` | Still preview `assets/characters/<id>.preview.png`; runs after a model import and from the Characters page. `--actor <id>` draws a rigged actor (`assets/actors/rigs/<id>.preview.png`). |
 | `pipeline/blender_cast.py` | The rest of the cast, on the global timeline after the main characters: people = `build_catgirl(look, cat=False)` driven by the same ANIMS (they can talk: mouth from `talk`); things = `blender_sets.make_thing` keyframed by verb (enter, crash_in + debris, fall, fly_by, appear, vanish, exit, bounce, spin, shake, hold). `spot()` (beside her, in the marks area, in view, not `hidden()`) → `_roomiest()` fallback (`_gap()` clearance, warns). `attach_to_hand`, `CUT[si]` for cutaways. Warns when a thing has lines. |
-| `pipeline/actors.py` | Actor store (`assets/actors/<id>.json`, deleted → `.trash`): extra people, kinds `generic` (studio body dressed with `look`), `rigged` (a .blend), `imported`. Matched to cast names by role; a cast person speaks with its actor's voice (default: picked from the role by `role_voice`). The generic human (`GENERIC_ID`) is built in. Not the main characters (those are in `assets/characters`). |
+| `pipeline/actors.py` | Actor store (`assets/actors/<id>.json`, deleted → `.trash`): extra people, kinds `generic` (studio body dressed with `look`), `rigged` (a .blend - an uploaded VRoid lives in `assets/actors/rigs/`), `imported` (`imported_def`, `person: True`). Matched to cast names by role (`pick`); a speaker no role fits gets a generic actor in new colours (`side_character`). Speaks with its actor's voice (default: picked from the role by `role_voice`). Regulars: `regulars`, `writer_note`, `remember`, `from_cast`. The generic human (`GENERIC_ID`) is built in. Not the main characters (those are in `assets/characters`). |
 | `pipeline/imported.py` | Imported asset packs: zip import (safe extraction, nested folders), MDL conversion, Blender measuring, pictures (`make_previews`), `match(kind, looks, setting)`. Index `assets/imported/index.json`. CLI `imported.py import <zip> --pack NAME --license TEXT --source ORIGINAL.zip`, `imported.py previews`. |
 | `pipeline/imported_probe.py`, `imported_preview.py` | Inside Blender: measure each model; render a still of each for the Imported tab. |
 | `pipeline/blender_models.py` | Loads OBJ/FBX/BLEND models inside Blender (`load_model`, `bounds`, `clear_scene`). |
@@ -952,13 +989,25 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
 | `pipeline/batch.py` | Batch from Ideas: several ideas -> one video each through the studio's own API. |
 | `pipeline/cover.py` | The Reel's cover picture: best frame (vision pick from a grid) + title in the video's look. |
 | `pipeline/gif.py` | Video → GIF: palette from all frames, Sierra dithering; keeps under 10 MB by stepping down fps, then size, then colours. |
+| `pipeline/templates.py` | Kinds of video (`TEMPLATES`: what_if, how_it_works, quick_facts, mini_story, top_five, myth_or_fact, this_or_that, guess_what, conversation): title starts, writer rules, tone, line range, director `pacing()`. Never the look. |
+| `pipeline/ideas.py` | Trending sources → family-friendly ideas (`gather`, `BLOCK`, `pick_ideas`), the ideas DB `assets/ideas/ideas.json`, `mark_used`. |
+| `pipeline/series.py` | A series job: `llm.series_titles`, then each episode through the studio's own API (`call`, `slug`, `LENGTHS` are reused by batch). |
+| `pipeline/weekly.py` | Weekly plan: `due()`, `pick()` (fresh ideas, starred first, mixed kinds); `server.plan_loop` submits the batch (+ Postiz drafts). |
+| `pipeline/stats.py` | 📊 Stats: Instagram Graph API fetch (token from Settings), title matching to videos, typed views, `summary()` averages. |
+| `pipeline/home.py` | Her room (set `home`): `make`, `collect` (a souvenir after each render), `place` along the walls. |
+| `pipeline/animlib.py`, `animgen.py` | Animations as data (pose vocabulary `ARM`/`HEAD`/`BODY`, `library()`), and the maker: Ollama writes one, `check_render` + vision score, `ensure(word)` for unknown bracket words. |
+| `pipeline/set_bases.py` | Set style A: 12 hand-built bases with palettes, wall pieces and slots; `dress()` (one AI call), `_Picker`, `palette_pass` (style B). |
 
 **Web app**
 | Path | What |
 |---|---|
 | `web/server.py` | Stdlib HTTP server + job queue, REST API, Range-capable media, optional PIN (cookie; localhost exempt). Queue `LANES` = `render` (videos) / `scene` (set jobs: make_set, previews, 3D views, starter sets) / `other` (props, fx, music, sfx, imports, character previews, Postiz, GIF, voice tests); one job at a time per lane, `lane_of()` picks it from the job kind. `remember_look`, `set_layout`/`save_set_layout`, `POST /api/jobs/<id>/retry`, `POST /api/server/restart` (starts a detached copy that waits for the port). |
-| `web/app.js`, `style.css`, `index.html` | Vanilla SPA (no build). Pages: Create, Sets, Assets (tabs Props / Imported / Actors / Effects / Music / Sounds; `#audio` still routes to Music/Sounds), Videos, Characters, GIF, Settings. Dialogs: `openModal({title, body, buttons, wide, onOpen})`, `uiConfirm()`, `uiPrompt()` - use these, never `prompt()`/`confirm()`. Mobile layout ≤760 px; PWA manifest + icons (`web/make_icons.py`). Create-page state is `CS`. |
-| `web/actors.js`, `actors_web.py` | Assets → Actors tab UI (loaded after app.js) and `/api/actors`. |
+| `web/app.js`, `style.css`, `index.html` | Vanilla SPA (no build). Pages: Create (four buttons + the Custom Video popup), Ideas, Sets, Assets (tabs Props / Sprites / Imported / Actors / Animations / Effects / Music / Sounds; `#audio` still routes to Music/Sounds), Videos, Stats, Characters, GIF, Settings. Dialogs: `openModal({title, body, buttons, wide, onOpen})`, `uiConfirm()`, `uiPrompt()` - use these, never `prompt()`/`confirm()`. Mobile layout ≤760 px; PWA manifest + icons (`web/make_icons.py`). Create-page state is `CS`. |
+| `web/actors.js`, `actors_web.py` | Assets → Actors tab UI (loaded after app.js; generic actors grouped first) and `/api/actors` (+ `guests`/`keep`, `POST /api/actors/<id>/model` = VRoid upload → `assets/actors/rigs/`, previews at `/actorimg/`). |
+| `web/ideas_web.py` | `/api/ideas` (list, fresh, fetch job, own ideas, star/hide, titles). |
+| `web/anims_web.py` | Assets → Animations: `/api/anims` (list, make job, delete → .trash), pictures at `/animimg/`. |
+| `web/status_web.py` | The status dot in the top bar: `GET /api/status` = parallel checks (Ollama, big server, ComfyUI, Blender, ffmpeg, cloned voice tools, disk, job queue, ideas DB, page errors), each ok/warn/bad with a fix. |
+| `web/make_icons.py` | Makes the PWA icons (voice-venv / Pillow). |
 | `web/imported_web.py` | `/api/imported` (upload, models list, delete). |
 | `web/episode_edit.py` | Video editor save (`POST /api/episodes/<id>/apply`): cast model choices, camera marks fixed per scene. |
 | `web/gif_web.py` | `/api/gif`; uploads → `output/gifs/uploads/`, results → `output/gifs/`. |
