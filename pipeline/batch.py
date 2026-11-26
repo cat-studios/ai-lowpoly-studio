@@ -63,7 +63,8 @@ def main(spec_path):
                 "beat_sets": [], "cast_ai": True, "scene_ai": True, "character": spec.get("character") or "",
                 "title": title, "scene_policy": "reuse", "template": tpl_id})
             ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],
-                  "template": tpl_id, "idea": idea["id"], "set_style": spec.get("set_style") or "base"}
+                  "template": tpl_id, "idea": idea["id"], "set_style": spec.get("set_style") or "base",
+                  "batch": {"id": stamp, "part": i, "of": len(ideas)}}      # the Videos page's 🎬 Batch pill
             if spec.get("character"):
                 ep["character"] = spec["character"]
             cast = d.get("cast") or {}

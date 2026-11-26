@@ -2113,7 +2113,7 @@ async function pageVideos() {
   const vids = await api("GET", "/api/videos");
   app.innerHTML = `<h2>Videos</h2>${vids.length ? `<div class="cards">${vids.map((v) => `
     <div class="card"><video src="${esc(v.url)}" ${v.cover ? `poster="${esc(v.cover)}"` : ""} controls preload="none" playsinline></video>
-      <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${v.series ? `<span class="pill" title="Series: ${esc(v.series.idea || "")}">📺 ${esc(String(v.series.idea || "").slice(0, 24))} ${v.series.part}/${v.series.of}</span> ` : ""}${esc(v.title || v.name)}</div>
+      <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${v.series ? `<span class="pill" title="Series: ${esc(v.series.idea || "")}">📺 ${esc(String(v.series.idea || "").slice(0, 24))} ${v.series.part}/${v.series.of}</span> ` : ""}${v.batch ? `<span class="pill" title="Made in a batch from the Ideas page">🎬 Batch ${v.batch.part}/${v.batch.of}</span> ` : ""}${esc(v.title || v.name)}</div>
       <div class="muted small">${ago(v.updated)} · ${(v.size / 1048576).toFixed(1)} MB
         ${v.check ? (v.check.length ? `<button class="check-chip ${v.check.some((i) => i.level === "warn") ? "warn" : ""}" data-check="${esc(v.key)}" title="What the check after the render found">⚠️ ${v.check.length} to look at</button>`
           : '<span class="check-chip ok" title="The check after the render found nothing">✓ checked</span>') : ""}</div>

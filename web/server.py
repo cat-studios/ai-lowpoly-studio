@@ -198,11 +198,11 @@ def list_videos():
     for v in sorted(OUTPUT.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
         sheet = v.with_name(v.stem + "_shots.png")
         ep = by_slug.get(v.stem)
-        title, series = "", None
+        title, series, batch = "", None, None
         if ep:
             try:
                 e = json.loads((EPISODES / f"{ep}.json").read_text(encoding="utf-8-sig"))
-                title, series = e.get("title", ""), e.get("series")
+                title, series, batch = e.get("title", ""), e.get("series"), e.get("batch")
             except Exception:
                 pass
         cover = v.with_name(v.stem + "_cover.jpg")
@@ -213,6 +213,7 @@ def list_videos():
             check = None
         out.append({"key": v.stem, "name": v.stem, "title": title, "episode": ep, "url": f"/media/{v.name}",
                     "series": series if isinstance(series, dict) else None,
+                    "batch": batch if isinstance(batch, dict) else None,
                     "cover": f"/media/{cover.name}?v={int(cover.stat().st_mtime)}" if cover.exists() else None,
                     "check": check.get("issues") if isinstance(check, dict) else None,
                     "sheet": f"/media/{sheet.name}" if sheet.exists() else None,
