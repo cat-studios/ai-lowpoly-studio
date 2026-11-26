@@ -627,3 +627,9 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .cw-whoinfo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cw-whocard .small-btns { gap: 4px; margin-top: 4px; flex-wrap: wrap; }
 .pill.bad { background: rgba(224,160,74,.2); color: #f0b060; }
+.check-chip { font-size: 11px; padding: 1px 8px; border-radius: 99px; margin-left: 6px; border: 1px solid rgba(255,255,255,.15); background: transparent; color: inherit; cursor: pointer; }
+.check-chip.warn { border-color: #e0a04a; color: #f0b060; }
+.check-chip.ok { cursor: default; color: #8fd19e; border-color: rgba(143,209,158,.4); }
+.check-list { display: grid; gap: 8px; }
+.check-item { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); border-left: 3px solid rgba(255,255,255,.2); }
+.check-item.warn { border-left-color: #e0a04a; }

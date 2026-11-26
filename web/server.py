@@ -206,9 +206,15 @@ def list_videos():
             except Exception:
                 pass
         cover = v.with_name(v.stem + "_cover.jpg")
+        chk = v.with_name(v.stem + "_check.json")          # pipeline/review.py: what the check after the render found
+        try:
+            check = json.loads(chk.read_text(encoding="utf-8")) if chk.exists() else None
+        except Exception:
+            check = None
         out.append({"key": v.stem, "name": v.stem, "title": title, "episode": ep, "url": f"/media/{v.name}",
                     "series": series if isinstance(series, dict) else None,
                     "cover": f"/media/{cover.name}?v={int(cover.stat().st_mtime)}" if cover.exists() else None,
+                    "check": check.get("issues") if isinstance(check, dict) else None,
                     "sheet": f"/media/{sheet.name}" if sheet.exists() else None,
                     "size": v.stat().st_size, "updated": v.stat().st_mtime})
     return out
@@ -258,7 +264,7 @@ def delete_video(key):
     if key.startswith("previous/") and m:        # earlier versions keep their sheet as "<name>_shots-<stamp>.png"
         sheet = mp4.with_name(f"{m.group(1)}_shots-{m.group(2)}.png")
         cover = mp4.with_name(f"{m.group(1)}_cover-{m.group(2)}.jpg")
-    for f in (mp4, sheet, cover):
+    for f in (mp4, sheet, cover, mp4.with_name(mp4.stem + "_check.json")):
         if f.exists():
             f.replace(trash / f"{f.stem}-{stamp()}{f.suffix}")
     labels = load_labels()

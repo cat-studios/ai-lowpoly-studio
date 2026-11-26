@@ -2114,7 +2114,9 @@ async function pageVideos() {
   app.innerHTML = `<h2>Videos</h2>${vids.length ? `<div class="cards">${vids.map((v) => `
     <div class="card"><video src="${esc(v.url)}" ${v.cover ? `poster="${esc(v.cover)}"` : ""} controls preload="none" playsinline></video>
       <div class="title">${v.previous ? '<span class="pill">Earlier version</span> ' : ""}${v.series ? `<span class="pill" title="Series: ${esc(v.series.idea || "")}">📺 ${esc(String(v.series.idea || "").slice(0, 24))} ${v.series.part}/${v.series.of}</span> ` : ""}${esc(v.title || v.name)}</div>
-      <div class="muted small">${ago(v.updated)} · ${(v.size / 1048576).toFixed(1)} MB</div>
+      <div class="muted small">${ago(v.updated)} · ${(v.size / 1048576).toFixed(1)} MB
+        ${v.check ? (v.check.length ? `<button class="check-chip ${v.check.some((i) => i.level === "warn") ? "warn" : ""}" data-check="${esc(v.key)}" title="What the check after the render found">⚠️ ${v.check.length} to look at</button>`
+          : '<span class="check-chip ok" title="The check after the render found nothing">✓ checked</span>') : ""}</div>
       <div class="btns"><a class="btn" href="${esc(v.url)}" download>⬇ Download</a>
         ${v.episode ? `<button data-redit="${esc(v.episode)}" class="primary">✏️ Edit</button>` : ""}
         ${META.settings.postiz?.url ? `<button data-pz="${esc(v.key)}">📤 Postiz</button>` : ""}
@@ -2126,6 +2128,21 @@ async function pageVideos() {
       <div class="pz-box" id="pz-${esc(v.key)}"></div></div>`).join("")}</div>`
     : '<p class="muted">No videos yet. Make one on the Create page.</p>'}`;
   $$("[data-cover]").forEach((b) => b.onclick = () => openCover(b.dataset.cover, b.dataset.ep, b.dataset.img, b.dataset.title));
+  $$("[data-check]").forEach((b) => b.onclick = () => {
+    const v = vids.find((x) => x.key === b.dataset.check);
+    openModal({
+      title: `⚠️ ${v.title || v.name}`,
+      body: `<p class="muted small">Checked automatically after the render - the things someone reviewing the video would look for. Shot numbers are in the order 🎞 Shots shows them.</p>
+        <div class="check-list">${v.check.map((i) => `<div class="check-item ${i.level}">
+          <div>${i.level === "warn" ? "⚠️" : "ℹ️"} ${esc(i.what)}${i.shots.length ? ` <span class="muted small">(shot${i.shots.length > 1 ? "s" : ""} ${esc(i.shots.join(", "))})</span>` : ""}</div>
+          ${i.fix ? `<div class="muted small">→ ${esc(i.fix)}</div>` : ""}</div>`).join("")}</div>`,
+      buttons: [...(v.sheet ? [{ label: "🎞 Show the shots", left: true, onClick: (m) => {
+        if (!$(".sheet-strip", m)) $(".modal-body", m).insertAdjacentHTML("beforeend", `<div class="sheet-strip" style="overflow-x:auto;margin-top:8px;border-radius:8px;background:#000">
+          <img src="${esc(v.sheet)}?v=${Date.now()}" alt="" style="height:220px;max-width:none;display:block;image-rendering:pixelated"></div>`);
+        return false;
+      } }] : []), { label: "Close" }],
+    });
+  });
   $$("[data-guests]").forEach((b) => b.onclick = guard(() => openGuests(b.dataset.guests)));
   $$("[data-sheet]").forEach((b) => b.onclick = () => {
     const card = b.closest(".card");

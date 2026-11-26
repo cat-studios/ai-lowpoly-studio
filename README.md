@@ -37,6 +37,13 @@ idea failing doesn't stop the others.
 - Pick them in Custom Video → 💡 Idea → **⭐ Regulars**: the script writer brings them in and gives them their own
   lines, in character, and they're played by their own actor.
 
+**The check after every render**: the studio looks at each finished video for the things that go wrong - her
+missing or hidden behind something in a shot (the picture model looks at every shot, and asks itself twice before
+it says so), cutaways too quick to see or dropped, made props shown although they didn't quite look like
+themselves, arrivals with no room beside her, two sounds at once, a broken encode. The Videos page shows
+**⚠️ N to look at** (tap it: what, which shots, what to do) or **✓ checked**. Run it again by hand with
+`python pipeline/review.py episodes/<video>.json`.
+
 **Cover picture**: every render also makes `output/<video>_cover.jpg` (1080x1920) - the best frame of the video
 (the picture model looks at up to 8 shots that show her face and picks one) with the title on top, in the same
 look. On the Videos page it's the video's still before you press play; **🖼 Cover** shows it big with ⬇ Download,

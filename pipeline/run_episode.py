@@ -1679,6 +1679,17 @@ def main():
     except Exception as exc:                       # a cover never fails the video
         print(f"  (no cover: {exc.__class__.__name__}: {str(exc)[:160]})")
 
+    # 6. the check: what a person reviewing the video would look for (shown as ⚠️ on the Videos page)
+    report(0.995, "Checking the video")
+    try:
+        import review
+        issues = review.check(ep, timing, build, out, cfg, review.requested_cutaways(args.episode), ffmpeg)
+        for i in issues:
+            print(f"  check [{i['level']}]: {i['what']}" + (f" (shots {', '.join(map(str, i['shots']))})" if i["shots"] else ""))
+        print(f"Check: {len(issues)} thing(s) to look at" if issues else "Check: nothing found")
+    except Exception as exc:
+        print(f"  (no check: {exc.__class__.__name__}: {str(exc)[:160]})")
+
     report(1.0, "Done")
     print(f"Done in {time.time() - t0:.0f}s -> {out}  ({total / fps:.1f}s video)")
     print(f"Shot sheet -> {sheet}")

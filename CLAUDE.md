@@ -715,6 +715,19 @@ like the subject (`key`), so a swap on a cutaway sticks. UI: Custom Video's last
 `W.castPick {who: {looks, set}}` merged into `build()`'s cast), `pickImportedModel(startCat, query)` = a standalone
 model picker (category chips, search, Show more; the name is only the first search when it finds something).
 
+## The check after every render (2026-11-26)
+`pipeline/review.py` `check(ep, timing, build, mp4, cfg, requested, ffmpeg)`, step 6 of every full render (never
+fails it) -> `output/<name>_check.json {time, issues: [{level warn|info, what, shots (1-based), fix?}]}`:
+`cutaway_issues` (shorter than `SHORT_CUTAWAY` 1 s; asked for in the episode FILE - `requested_cutaways` - but not
+shown), `cast_issues` (made props with `checked: False` and no sprite, Blender's "no free spot" warnings),
+`sound_issues` (`sfx_events` closer than `SOUND_GAP`), `stream_issues` (video/audio lengths, > 90 s),
+`picture_issues` (the vision model: shots that should show her, 8 per grid, yes/no per frame "visible?" /
+"blocked?" - asked for a list of problems it flagged every far-away shot; each flagged frame is asked again alone at
+full size and only kept when it says the same - a small top-down shot was a false alarm). Tested on the broken
+2 fps storyboard (caught) and the fixed one + three real videos (nothing after the second look). `list_videos`
+gives `check`; the card shows ⚠️ N / ✓ checked (`.check-chip`, popup with 🎞 Show the shots); delete moves the json
+too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder).
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and
@@ -786,6 +799,7 @@ model picker (category chips, search, Show more; the name is only the first sear
 | `pipeline/llm.py` | Ollama: `generate_script`, `generate_titles`, `design_set` (text or `image=`), `make_coherent`, `make_theme`, `find_cast`, `find_scenes`, `place_for_title`, `social_copy`, `chat_json` (format=json). |
 | `pipeline/comfy.py` | ComfyUI client: status/models, `find_server`, Z-Image + checkpoint txt2img, `texture_set(mode=required|auto)`, `object_sprite`, `floor_prompt`, `colour_word`. |
 | `pipeline/postiz.py` | Postiz client: `channels()`, `upload()`, `captions()` (`llm.social_copy` + `TRENDY` tags), `draft()` (POST /posts type "draft", one per ticked channel, `settings_for()` per provider; discord needs a channel ID). Base `<url>/api/public/v1`, header `Authorization: <key>` (no Bearer). **Drafts only - never schedule/publish.** |
+| `pipeline/review.py` | The check after every render: missing/hidden her, short or lost cutaways, weak props, sounds, streams. |
 | `pipeline/castcards.py` | Custom Video's "who and what appears" cards: what plays each cast member / cutaway, no AI. |
 | `pipeline/batch.py` | Batch from Ideas: several ideas -> one video each through the studio's own API. |
 | `pipeline/cover.py` | The Reel's cover picture: best frame (vision pick from a grid) + title in the video's look. |
