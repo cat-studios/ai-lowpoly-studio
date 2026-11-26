@@ -25,6 +25,13 @@ question of at most 8 words - the AI writer is told so, and its editor checks it
 she says it (no more walking in), and the hook's key word pops up twice the size as she says it (Settings → Text &
 branding → "Hook word pops up big").
 
+**Regulars (recurring cast)**: people who come back from video to video, with the same look and voice.
+- Keep a guest from a finished video: Videos → **🎭 Guests** → ⭐ Keep (give them a name - "Mom", "Grandma Rose").
+- Or make one by hand: Assets → Actors → + New, tick **⭐ Regular**, and write their **Personality** ("grumpy,
+  always hungry").
+- Pick them in Custom Video → 💡 Idea → **⭐ Regulars**: the script writer brings them in and gives them their own
+  lines, in character, and they're played by their own actor.
+
 **Cover picture**: every render also makes `output/<video>_cover.jpg` (1080x1920) - the best frame of the video
 (the picture model looks at up to 8 shots that show her face and picks one) with the title on top, in the same
 look. On the Videos page it's the video's still before you press play; **🖼 Cover** shows it big with ⬇ Download,

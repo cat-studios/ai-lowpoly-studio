@@ -13,6 +13,9 @@ An actor is one JSON file in assets/actors/<id>.json:
     model       rigged only: path relative to the project, e.g. assets/characters/pokemon.blend
     model_id    imported only: the imported model's id (assets/imported/index.json)
     height      metres (generic: the body's height factor, 1.0 = average adult)
+    personality how they talk and act ("grumpy, says 'back in my day'") - the script writer reads it
+    regular     true = a recurring cast member: offered in Custom Video's Idea step, and the writer knows them
+    voice       their own voice (kept when the actor is edited, so a regular always sounds the same)
     builtin     true for the generic human that always exists (not stored as a file)
 
 Deleting an actor moves its file to assets/actors/.trash - nothing is hard-deleted.
@@ -97,6 +100,8 @@ def _load(path):
     rec.setdefault("look", {})
     rec.setdefault("height", 1.0)
     rec.setdefault("voice", dict(ACTOR_VOICE))
+    rec.setdefault("personality", "")
+    rec.setdefault("regular", False)
     rec["builtin"] = False
     return rec
 
@@ -185,9 +190,21 @@ def save(data, aid=None):
         raise ValueError("that name is reserved for the built-in generic human")
     rec = {"name": name, "role": str(data.get("role") or "").strip()[:60],
            "description": str(data.get("description") or "").strip()[:600], "kind": kind,
-           "height": round(max(0.5, min(1.6, float(data.get("height") or 1.0))), 2)}
+           "height": round(max(0.5, min(1.6, float(data.get("height") or 1.0))), 2),
+           "personality": str(data.get("personality") or "").strip()[:300], "regular": bool(data.get("regular"))}
+    for k in ("from_video",):
+        if data.get(k):
+            rec[k] = str(data[k])[:80]
+    old = get(aid) if aid else None
     v = data.get("voice")
-    rec["voice"] = {**ACTOR_VOICE, **{k: str(x) for k, x in v.items()}} if isinstance(v, dict) and v.get("engine") else dict(ACTOR_VOICE)
+    if isinstance(v, dict) and v.get("engine"):
+        rec["voice"] = {**ACTOR_VOICE, **{k: str(x) for k, x in v.items()}}
+    elif old and isinstance(old.get("voice"), dict):
+        rec["voice"] = old["voice"]                       # the form doesn't send it: a regular keeps their voice
+        if old.get("from_video") and "from_video" not in rec:
+            rec["from_video"] = old["from_video"]
+    else:
+        rec["voice"] = dict(ACTOR_VOICE)
     if kind == "generic":
         rec["look"] = {k: str(v)[:9] for k, v in (data.get("look") or {}).items() if isinstance(v, str)}
     if kind == "rigged":
@@ -199,6 +216,46 @@ def save(data, aid=None):
     DIR.mkdir(parents=True, exist_ok=True)
     (DIR / f"{aid}.json").write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
     return {**rec, "id": aid, "builtin": False}
+
+
+def regulars():
+    """The recurring cast: saved actors marked regular (Custom Video offers them, the writer knows them)."""
+    return [a for a in all_actors() if a.get("regular") and not a.get("builtin")]
+
+
+def writer_note(ids):
+    """What the script writer is told about the regulars picked for a video ("" when none)."""
+    picked = [a for a in (get(i) for i in ids or []) if a and not a.get("builtin")]
+    if not picked:
+        return ""
+    who = "; ".join(f"{a['name']} (+{a['id']})" + (f" - {a['role']}" if a.get("role") else "")
+                    + (f", {a['personality']}" if a.get("personality") else "")
+                    + (f" ({a['description'][:120]})" if a.get("description") else "") for a in picked)
+    return ("Regulars of the show who come back in these videos - use ALL of them: " + who + ". Bring each one in "
+            "with [+id enter] (that exact id) on their first line, give each at least one line of their own as "
+            "'Name: ...', and keep them in character.")
+
+
+def from_cast(who, info, name="", episode=""):
+    """An actor from a cast member of a rendered video (build/<name>/resolved.json): the same body, colours,
+    height and voice next time. A person played by an imported model stays that model."""
+    info = info or {}
+    data = {"name": name or who.replace("_", " ").title(), "role": who.replace("_", " "),
+            "description": str(info.get("looks") or "")[:600], "regular": True, "from_video": episode}
+    d = info.get("def") or {}
+    if info.get("actor") and info["actor"] != GENERIC_ID and get(info["actor"]):
+        base = get(info["actor"])                        # already played by one of your actors: copy it
+        data.update(kind=base["kind"], look=base.get("look") or {}, height=base.get("height", 1.0))
+        for k in ("model", "model_id"):
+            if base.get(k):
+                data[k] = base[k]
+    elif isinstance(d.get("model"), dict) and d["model"].get("id"):
+        data.update(kind="imported", model_id=d["model"]["id"])     # an imported person (or thing) played them
+    else:                                                # the studio's own body: its colours and build
+        data.update(kind="generic", look={k: v for k, v in (info.get("look") or {}).items() if isinstance(v, str)},
+                    height=float(info.get("height") or 1.0))
+    data["voice"] = role_voice(who, info.get("looks") or "", info.get("voice"))
+    return save(data)
 
 
 def remove(aid):

@@ -7,6 +7,7 @@ pipeline/actors.py; this module only handles the requests.
     PUT    /api/actors/<id>       -> body = an actor: updates it
     DELETE /api/actors/<id>       -> moves the actor's file to assets/actors/.trash
 """
+import json
 import re
 from pathlib import Path
 
@@ -37,6 +38,29 @@ def handle(h, method, parts, *, submit, Job, root):
 
     if method == "POST" and not arg:
         return h.send_json(AC.save(h.body_json()))
+
+    if method == "POST" and arg in ("guests", "keep"):
+        # the people in a rendered video (build/<name>/resolved.json, where the render wrote how each one looked)
+        # -> keep one as a regular: same body, colours, height and voice in later videos
+        import run_episode as R
+        b = h.body_json() or {}
+        eid = str(b.get("episode") or "")
+        if not re.fullmatch(r"[\w.-]{1,120}", eid):
+            raise ValueError("bad episode id")
+        res = Path(root) / "build" / R.slug(eid) / "resolved.json"
+        if not res.exists():
+            raise ValueError("render this video first - the guests' looks are saved by the render")
+        cast = json.loads(res.read_text(encoding="utf-8-sig")).get("cast") or {}
+        people = {w: c for w, c in cast.items() if isinstance(c, dict)
+                  and (c.get("type") == "person" or (c.get("def") or {}).get("person"))}
+        if arg == "guests":
+            have = {a["id"] for a in AC.all_actors()}
+            return h.send_json({"guests": [{"who": w, "name": w.replace("_", " ").title(), "looks": c.get("looks", ""),
+                                            "kept": AC.slug(w) in have} for w, c in people.items()]})
+        who = str(b.get("who") or "")
+        if who not in people:
+            raise ValueError("no such person in that video")
+        return h.send_json(AC.from_cast(who, people[who], name=str(b.get("name") or "").strip()[:60], episode=eid))
 
     if method == "PUT" and arg:
         if not re.fullmatch(r"[a-z0-9_]{1,48}", arg):

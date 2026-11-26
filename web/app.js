@@ -935,7 +935,7 @@ async function openCustomWizard() {
   const [music, sets] = await Promise.all([api("GET", "/api/music").catch(() => []), api("GET", "/api/sets").catch(() => setsCache)]);
   setsCache = sets;
   const setInfo = (id) => sets.find((s) => s.id === id) || { id, name: cat.sets[id]?.name || id };
-  const fresh = () => ({ step: 0, max: 0, template: "what_if", title: "", topic: "", ideas: [], character: "", co_stars: [],
+  const fresh = () => ({ step: 0, max: 0, template: "what_if", title: "", topic: "", ideas: [], character: "", co_stars: [], regulars: [],
     look: "", language: "", music: "__default", ambience: "__default", cap: capStyleOf(), beats: true, length: "medium",
     tone: "", places: "auto", note: "", script: "", start: "auto", castAI: true, fresh: false,
     setStyle: META.settings.sets.style || "base" });
@@ -981,6 +981,9 @@ async function openCustomWizard() {
         // 1 - the idea: kind of video, title (or ideas), who's in it
         async () => {
           const others = META.characters.filter((c) => c !== (W.character || META.settings.active_character));
+          W.regulars = W.regulars || [];
+          const regs = await api("GET", "/api/actors").then((r) => r.actors.filter((a) => a.regular)).catch(() => []);
+          W.regulars = W.regulars.filter((id) => regs.some((a) => a.id === id));      // one deleted since
           box.innerHTML = frame("What's your video about?", `
             <p class="cw-label">Kind of video</p>
             ${cwCards(tpls.map((t) => ({ v: t.id, label: `${t.icon} ${t.name}`, sub: t.about })), W.template, "tpl", "four")}
@@ -995,6 +998,8 @@ async function openCustomWizard() {
               `<button class="chip-btn ${c === (W.character || META.settings.active_character) ? "on" : ""}" data-star="${esc(c)}">${esc(titleCase(c))}</button>`).join("")}</div>
               ${others.length ? `<p class="cw-label">Also in it <span class="muted small">- they talk too</span></p><div class="chips">${others.map((c) =>
               `<button class="chip-btn ${W.co_stars.includes(c) ? "on" : ""}" data-co="${esc(c)}">${esc(titleCase(c))}</button>`).join("")}</div>` : ""}` : ""}
+            ${regs.length ? `<p class="cw-label">⭐ Regulars <span class="muted small">- people who come back: the script brings them in and they say their own lines - edit them in Assets → Actors</span></p>
+              <div class="chips">${regs.map((a) => `<button class="chip-btn ${W.regulars.includes(a.id) ? "on" : ""}" data-reg="${esc(a.id)}" title="${esc([a.role, a.personality].filter(Boolean).join(" - "))}">${esc(a.name)}</button>`).join("")}</div>` : ""}
             ${W.max > 0 || W.title ? '<p style="text-align:right;margin:10px 0 0"><button id="cw-reset" class="ghost small-btn">↺ Start over</button></p>' : ""}`);
           if ($("#cw-reset", box)) $("#cw-reset", box).onclick = guard(async () => {
             if (!(await uiConfirm("Clear every pick and start a new video?", { title: "Start over", ok: "↺ Start over" }))) return;
@@ -1034,6 +1039,11 @@ async function openCustomWizard() {
             W.character = b.dataset.star === META.settings.active_character ? "" : b.dataset.star;
             W.co_stars = W.co_stars.filter((c) => c !== b.dataset.star);
             STEPS[0]();
+          });
+          $$("[data-reg]", box).forEach((b) => b.onclick = () => {
+            const id = b.dataset.reg;
+            W.regulars = W.regulars.includes(id) ? W.regulars.filter((x) => x !== id) : [...W.regulars, id];
+            b.classList.toggle("on", W.regulars.includes(id));
           });
           $$("[data-co]", box).forEach((b) => b.onclick = () => {
             const c = b.dataset.co;
@@ -1144,7 +1154,7 @@ async function openCustomWizard() {
               const [lo, hi] = CW_LEN[W.length].slice(2);
               const r = await api("POST", "/api/ai/script", { title: W.title, set: "auto", scene_policy: "reuse", character: W.character,
                 model: CS.model, lines: lo + Math.floor(Math.random() * (hi - lo + 1)), tone: W.tone || tpl().tone, extra: W.note,
-                co_stars: W.co_stars, template: W.template, scenes: W.places });
+                co_stars: W.co_stars, regulars: W.regulars || [], template: W.template, scenes: W.places });
               W.script = r.script; W.start = r.set || "auto";
               $("#cw-script", box).value = W.script; showBox();
               $("#cw-script", box).classList.add("cw-deal");
@@ -1234,6 +1244,7 @@ async function openCustomWizard() {
             const r = await api("POST", "/api/autodirect", { script: W.directScript, set: W.set, cast: {}, co_stars: W.co_stars,
               beat_words: W.beats ? 4 : 0, cast_ai: W.castAI, character: W.character, scene_ai: false, title: W.title, template: W.template });
             W.shots = r.shots; W.start = r.start; W.cast = r.cast || {}; W.shotsFor = key;
+            for (const id of W.regulars || []) if (W.cast[id]) Object.assign(W.cast[id], { type: "person", actor: id });   // played by their own actor
             if (r.set) W.set = r.set;
           }
           // a guess before the voice exists: ~2.6 words a second plus a little air per shot
@@ -1287,7 +1298,7 @@ async function openCustomWizard() {
           box.innerHTML = frame("Ready when you are!", `
             <div class="cw-sum-title">“${esc(W.title)}”</div>
             <div class="mw-sum cw-sum">
-              ${pill(0, `${t.icon || "🎬"} ${esc(t.name || "")}`)}${pill(0, `⭐ ${esc(titleCase(W.character || META.settings.active_character))}${W.co_stars.length ? " + " + esc(W.co_stars.map(titleCase).join(", ")) : ""}`)}
+              ${pill(0, `${t.icon || "🎬"} ${esc(t.name || "")}`)}${pill(0, `⭐ ${esc(titleCase(W.character || META.settings.active_character))}${W.co_stars.length ? " + " + esc(W.co_stars.map(titleCase).join(", ")) : ""}${(W.regulars || []).length ? " + " + esc(W.regulars.map(titleCase).join(", ")) : ""}`)}
               ${pill(1, `🎨 ${esc(W.look || "usual look")}`)}${pill(1, `🌐 ${esc(langName(W.language || META.settings.language))}`)}
               ${pill(2, `🎵 ${esc(mus)}`)}${pill(2, `🌿 ${esc(amb)}`)}
               ${pill(3, `💬 ${esc(CAP_STYLES[W.cap]?.label || "")}`)}
@@ -1901,6 +1912,31 @@ async function pageIdeas() {
   });
 }
 
+// 🎭 Guests: the people in a rendered video - keep one as a regular (Assets → Actors), same look and voice next time
+async function openGuests(episode) {
+  const r = await api("POST", "/api/actors/guests", { episode });
+  if (!r.guests.length) { toast("Nobody else is in this video - only the main characters"); return; }
+  openModal({
+    title: "🎭 Keep a guest as a regular",
+    body: `<p class="muted small">A regular keeps the look, height and voice they had here. Pick them in Custom Video (💡 Idea → ⭐ Regulars) and the script brings them back; edit them in Assets → Actors.</p>
+      ${r.guests.map((g, k) => `<div class="row guest-row" style="align-items:flex-end;gap:8px;margin-bottom:8px">
+        <label style="flex:1">Name<input type="text" data-gname="${k}" value="${esc(g.name)}"></label>
+        <span class="muted small" style="flex:2">${esc(g.looks || "")}</span>
+        ${g.kept ? `<span class="pill">⭐ a regular</span>` : `<button data-gkeep="${k}">⭐ Keep</button>`}</div>`).join("")}`,
+    buttons: [{ label: "Close" }],
+    onOpen: (m) => $$("[data-gkeep]", m).forEach((b) => b.onclick = guard(async (e) => {
+      const btnEl = e.currentTarget, g = r.guests[Number(btnEl.dataset.gkeep)];
+      const name = $(`[data-gname="${btnEl.dataset.gkeep}"]`, m).value.trim();
+      btnEl.disabled = true;
+      try {
+        const a = await api("POST", "/api/actors/keep", { episode, who: g.who, name });
+        btnEl.outerHTML = `<span class="pill">⭐ ${esc(a.name)} is a regular</span>`;
+        toast(`${a.name} will come back ✓`);
+      } catch (err) { btnEl.disabled = false; throw err; }
+    })),
+  });
+}
+
 // 🖼 Cover: the video's cover picture (made with every render), downloaded for posting, or picked again
 function openCover(key, episode, img, title) {
   const draw = (src) => src ? `<img src="${esc(src)}" alt="Cover" class="cover-big">` : `<p class="muted">No cover yet - this video was made before covers existed.</p>`;
@@ -1949,12 +1985,14 @@ async function pageVideos() {
         ${v.episode ? `<button data-redit="${esc(v.episode)}" class="primary">✏️ Edit</button>` : ""}
         ${META.settings.postiz?.url ? `<button data-pz="${esc(v.key)}">📤 Postiz</button>` : ""}
         ${v.sheet ? `<button data-sheet="${esc(v.sheet)}" title="One frame from every shot">🎞 Shots</button>` : ""}
+        ${!v.previous && v.episode ? `<button data-guests="${esc(v.episode)}" title="Keep someone from this video as a regular">🎭 Guests</button>` : ""}
         ${!v.previous && (v.cover || v.episode) ? `<button data-cover="${esc(v.key)}" data-ep="${esc(v.episode || "")}" data-img="${esc(v.cover || "")}" data-title="${esc(v.title || v.name)}" title="The cover picture for posting">🖼 Cover</button>` : ""}
         <button data-rename="${esc(v.key)}" data-title="${esc(v.title || v.name)}">✏️ Rename</button>
         <button data-delete="${esc(v.key)}" data-title="${esc(v.title || v.name)}" class="danger">🗑 Delete</button></div>
       <div class="pz-box" id="pz-${esc(v.key)}"></div></div>`).join("")}</div>`
     : '<p class="muted">No videos yet. Make one on the Create page.</p>'}`;
   $$("[data-cover]").forEach((b) => b.onclick = () => openCover(b.dataset.cover, b.dataset.ep, b.dataset.img, b.dataset.title));
+  $$("[data-guests]").forEach((b) => b.onclick = guard(() => openGuests(b.dataset.guests)));
   $$("[data-sheet]").forEach((b) => b.onclick = () => {
     const card = b.closest(".card");
     const open = $(".sheet-strip", card);

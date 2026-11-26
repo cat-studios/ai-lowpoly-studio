@@ -54,7 +54,7 @@ function assetsActors(box, data) {
     $("#ac-grid").innerHTML = list.map((a) => `<div class="asset-card" tabindex="0" data-ac="${esc(a.id)}" title="${esc(a.description)}">
         <div class="asset-thumb checker">${actorPicture(a)}</div>
         <div class="asset-info"><div class="asset-name">${esc(a.name)}</div>
-          <div class="asset-meta"><span class="chip">${esc(a.role || "no role")}</span><span class="chip dim">${ACT_KIND_SHORT[a.kind] || a.kind}</span></div></div></div>`).join("")
+          <div class="asset-meta">${a.regular ? '<span class="chip" title="A regular: offered in Custom Video">⭐</span>' : ""}<span class="chip">${esc(a.role || "no role")}</span><span class="chip dim">${ACT_KIND_SHORT[a.kind] || a.kind}</span></div></div></div>`).join("")
       || `<div class="empty"><div class="empty-ic">🧍</div><p>${data.actors.length ? "Nothing matches." : "No actors yet."}</p></div>`;
     $$("[data-ac]", $("#ac-grid")).forEach((card) => {
       const open = () => actorEditor(data.actors.find((x) => x.id === card.dataset.ac), data);
@@ -70,7 +70,7 @@ function assetsActors(box, data) {
 
 // the create / edit dialog: name, role, description, and what the body is made of
 function actorEditor(a, data) {
-  const cur = a ? { ...a } : { name: "", role: "", description: "", kind: "generic", height: 1.0, look: {} };
+  const cur = a ? { ...a } : { name: "", role: "", description: "", personality: "", regular: true, kind: "generic", height: 1.0, look: {} };
   const look = { ...ACT_DEFAULT_LOOK, ...(cur.look || {}) };
   let model = cur.kind === "rigged" ? cur.model : cur.kind === "imported" ? cur.model_id : "";
   const kindOf = () => $("#ae-kind").value;
@@ -83,6 +83,9 @@ function actorEditor(a, data) {
           <datalist id="ae-roles">${ACT_ROLES.map((r) => `<option value="${esc(r)}">`).join("")}</datalist></label>
         <label class="modal-field">About <span class="muted">(how they look and act - the script AI reads this)</span>
           <textarea rows="2" id="ae-desc">${esc(cur.description)}</textarea></label>
+        <label class="modal-field">Personality <span class="muted">(how they talk and act - e.g. grumpy, says "back in my day")</span>
+          <input type="text" id="ae-pers" value="${esc(cur.personality || "")}" placeholder="cheerful, always hungry"></label>
+        ${a && a.builtin ? "" : `<label class="check"><input type="checkbox" id="ae-reg" ${cur.regular ? "checked" : ""}> ⭐ Regular - offered in Custom Video, and the script writer brings them back</label>`}
         <label class="modal-field">Kind<select id="ae-kind">${Object.entries(ACT_KIND).map(([k, v]) =>
           `<option value="${k}" ${k === cur.kind ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       </div></div>
@@ -103,6 +106,7 @@ function actorEditor(a, data) {
         const val = (id) => ($(`#${id}`, m)?.value ?? "").trim();
         const kind = kindOf();
         const payload = { name: val("ae-name"), role: val("ae-role"), description: val("ae-desc"), kind,
+          personality: val("ae-pers"), regular: !!$("#ae-reg", m)?.checked,
           height: kind === "generic" ? Number(val("ae-height") || 1) : (cur.height || 1), look: {} };
         if (kind === "generic") ACT_LOOK.forEach(([k]) => { payload.look[k] = val(`ae-c-${k}`); });
         if (kind === "rigged") payload.model = model;

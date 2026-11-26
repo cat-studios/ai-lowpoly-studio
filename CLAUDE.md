@@ -643,6 +643,21 @@ puts the frame through `low_res_chain` + the title ASS (`title_ass`: caption fon
 `list_videos` gives `cover` (with an mtime `?v=`), the card uses it as the `<video poster>`; earlier versions /
 delete / trash carry the cover like the shot sheet. `/media/` serves jpg.
 
+## Recurring cast (2026-11-26)
+- Actors (`pipeline/actors.py`) gained `personality`, `regular` (⭐, offered in Custom Video) and `from_video`; an
+  edit that doesn't send a voice keeps the actor's old one (a regular always sounds the same). `regulars()`,
+  `writer_note(ids)` (what the writer is told: "Name (+id) - role, personality ... bring each in with [+id enter]
+  ... their own 'Name:' lines"), `from_cast(who, info)` = an actor from a rendered video's cast entry
+  (`build/<name>/resolved.json`): an actor that already played them is copied, an imported person stays that model
+  (`def.model.id`), else the studio body with its resolved `look` + `height`; voice = `role_voice`.
+- API (`web/actors_web.py`): `POST /api/actors/guests {episode}` (the people in that render), `POST /api/actors/keep
+  {episode, who, name}`. `/api/ai/script` takes `regulars` (ids) → `writer_note` in the writer's extra rules.
+- UI: Videos → 🎭 Guests (`openGuests`); Custom Video Idea step → ⭐ Regulars chips (`W.regulars`); after directing,
+  a regular's cast entry gets `actor: <id>` (`type: person`). Assets → Actors dialog: Personality + ⭐ Regular.
+- Script cleanup (`llm._clean_lines`): a bare direction line ("+mom enter, angry", no brackets) goes into the next
+  line's brackets - it was half spoken (", angry") and Mom's next line wasn't recognised as hers; "+ name" (space)
+  = "+name"; "+name: words" = that person's line, brought in if they weren't yet.
+
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
    (`resolve_co_stars`), **cast** (`resolve_cast`), **scenes** (`resolve_scenes`: `new:<place>` sets are made now and

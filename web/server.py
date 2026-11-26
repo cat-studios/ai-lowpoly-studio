@@ -915,7 +915,9 @@ class Handler(BaseHTTPRequestHandler):
                     others.append({"name": prof.get("name") or cid, "about": prof.get("about", ""),
                                    "aliases": S.speaker_names(prof)})
                 tpl = templates.get(b.get("template"))     # the kind of video: its own rules for the writer
-                extra = " ".join(x for x in (tpl["script"], b.get("extra", "")) if x)
+                import actors as AC                            # regulars picked in Custom Video: the writer knows them
+                regs = [str(r) for r in (b.get("regulars") or []) if re.fullmatch(r"[a-z0-9_]{1,48}", str(r))]
+                extra = " ".join(x for x in (tpl["script"], AC.writer_note(regs), b.get("extra", "")) if x)
                 lines = llm.generate_script(o["url"], model, b.get("title") or "an ordinary day", char,
                                             {"name": s["name"], "description": s["description"],
                                              "marks": list(s["marks"])},

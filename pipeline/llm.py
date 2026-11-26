@@ -374,6 +374,8 @@ def _clean_lines(text, keep=(), main=(), people=True):
     character) unless the name is in `keep` (co-stars) or is a person the script brings in with "+name" - those
     are who says the line (autodirect turns them into the shot's speaker)."""
     keep = {k.lower() for k in keep}
+    # "+ espresso_machine enter" (a space after the +) is still a +name
+    text = re.sub(r"(^|[\[,]\s*)\+\s+(?=[A-Za-z])", r"\1+", text, flags=re.M)
     keep |= {w.replace("_", " ") for w in re.findall(r"\+([a-z0-9_]+)", text.lower())} | \
         set(re.findall(r"\+([a-z0-9_]+)", text.lower()))
     main = {m.lower() for m in main} | NOT_SPEAKERS
@@ -381,9 +383,25 @@ def _clean_lines(text, keep=(), main=(), people=True):
     lines = []
     # some models put the whole script on one line: a new "[directions]" after a sentence starts a new line
     text = re.sub(r"(?<=[.!?\"'])\s+(?=\[)", "\n", text)
+    pending = ""                        # a bare direction line ("+mom enter, angry") waiting for the next line
     for raw in text.splitlines():
         s = raw.strip().strip('"').strip()
         s = re.sub(r'"\s*,?\s*$', "", s).strip()     # a line the model wrapped like JSON: ... nya!",
+        if people:
+            # "+name: words" = that person speaking; a line of only "+name verb, mood" = directions for the next
+            # line (it was spoken, or half of it: ", angry"), so it goes into that line's brackets
+            sm = re.match(r"^\+([a-z0-9_]+):\s*(.+)$", s, re.I)
+            if sm:
+                who = sm.group(1).lower()
+                head = "" if f"+{who}" in pending.lower() or who in brought else f"[+{who} enter] "
+                s = f"{head}{who.replace('_', ' ').title()}: {sm.group(2)}"
+            elif re.fullmatch(r"\+[a-z0-9_]+(\s+[a-z_]+)*(\s*,\s*[a-z_ ]+)*\s*[.!]?", s, re.I):
+                pending = (pending + ", " if pending else "") + s.rstrip(".! ")
+                continue
+            if pending and s:
+                b = re.match(r"^\[([^\]]*)\]\s*", s)
+                s = (f"[{pending}, {b.group(1)}] " + s[b.end():]) if b else f"[{pending}] {s}"
+                pending = ""
         s = re.sub(r"^\*{1,2}([^*:]{1,30})(?:\*{1,2}:|:\*{1,2})\s*", r"\1: ", s)   # **Name:** / **Name**: -> Name:
         s = re.sub(r"^(\d+[.)]|[-*•]|line\s*\d+:)\s*", "", s, flags=re.I)   # numbering / bullets
         m = re.match(r"^(\[[^\]]*\]\s*)?([A-Z][\w ]{0,20}):\s+", s)

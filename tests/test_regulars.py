@@ -1,0 +1,56 @@
+"""Recurring cast (pipeline/actors.py): keeping a guest from a video, and what the writer is told.
+python -m unittest discover tests"""
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+import actors as AC  # noqa: E402
+import autodirect as A  # noqa: E402
+import llm  # noqa: E402
+
+ROSE = {"id": "grandma_rose", "name": "Grandma Rose", "role": "grandma", "personality": "sneaky, loves cookies",
+        "description": "grey bun", "kind": "generic", "regular": True}
+
+
+class Regulars(unittest.TestCase):
+    def test_writer_note_names_the_id_to_use(self):
+        with mock.patch.object(AC, "get", lambda i: ROSE if i == "grandma_rose" else None):
+            note = AC.writer_note(["grandma_rose", "gone"])
+        self.assertIn("Grandma Rose (+grandma_rose)", note)
+        self.assertIn("sneaky, loves cookies", note)
+        self.assertEqual(AC.writer_note([]), "")
+
+    def test_keep_a_guest_with_her_look_and_voice(self):
+        info = {"type": "person", "looks": "mom, red dress", "look": {"hair": "#7a4a2a", "dress": "#d94a4a"},
+                "height": 0.97, "actor": AC.GENERIC_ID}
+        with mock.patch.object(AC, "save", lambda d, aid=None: d):
+            got = AC.from_cast("mom", info, episode="ep1")
+        self.assertEqual((got["kind"], got["look"]["dress"], got["height"]), ("generic", "#d94a4a", 0.97))
+        self.assertNotEqual(got["voice"], AC.ACTOR_VOICE)          # a woman's voice, kept from now on
+        self.assertTrue(got["regular"])
+
+    def test_imported_person_stays_that_model(self):
+        info = {"type": "thing", "looks": "mom", "def": {"person": True, "model": {"id": "pack_woman_3"}}}
+        with mock.patch.object(AC, "save", lambda d, aid=None: d):
+            got = AC.from_cast("mom", info)
+        self.assertEqual((got["kind"], got["model_id"]), ("imported", "pack_woman_3"))
+
+    def test_regular_speaks_her_own_lines(self):
+        lines = llm._clean_lines("Cookies are gone!\n[+grandma_rose enter] Grandma Rose: Not me, dear.", main=["Catgirl"])
+        shots = A.direct("\n".join(lines), "cafe", beat_words=0)["shots"]
+        self.assertEqual(shots[1]["speaker"], "grandma_rose")
+
+    def test_bare_direction_lines_go_into_the_next_line(self):
+        # "+mom enter, angry" on its own line was half spoken (", angry") and Mom's next line wasn't hers
+        lines = llm._clean_lines("Uh oh.\n+mom enter, angry\nMom: Again?\n+ toaster: Ding!", main=["Catgirl"])
+        self.assertEqual(lines[1], "[+mom enter, angry] Mom: Again?")
+        self.assertEqual(lines[2], "[+toaster enter] Toaster: Ding!")
+        shots = A.direct("\n".join(lines[:2]), "cafe", beat_words=0)["shots"]
+        self.assertEqual(shots[-1]["speaker"], "mom")
+        self.assertNotIn("angry", " ".join(s.get("line", "") for s in shots))
+
+
+if __name__ == "__main__":
+    unittest.main()
