@@ -184,6 +184,43 @@ def run_weekly_plan(plan=None, label="WEEKLY PLAN", mark=True):
     return job
 
 
+def run_idle_batch(cfg):
+    """An idle batch: `count` videos, each a random video (the 🎲 cards, randomvid.py) with `random_chance` %, else one
+    of the fresh ideas (weekly.pick). Old trending ideas are refreshed first and waited for, as the weekly plan does.
+    Never reaches Postiz, and doesn't count as the week's plan."""
+    import random
+    import ideas as IDB
+    import randomvid
+    import templates
+    import weekly
+    db = IDB.load()
+    if time.time() - float(db.get("fetched") or 0) > 12 * 3600:
+        fetch = submit(Job("ideas", "Trending ideas (idle auto-make)",
+                           [sys.executable, "-u", str(PIPE / "ideas.py"), "fetch"]))
+        while fetch.status in ("queued", "running"):
+            time.sleep(15)
+        db = IDB.load()
+    count = max(1, min(3, int(cfg.get("count", 1))))
+    chance = max(0, min(100, int(cfg.get("random_chance", 50))))
+    plan = {"count": count, "length": (S.load_settings().get("plan") or {}).get("length", "medium"), "drafts": False}
+    spec = weekly.spec_for(plan, db, f"http://127.0.0.1:{SERVER_INFO.get('port', 8765)}", False)
+    ideas, kinds = list(spec["ideas"]), list(templates.TEMPLATES)
+    items = []
+    for _ in range(count):
+        if ideas and random.random() * 100 >= chance:
+            items.append(ideas.pop(0))
+        else:
+            items.append(randomvid.item(template_ids=kinds))
+    spec["ideas"] = items
+    f = ROOT / "build" / "series" / f"{stamp()}-idle.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(spec), encoding="utf-8")
+    n_random = sum(1 for i in items if i.get("random"))
+    job = submit(Job("batch", f"Idle auto-make: {len(items)} video(s)", [sys.executable, "-u", str(PIPE / "batch.py"), str(f)]))
+    logs.event(f"IDLE AUTO-MAKE started: {len(items)} video(s), {n_random} random (job {job.id})")
+    return job
+
+
 ACTIVITY = {"at": time.time()}                  # last time someone used the studio (see route())
 IDLE_IGNORE = ("/api/jobs", "/api/status", "/api/comfy/status", "/static/", "/media/", "/propimg/", "/favicon",
                "/apple-touch-icon", "/manifest", "/sfx/", "/music/", "/fxprev/", "/setimg/", "/animimg/", "/actorimg/")
@@ -211,9 +248,7 @@ def idle_loop():
                 continue
             st.update(idle_fired_for=ACTIVITY["at"], idle_day=today, idle_count=made + 1)
             weekly.save_state(st)
-            plan = {"count": int(cfg.get("count", 1)), "length": (S.load_settings().get("plan") or {}).get("length", "medium"),
-                    "drafts": False}                                  # idle batches never reach Postiz
-            run_weekly_plan(plan, label="IDLE AUTO-MAKE", mark=False)
+            run_idle_batch(cfg)
         except Exception as exc:
             logs.event(f"IDLE AUTO-MAKE error: {exc.__class__.__name__}: {str(exc)[:200]}")
 

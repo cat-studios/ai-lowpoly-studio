@@ -2652,6 +2652,7 @@ const S_TABS = {
       ["idle.on", "Make a video after a quiet spell", "bool", {}, "When nobody has used the studio for the time below and nothing is rendering, it makes videos from fresh ideas (the Create page's 🌙 button does the same). Stays off until you turn it on."],
       ["idle.minutes", "Quiet minutes before it starts", "range", { min: 5, max: 120, step: 5 }, "Polling and the status dot don't count as using the studio."],
       ["idle.count", "Videos each time", "range", { min: 1, max: 3, step: 1 }],
+      ["idle.random_chance", "Random videos, in %", "range", { min: 0, max: 100, step: 10 }, "Each video is a random one (a place, vibe, guest, time and length from the 🎲 cards) this often; the rest come from fresh ideas. 0 = ideas only, 100 = random only."],
       ["idle.per_day", "Most per day", "range", { min: 1, max: 10, step: 1 }, "Never reaches Postiz - these stay on your Videos page."],
     ]],
     ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [

@@ -84,7 +84,7 @@ DEFAULTS = {
     "facts": {"check": True},            # Quick facts / Myth or fact: claims checked on Wikipedia before the render
     # the weekly plan (pipeline/weekly.py): on that day + hour, fresh ideas -> a batch of videos -> Postiz drafts
     # idle auto-make: after `minutes` with nobody using the studio (and nothing running), make `count` videos from fresh ideas
-    "idle": {"on": False, "minutes": 10, "count": 1, "per_day": 3},
+    "idle": {"on": False, "minutes": 10, "count": 1, "per_day": 3, "random_chance": 50},
     "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True},     # her room (sets/home.json) keeps one thing from every video
     "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic
              "use_ollama": True,           # let Ollama design new sets (falls back to pure random)

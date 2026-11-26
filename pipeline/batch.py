@@ -14,12 +14,26 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import llm  # noqa: E402
+import randomvid  # noqa: E402
 import settings as S  # noqa: E402
 import templates  # noqa: E402
 from progress import report  # noqa: E402
 from series import LENGTHS, call, slug  # noqa: E402
 
 MAX_IDEAS = 10
+
+
+def wait_job(base, jid, limit=40 * 60):
+    """A studio job (the scene) through the API: its finished job, or an error."""
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        j = call(base, "GET", f"/api/jobs/{jid}?from=0")
+        if j["status"] == "done":
+            return j
+        if j["status"] == "failed":
+            raise RuntimeError("the scene didn't come out - see the log")
+        time.sleep(5)
+    raise RuntimeError("the scene took too long")
 
 
 def title_for(idea, o, model, char):
@@ -49,21 +63,34 @@ def main(spec_path):
             step(0.02, "picking the title")
             title = title_for(idea, o, model, char)
             lo, hi = LENGTHS.get(spec.get("length"), tpl["lines"])
+            rnd = idea.get("random")                     # a random video: its place, vibe and length (randomvid.py)
+            if rnd:
+                lo, hi = rnd["lines"]
             step(0.1, "writing the script")
             r = call(base, "POST", "/api/ai/script", {
-                "title": title, "set": "auto", "scene_policy": "reuse", "character": spec.get("character") or "",
-                "model": model, "lines": random.randint(lo, hi), "tone": "", "co_stars": [], "template": tpl_id,
-                "regulars": spec.get("regulars") or [],
-                "extra": (f"The video's angle: {idea['angle']}." if idea.get("angle") else "")
-                + (f" {spec['note']}" if spec.get("note") else "")})
+                "title": title, "set": f"new:{rnd['scene']}" if rnd else "auto", "scene_policy": "reuse",
+                "character": spec.get("character") or "",
+                "model": model, "lines": random.randint(lo, hi), "tone": rnd["tone"] if rnd else "", "co_stars": [],
+                "template": tpl_id, "regulars": spec.get("regulars") or [],
+                "extra": randomvid.extra(rnd) if rnd else
+                ((f"The video's angle: {idea['angle']}." if idea.get("angle") else "")
+                 + (f" {spec['note']}" if spec.get("note") else ""))})
             print(f"\n== {i}. {title}  [{tpl['name']}, set {r.get('set')}]\n{r['script']}")
+            set_id, start = r["set"], None
+            if rnd:                                      # the set for the picked place, made from the title and the script
+                step(0.3, "making the scene")
+                idea_text = f"{rnd['scene']}. {title}. {' '.join((r.get('lines') or [])[:2])}"[:300]
+                job = call(base, "POST", "/api/sets/generate", {"idea": idea_text, "where": "", "light": rnd["light"],
+                                                                 "style": rnd["style"]})
+                set_id, start = wait_job(base, job["id"])["result"]["set"], "front"
             step(0.5, "directing the shots")
             d = call(base, "POST", "/api/autodirect", {
-                "script": r["script"], "set": r["set"], "start": None, "cast": {}, "co_stars": [], "beat_words": 4,
+                "script": r["script"], "set": set_id, "start": start, "cast": {}, "co_stars": [], "beat_words": 4,
                 "beat_sets": [], "cast_ai": True, "scene_ai": True, "character": spec.get("character") or "",
                 "title": title, "scene_policy": "reuse", "template": tpl_id})
             ep = {"title": title, "set": d["set"], "start": d["start"], "shots": d["shots"], "script": r["script"],
-                  "template": tpl_id, "idea": idea["id"], "set_style": spec.get("set_style") or "base",
+                  "template": tpl_id, "idea": idea.get("id"),
+                  "set_style": rnd["style"] if rnd else (spec.get("set_style") or "base"),
                   "batch": {"id": stamp, "part": i, "of": len(ideas)}}      # the Videos page's 🎬 Batch pill
             if spec.get("variation_of"):              # 🔁 a part 2 / another kind of video of an earlier one
                 ep.pop("batch")
