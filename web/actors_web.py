@@ -6,16 +6,48 @@ pipeline/actors.py; this module only handles the requests.
     POST   /api/actors            -> body = an actor (no id): creates one; returns it
     PUT    /api/actors/<id>       -> body = an actor: updates it
     DELETE /api/actors/<id>       -> moves the actor's file to assets/actors/.trash
+    POST   /api/actors/<id>/model -> body = a VRoid .vrm (X-Filename): made into assets/actors/rigs/<id>.blend like a
+                                     main character (prepare_character.py), the actor becomes kind "rigged" (a job)
 """
 import json
 import re
+import shutil
+import sys
+import time
 from pathlib import Path
+
+
+def _stamp():
+    return time.strftime("%Y%m%d-%H%M%S")
+
+
+def _import_vrm_job(aid, vrm, root, submit, Job):
+    """VRM -> assets/actors/rigs/<id>.blend (the same preparation as a main character), then the actor is rigged
+    with it and gets a preview picture."""
+    import actors as AC
+    from run_episode import BLENDER_DEFAULT, tool
+    root = Path(root)
+    blend = vrm.with_suffix(".blend")
+    cmd = [tool("blender", "BLENDER", BLENDER_DEFAULT), "-b", "--factory-startup", "--python",
+           str(root / "pipeline" / "prepare_character.py"), "--", str(vrm), "--out", str(blend)]
+
+    def done(job):
+        a = AC.get(aid) or {"name": aid}
+        rel = str(blend.relative_to(root)).replace("\\", "/")
+        AC.save({**a, "kind": "rigged", "model": rel}, aid=aid)
+        job.result = {"actor": aid, "model": rel}
+        submit(Job("import", f"Actor preview: {a.get('name', aid)}",
+                   [sys.executable, "-u", str(root / "pipeline" / "character_preview.py"), "--actor", aid]))
+    return Job("import", f"Import {vrm.name} -> actor {aid}", cmd, done)
 
 
 def _picture(a, root):
     """A picture for the card: rigged actors use their character's preview, imported ones the model's picture."""
     if a["kind"] == "rigged" and a.get("model"):
         stem = Path(a["model"]).stem
+        rig = root / "assets" / "actors" / "rigs" / f"{stem}.preview.png"      # an uploaded VRoid actor
+        if rig.exists():
+            return f"/actorimg/{stem}.preview.png?v={int(rig.stat().st_mtime)}"
         img = root / "assets" / "characters" / f"{stem}.preview.png"
         if img.exists():
             return f"/charimg/{stem}.preview.png?v={int(img.stat().st_mtime)}"
@@ -68,6 +100,24 @@ def handle(h, method, parts, *, submit, Job, root):
         if not AC.get(arg) or arg == AC.GENERIC_ID:
             raise ValueError("no such actor")
         return h.send_json(AC.save(h.body_json(), aid=arg))
+
+    if method == "POST" and arg and len(parts) > 1 and parts[1] == "model":
+        from urllib.parse import unquote
+        if not re.fullmatch(r"[a-z0-9_]{1,48}", arg) or not AC.get(arg) or arg == AC.GENERIC_ID:
+            raise ValueError("save the actor first")
+        fname = unquote(h.headers.get("X-Filename") or "model.vrm")
+        if not fname.lower().endswith(".vrm"):
+            raise ValueError("upload a .vrm file exported from VRoid Studio")
+        rigs = Path(root) / "assets" / "actors" / "rigs"
+        rigs.mkdir(parents=True, exist_ok=True)
+        dest = rigs / f"{arg}.vrm"
+        for old in (dest, dest.with_suffix(".blend")):              # keep the previous model, never overwrite it
+            if old.exists():
+                bak = rigs / ".trash"
+                bak.mkdir(exist_ok=True)
+                shutil.copy2(old, bak / f"{old.stem}-{_stamp()}{old.suffix}")
+        h.body_to_file(dest)
+        return h.send_json(submit(_import_vrm_job(arg, dest, root, submit, Job)).to_dict())
 
     if method == "DELETE" and arg:
         if not re.fullmatch(r"[a-z0-9_]{1,48}", arg):

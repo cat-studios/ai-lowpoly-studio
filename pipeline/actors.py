@@ -161,9 +161,10 @@ def model_choices():
                 if folder.name == "characters" and p.stem.startswith(main):
                     continue
                 pic = folder / f"{p.stem}.preview.png"
+                img = ("/charimg/" if folder.name == "characters" else "/actorimg/") + f"{p.stem}.preview.png"
                 rigs.append({"path": str(p.relative_to(ROOT)).replace("\\", "/"), "name": p.stem.replace("_", " "),
                              "source": "character" if folder.name == "characters" else "actor rig",
-                             "preview": f"/charimg/{p.stem}.preview.png" if folder.name == "characters" and pic.exists() else None})
+                             "preview": f"{img}?v={int(pic.stat().st_mtime)}" if pic.exists() else None})
     imported = []
     cats = IMP.category_map()                 # the same categories as Assets -> Imported (the picker's chips)
     for pack in IMP.packs():

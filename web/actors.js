@@ -78,6 +78,7 @@ function actorEditor(a, data) {
   const cur = a ? { ...a } : { name: "", role: "", description: "", personality: "", regular: true, kind: "generic", height: 1.0, look: {} };
   const look = { ...ACT_DEFAULT_LOOK, ...(cur.look || {}) };
   let model = cur.kind === "rigged" ? cur.model : cur.kind === "imported" ? cur.model_id : "";
+  let madeId = a && !a.builtin ? a.id : null;     // a new actor is saved before its VRoid upload
   const kindOf = () => $("#ae-kind").value;
   const body = `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
       <div style="flex:0 0 150px"><div id="ae-pic" class="asset-thumb checker" style="width:150px;border-radius:12px"></div></div>
@@ -122,7 +123,7 @@ function actorEditor(a, data) {
         if (kind === "generic") ACT_LOOK.forEach(([k]) => { payload.look[k] = val(`ae-c-${k}`); });
         if (kind === "rigged") payload.model = model;
         if (kind === "imported") payload.model_id = model;
-        const saved = a && !a.builtin ? await api("PUT", `/api/actors/${a.id}`, payload) : await api("POST", "/api/actors", payload);
+        const saved = madeId ? await api("PUT", `/api/actors/${madeId}`, payload) : await api("POST", "/api/actors", payload);
         toast(`Saved ${saved.name} ✓`);
         pageAssets("actors");
         return true;
@@ -154,12 +155,36 @@ function actorEditor(a, data) {
           $("#ae-height", m).oninput = (e) => { $("#ae-h-v", m).textContent = Number(e.target.value).toFixed(2); };
           $$("input[type=color]", el).forEach((i) => i.oninput = pic);
         } else if (k === "rigged") {
-          el.innerHTML = `<p class="muted small" style="margin:0 0 8px">A rigged model (a .blend made with the character tools). It walks, talks with gestures and poses like a main character, but its voice is not used.</p>
+          el.innerHTML = `<p class="muted small" style="margin:0 0 8px">A rigged model - a VRoid character like the main ones. It walks, talks (mouth, faces) and poses like a main character, with the voice set for this actor.</p>
+            <div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+              <label class="small-btn" style="cursor:pointer">📤 Upload a VRoid model (.vrm)<input type="file" id="ae-vrm" accept=".vrm" hidden></label>
+              <span class="muted small">Exported from VRoid Studio - made ready the same way as a main character (a minute or two).</span></div>
+            <div id="ae-vrm-job"></div>
             <div class="asset-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));max-height:300px;overflow:auto">${data.models.rigs.map((r) =>
-              `<div class="asset-card ${r.path === model ? "pick-on" : ""}" tabindex="0" data-pick="${esc(r.path)}"><div class="asset-info">
+              `<div class="asset-card ${r.path === model ? "pick-on" : ""}" tabindex="0" data-pick="${esc(r.path)}">${r.preview ? `<div class="asset-thumb checker"><img src="${esc(r.preview)}" alt="" loading="lazy"></div>` : ""}<div class="asset-info">
                 <div class="asset-name">${esc(r.name)}</div><div class="asset-meta"><span class="chip">${esc(r.source)}</span></div></div></div>`).join("")
-              || '<div class="empty"><p>No rigged models yet. Make one from a VRoid file on the Characters page, or add a .blend to assets/actors/rigs.</p></div>'}</div>`;
+              || '<div class="empty"><p>No rigged models yet - upload a VRoid .vrm above.</p></div>'}</div>`;
           bindPick(el);
+          $("#ae-vrm", el).onchange = guard(async (e) => {
+            const f = e.target.files[0]; if (!f) return;
+            if (!madeId) {          // a new actor: save it first (as a body) so the model has someone to belong to
+              const name = ($("#ae-name", m).value || "").trim() || f.name.replace(/\.vrm$/i, "");
+              $("#ae-name", m).value = name;
+              const made = await api("POST", "/api/actors", { name, role: $("#ae-role", m).value.trim(),
+                description: $("#ae-desc", m).value.trim(), kind: "generic", regular: !!$("#ae-reg", m)?.checked });
+              madeId = made.id;
+            }
+            toast(`Uploading ${f.name}…`);
+            const job = await api("POST", `/api/actors/${madeId}/model`, undefined, { body: f, headers: { "X-Filename": encodeURIComponent(f.name) } });
+            watchJob(job, $("#ae-vrm-job", m), async (j) => {
+              if (j.status !== "done") { toast("Import failed - see the log", true); return; }
+              const fresh = await api("GET", "/api/actors");
+              data.models = fresh.models;
+              model = j.result.model;
+              toast("Model imported - its picture follows in a minute ✓");
+              box();
+            });
+          });
         } else {
           // every imported model (production has ~3000 - the old list stopped at 200): category chips like Assets ->
           // Imported (People first - actors are people), search across all of them, and "Show more" in pages

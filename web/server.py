@@ -903,6 +903,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not re.fullmatch(r"[a-z0-9_-]+\.preview\.png", name):
                     return self.fail("not found", 404)
                 return self.send_file(S.CHAR_DIR / name)
+            if method == "GET" and path.startswith("/actorimg/"):         # rigged actors' previews (VRoid uploads)
+                name = path[len("/actorimg/"):]
+                if not re.fullmatch(r"[a-z0-9_-]+\.preview\.png", name):
+                    return self.fail("not found", 404)
+                return self.send_file(ROOT / "assets" / "actors" / "rigs" / name)
             if method == "GET" and path.startswith("/setimg/"):
                 name = path[len("/setimg/"):]
                 if not re.fullmatch(r"[\w.-]+\.png", name):

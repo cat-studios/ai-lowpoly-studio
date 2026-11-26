@@ -861,6 +861,12 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
   new colours. Fixed: with two people already beside her the neighbour went 9.7 m back (`_roomiest` scored
   unlimited clearance) - clearance now counts up to 1.5 m and spots past 3.5 m lose 0.8 per metre (dev build
   check: 3 m, behind and to the side).
+- **VRoid actors** (the user, 2026-11-26): Assets → Actors → an actor → Kind "Rigged model" → 📤 Upload a VRoid
+  model (.vrm) (`POST /api/actors/<id>/model`, `actors_web._import_vrm_job`): the same `prepare_character.py` as a
+  main character into `assets/actors/rigs/<id>.blend` (an older .vrm/.blend is copied to `rigs/.trash` first), the
+  actor becomes kind `rigged`, then `character_preview.py --actor <id>` draws `rigs/<id>.preview.png` (served at
+  `/actorimg/`). A new actor is saved (as a body) before the upload. Rigged actors were already animated like a
+  character (`blender_cast.animate_person` → `VRoidRig`) and speak with the actor's voice; dev build check fine.
 
 ## How an episode becomes a video (`pipeline/run_episode.py`)
 1. Resolve the **character** profile (`settings.active_character` or episode `"character"`), **co-stars**
