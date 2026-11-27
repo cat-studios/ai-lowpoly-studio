@@ -64,5 +64,13 @@ class GhostScriptSlips(unittest.TestCase):
         self.assertIsNone(A.label_speaker("Warning", sp))
 
 
+class HerOtherSelves(unittest.TestCase):
+    def test_is_self(self):
+        for w in ("past_self", "future_me", "evil_self", "younger_me", "pastself", "mirror_me"):
+            self.assertTrue(A.is_self(w), w)
+        for w in ("mom", "self_help_book", "shadow_figure", "meme"):
+            self.assertFalse(A.is_self(w), w)
+
+
 if __name__ == "__main__":
     unittest.main()

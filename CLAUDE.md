@@ -270,7 +270,9 @@ Open items:
   `blender_cast.build` notes the objects before each styled cast member and `styled()` gives every new mesh one
   flat material (`STYLES`: ghost = pale blue-white, emission 0.9, alpha 0.42 BLENDED - dithered was a speckle at 1
   sample - no ground shadow; shadow = near-black, opaque-ish, keeps its blob shadow). Works for the studio body, VRoid
-  actors, imported models, crowds. The writer is told (eerie / memory stories only). Storyboard `zz_check_ghosts`. From the first production ghost video: `tidy_line` joins two leading bracket groups ("[wide, scared] [+past_self appear ghost] ..." - the second was spoken), `label_speaker` / `fix_labels` read "Past Lavender:" (her name or a style word + part of a speaker's name) as past_self, ghost-styled names count as speakers in the pre-scan, the AI cast step skips a half-named copy ("past" beside past_self), `wide_eyes` = surprised.
+  actors, imported models, crowds. The writer is told (eerie / memory stories only). Storyboard `zz_check_ghosts`. From the first production ghost video: `tidy_line` joins two leading bracket groups ("[wide, scared] [+past_self appear ghost] ..." - the second was spoken), `label_speaker` / `fix_labels` read "Past Lavender:" (her name or a style word + part of a speaker's name) as past_self, ghost-styled names count as speakers in the pre-scan, the AI cast step skips a half-named copy ("past" beside past_self), `wide_eyes` = surprised. Her other selves (`autodirect.is_self`: past_self, future_me, evil_self, mirror_me...) are played by HER
+  own model (`resolve_cast`: `actor_model` = the character's .blend, `self_of`) and speak with her voice
+  (`speaker_voice`); with the ghost style she's a pale see-through double (dev storyboard checked).
 - **Spelled-out words** (the user: "she speaks the letters of words"): words in capitals for emphasis ("an EGG",
   "going UP") were read as abbreviations. `run_episode.speakable` lower-cases them for the voice (`tts` and
   `prefetch_local`, so the cache key matches); `SPELLED` abbreviations (TV, NASA, DNA, OK...) keep their capitals.

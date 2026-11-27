@@ -327,6 +327,15 @@ STYLE_OPTIONS = {"ghost": "ghost", "ghostly": "ghost", "spirit": "ghost", "trans
 GHOST_NAMES = set("ghost ghosts spirit spirits phantom phantoms specter spectre apparition memory memories echo soul "
                   "souls afterlife".split())
 GHOST_PHRASES = ("past_self", "future_self", "other_me", "other_self", "past_me", "future_me", "old_me", "younger_me")
+SELF_NAME = re.compile(r"^(?:(?:past|future|younger|older|old|young|little|baby|evil|mirror|other|alternate|"
+                       r"dream|tomorrow|yesterday|clone)_?)+(?:self|me|myself)$")
+
+
+def is_self(who):
+    """A cast name that is HER in another form - past_self, future_me, evil_self: played by her own model."""
+    return bool(SELF_NAME.match(str(who or "").lower()))
+
+
 SHADOW_NAMES = set("shadow shadows silhouette silhouettes shade shades".split())
 FIGURE_WORDS = set("figure figures stranger strangers person man woman guy girl boy kid child someone".split())
 

@@ -411,6 +411,8 @@ def speaker_voice(ep, cfg, shot):
     if sp and sp not in {c["id"] for c in ep.get("co_stars") or []} and sp in (ep.get("cast") or {}):
         import actors as AC                       # a cast person speaks with their actor's voice
         info = ep["cast"][sp] or {}
+        if info.get("self_of"):                   # her past / future self: her own voice
+            return S.layered_voice(cfg["voice"], ep["character"].get("voice"), ep.get("voice"))
         act = AC.get(info.get("actor") or AC.GENERIC_ID) or AC.get(AC.GENERIC_ID)
         own = AC.role_voice(sp, info.get("looks", ""), act.get("voice"))     # "mom" gets a woman's voice
         return S.layered_voice(cfg["voice"], own)
@@ -1065,6 +1067,14 @@ def resolve_cast(ep, cfg, log=print):
                 info["height"] = info["height"] * float(act.get("height") or 1.0)
             if act["kind"] == "rigged":                # its own rigged .blend: animated like a character
                 info["actor_model"] = str((AC.ROOT / act["model"]).resolve())
+            her_model = (ep.get("character") or {}).get("model") or ""
+            if autodirect.is_self(who) and her_model not in ("", "placeholder") and Path(her_model).exists():
+                # "+past_self appear ghost": her own model (a ghost style makes it pale and see-through), her voice
+                info["actor_model"], info["self_of"], info["height"] = her_model, True, 1.0
+                info.pop("look", None)
+                log(f"  cast: {who} is her in another form - her own model")
+                cast[who] = info
+                continue
             log(f"  cast: {who} (person, actor '{act['name']}' [{act['kind']}], height {info['height']:.2f})")
         elif not info.get("def"):
             kind = propgen.slug(info.get("prop") or who)
