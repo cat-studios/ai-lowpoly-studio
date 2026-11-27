@@ -3131,11 +3131,15 @@ function assetsAnims(box, anims) {
       <div class="asset-thumb checker" style="aspect-ratio:9/4">${a.picture ? `<img src="${esc(a.picture)}" alt="${esc(a.name)}" loading="lazy" style="max-width:100%;max-height:100%">` : `<div class="asset-noimg"><span>🕺</span><small>no picture</small></div>`}</div>
       <div class="asset-actions"><button data-an-del="${esc(a.name)}" title="Delete">🗑</button></div>
       <div class="asset-info"><div class="asset-name">${esc(a.name.replace(/_/g, " "))}</div>
-        <div class="asset-meta">${st}<span class="chip">${a.length}s${a.loop ? " · loops" : ""}</span>${a.by === "ai" ? '<span class="chip">AI</span>' : ""}</div>
+        <div class="asset-meta">${a.made_up ? '<span class="chip warn" title="Made from a word that isn\'t an action - never used">🧹 made up</span>' : ""}${st}<span class="chip">${a.length}s${a.loop ? " · loops" : ""}</span>${a.by === "ai" ? '<span class="chip">AI</span>' : ""}</div>
         <div class="muted small">${esc(a.description)}</div>
         ${a.checked === false && a.problem ? `<div class="muted small">Checker: ${esc(a.problem)}</div>` : ""}</div></div>`;
   };
+  const madeUp = own.filter((a) => a.made_up);
   box.innerHTML = `
+    ${madeUp.length ? `<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span style="flex:1">${madeUp.length} animation${madeUp.length > 1 ? "s were" : " was"} made from words that aren't actions (${madeUp.map((a) => esc(a.name)).join(", ")}). They're never used any more.</span>
+      <button id="an-tidy">🧹 Move ${madeUp.length > 1 ? "them" : "it"} to the trash</button></div>` : ""}
     <div class="asset-toolbar"><p class="muted small" style="margin:0;flex:1">Actions she learned. When a script asks for one she can't do yet
       (<code>[salute]</code> or <code>[do:salute]</code>), the AI makes it from poses that are known to look right, renders a quick check and has the
       picture model look at it - about half a minute to two minutes, then every video reuses it. Write <code>[salute]</code> in a script to use one.</p></div>
@@ -3159,6 +3163,11 @@ function assetsAnims(box, anims) {
       await pageAssets("anims");
     });
   });
+  if ($("#an-tidy")) $("#an-tidy").onclick = guard(async () => {
+    const r = await api("POST", "/api/anims/tidy", {});
+    toast(`${r.moved.length} moved to the animations trash folder`);
+    await pageAssets("anims");
+  });
   $$("[data-an-del]").forEach((b) => b.onclick = guard(async () => {
     if (!(await uiConfirm(`Delete the "${b.dataset.anDel}" animation? It moves to the animations trash folder.`, { title: "Delete animation", ok: "Delete", danger: true }))) return;
     await api("DELETE", `/api/anims/${encodeURIComponent(b.dataset.anDel)}`);
@@ -3168,7 +3177,20 @@ function assetsAnims(box, anims) {
 }
 
 /* ---- props */
-const propPic = (p) => (p.form === "sprite" ? p.sprite : p.preview3d);
+const propPic = (p) => p.made || (p.form === "sprite" ? p.sprite : p.preview3d);
+
+// 🧊 Make it real 3D (propgen.make_real: a drawing -> TRELLIS 2 in ComfyUI -> the Made 3D pack); kinds = one prop or "all"
+async function makeReal(p) {
+  const all = !p;
+  const job = await api("POST", all ? "/api/assets/props/make3d_all" : `/api/assets/props/${p.kind}/make3d`, {});
+  await openModal({ title: all ? "Making props real 3D…" : `Making ${titleCase(p.name)} real 3D…`,
+    body: `<p class="muted small" style="margin-top:0">Each one is drawn, then made into a 3D model by TRELLIS 2 on your graphics card (about a minute each). You can close this - it carries on in the background.</p><div class="inline-job" data-mj></div>`,
+    buttons: [{ label: "Close", primary: true }],
+    onOpen: (m, close) => watchJob(job, $("[data-mj]", m), (j) => {
+      toast(j.status === "done" ? (all ? "Props made real 3D" : `${titleCase(p.name)} is real 3D now`) : "Couldn't make it - see the log", j.status !== "done");
+      if (j.status === "done") { close(); pageAssets("props"); }
+    }) });
+}
 function propCard(p) {
   const used = p.used_in.length;
   return `<div class="asset-card" data-prop="${esc(p.kind)}" tabindex="0" title="${esc(p.looks)}">
@@ -3179,12 +3201,14 @@ function propCard(p) {
       <div class="asset-meta">
         ${p.height ? `<span class="chip">↕ ${(+p.height).toFixed(p.height < 1 ? 2 : 1)} m</span>` : ""}
         <span class="chip">${ON_ICON[p.on] || p.on}</span>
+        ${p.made ? `<span class="chip good" title="Made by TRELLIS 2 - in Assets → Imported → Made 3D">🧊 real 3D</span>` : ""}
         ${used ? `<span class="chip good">in ${used} set${used > 1 ? "s" : ""}</span>` : `<span class="chip dim">not in a set</span>`}
       </div>
     </div>
     <div class="asset-actions">
       <button data-pa="edit" title="View & edit">✏️</button>
       ${p.form === "sprite" ? '<button data-pa="redraw" title="Draw it again">🎨</button>' : ""}
+      ${p.can_make_real ? '<button data-pa="real" title="Make it a real 3D model (TRELLIS 2)">🧊</button>' : ""}
       <button data-pa="del" class="danger" title="Delete">🗑</button>
     </div></div>`;
 }
@@ -3195,7 +3219,11 @@ function assetsProps(box, props, form) {
   const keep = (p) => (!AS_Q || `${p.kind} ${p.looks}`.toLowerCase().includes(AS_Q.toLowerCase()))
     && (AS_FILTER === "all" || (AS_FILTER === "unused" && !p.used_in.length));
   const missing = form === "sprite" ? props.filter((p) => !p.sprite).length : 0;
+  const shapes = form === "3d" ? props.filter((p) => p.can_make_real).length : 0;
   box.innerHTML = `
+    ${shapes ? `<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span style="flex:1">${shapes} prop${shapes > 1 ? "s are" : " is"} still built from simple shapes. TRELLIS 2 can make ${shapes > 1 ? "them" : "it"} real 3D models (about a minute each) - every set using ${shapes > 1 ? "them" : "it"} gets the new model.</span>
+      <button class="primary" id="pr-real">🧊 Make ${shapes > 1 ? `all ${shapes}` : "it"} real 3D</button></div>` : ""}
     ${missing ? `<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <span style="flex:1">${missing} sprite${missing > 1 ? "s aren't" : " isn't"} drawn yet. New sprites get theirs automatically; this draws the rest.</span>
       <button class="primary" id="pr-missing">🎨 Draw ${missing} missing picture${missing > 1 ? "s" : ""}</button><div class="inline-job" id="pr-missing-job" style="width:100%"></div></div>` : ""}
@@ -3219,9 +3247,14 @@ function assetsProps(box, props, form) {
       card.onkeydown = (e) => { if (e.key === "Enter") editProp(p); };
       $("[data-pa=edit]", card).onclick = () => editProp(p);
       if ($("[data-pa=redraw]", card)) $("[data-pa=redraw]", card).onclick = () => redrawProp(p);
+      if ($("[data-pa=real]", card)) $("[data-pa=real]", card).onclick = guard(() => makeReal(p));
       $("[data-pa=del]", card).onclick = guard(() => deleteProp(p));
     });
   };
+  if ($("#pr-real")) $("#pr-real").onclick = guard(async () => {
+    if (!(await uiConfirm(`Make ${shapes} prop${shapes > 1 ? "s" : ""} real 3D? It runs in the background on your graphics card - about ${Math.max(1, Math.round(shapes * 1.3))} minute${shapes > 1 ? "s" : ""} in all. Each keeps its shapes, so you can switch one back.`, { title: "Make props real 3D", ok: "🧊 Make them" }))) return false;
+    return makeReal(null);
+  });
   $("#as-q").oninput = (e) => { AS_Q = e.target.value; draw(); };
   $$("[data-af]").forEach((b) => b.onclick = () => { AS_FILTER = b.dataset.af; $$("[data-af]").forEach((x) => x.classList.toggle("on", x === b)); draw(); });
   draw();
@@ -3267,6 +3300,10 @@ function editProp(p) {
       </div></div>`,
     buttons: [
       { label: "🗑 Delete", danger: true, left: true, onClick: () => deleteProp(p) },
+      ...(p.can_make_real ? [{ label: "🧊 Make it real 3D", left: true, onClick: () => makeReal(p) }] : []),
+      ...(p.made ? [{ label: "↩ Use the shapes again", left: true, onClick: async () => {
+        await api("PUT", `/api/assets/props/${p.kind}`, { form: "shapes" });
+        toast(`${titleCase(p.name)} uses its shapes again (the real model stays in Made 3D)`); pageAssets("props"); } }] : []),
       ...(p.form === "sprite" ? [{ label: "🎨 Redraw", left: true, onClick: (m) => redrawProp(p, $("[data-f=looks]", m).value.trim() || p.looks) }] : []),
       ...(p.form === "sprite" && p.parts ? [{ label: "🧊 Use the 3D model", left: true, onClick: async () => {
         await api("PUT", `/api/assets/props/${p.kind}`, { form: "3d" });

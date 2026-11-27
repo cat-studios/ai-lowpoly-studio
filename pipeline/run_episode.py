@@ -1064,8 +1064,11 @@ def resolve_cast(ep, cfg, log=print):
                                              cfg.get("ollama"), log=lambda m: log("  " + m), comfy_cfg=comfy_cfg,
                                              use_imported=not wants_generated)
         else:
-            lib_d = propgen.library().get(info["def"].get("kind") or "")
-            if lib_d and info["def"].get("source") != "imported":    # 3D model or 2D sprite: the library decides
+            lib_d = propgen.library().get(info["def"].get("kind") or info["def"].get("library_kind") or "")
+            md = propgen.made_def(lib_d) if info["def"].get("source") != "imported" or info["def"].get("made_3d") else None
+            if md:                                     # made real 3D since this video was directed
+                info["def"] = md
+            elif lib_d and info["def"].get("source") != "imported":    # 3D model or 2D sprite: the library decides
                 info["def"] = dict(info["def"], complex=bool(lib_d.get("complex")))
             if (comfy_cfg and not info["def"].get("sprite") and info["def"].get("source") != "imported"
                     and propgen.needs_picture(info["def"])):   # a 3D model stays 3D - only sprite-form props get drawn
@@ -1300,6 +1303,10 @@ def embed_set(ep):
         cfg = S.load_settings()
         comfy_cfg = cfg["comfy"] if cfg["comfy"].get("mode", "auto") != "off" else None
         for k, d in list(recipe["custom_props"].items()):
+            md = propgen.made_def(lib.get(k))
+            if md:                                    # made real 3D on the Assets page: every set gets the model
+                recipe["custom_props"][k] = md
+                continue
             if k in lib and lib[k].get("source") != "imported":   # Assets page edits reach every set using it,
                 # including 3D model <-> 2D sprite (complex)
                 recipe["custom_props"][k] = d = {**d, "complex": bool(lib[k].get("complex")),

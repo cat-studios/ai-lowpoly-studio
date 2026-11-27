@@ -545,7 +545,17 @@ def prop_info(kind, d, used=None):
             "needs_picture": propgen.needs_picture(d),
             "sprite": f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}" if sprite else None,
             "preview3d": f"/propimg/{kind}.3d.png?v={int(img3.stat().st_mtime)}" if img3.exists() else None,
+            "made": made_pic(d), "can_make_real": propgen.can_make_real(d),
             "used_in": used if used is not None else []}
+
+
+def made_pic(d):
+    """The real 3D model's picture (Assets -> Imported -> Made 3D) when the prop was made real 3D, else None."""
+    mid = ((d or {}).get("made") or {}).get("id")
+    if not mid:
+        return None
+    p = ROOT / "assets" / "imported" / "previews" / f"{mid}.png"
+    return f"/impimg/{mid}.png?v={int(p.stat().st_mtime)}" if p.exists() else "/impimg/none.png"
 
 
 def list_props():
@@ -841,6 +851,10 @@ class Handler(BaseHTTPRequestHandler):
         if arg == "props":
             if method == "GET" and not sub:
                 return self.send_json(list_props())
+            if method == "POST" and sub == "make3d_all":           # 🧊 every prop built from shapes, one job
+                n = sum(1 for d in propgen.library().values() if propgen.can_make_real(d))
+                cmd = [sys.executable, "-u", str(PIPE / "propgen.py"), "make3d", "all"]
+                return self.send_json(submit(Job("props", f"Make {n} props real 3D", cmd)).to_dict())
             if not re.fullmatch(r"[a-z0-9_]+", sub or ""):
                 raise ValueError("bad prop name")
             lib = propgen.library()
@@ -858,6 +872,14 @@ class Handler(BaseHTTPRequestHandler):
                     d["size_checked"] = True
                 if b.get("form") == "3d" and d.get("parts"):      # back to its 3D shapes (Assets: Use the 3D model)
                     d["complex"], d["form"] = False, "3d"
+                propgen._save(d)
+                return self.send_json({"ok": True, "prop": prop_info(sub, d)})
+            if method == "POST" and rest[1:] == ["make3d"]:       # 🧊 Make it real 3D (TRELLIS 2, model3d.py)
+                cmd = [sys.executable, "-u", str(PIPE / "propgen.py"), "make3d", sub]
+                return self.send_json(submit(Job("props", f"Make {sub.replace('_', ' ')} real 3D", cmd)).to_dict())
+            if method == "PUT" and len(rest) == 1 and self.body_json().get("form") == "shapes":
+                d = lib[sub]                                       # back to its own shapes (the model stays in Made 3D)
+                d.pop("made", None)
                 propgen._save(d)
                 return self.send_json({"ok": True, "prop": prop_info(sub, d)})
             if method == "POST" and sub == "missing":    # pictures for every prop that has none yet

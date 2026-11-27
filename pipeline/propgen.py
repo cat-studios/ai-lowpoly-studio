@@ -805,6 +805,10 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
     if real:
         return real
     have = library().get(kind)
+    md = made_def(have) if have else None
+    if md:                                     # made real 3D on the Assets page: the model, not the shapes
+        log(f"[props] reusing '{kind}' from the prop library (its real 3D model)")
+        return md
     if have:
         log(f"[props] reusing '{kind}' from the prop library")
         changed = False
@@ -877,7 +881,9 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
 
 
 # ----------------------------------------------------------------------------- does it look like what it is?
-PROP_PASS = 5                                  # vision score (1-10) that counts as "looks like it" (forgiving)
+# vision score (1-10) that counts as "looks like it". Back to 6 (2026-11-27): it was lowered to 5 while the check was
+# judging HER instead of the prop (_is_cutaway, CHECK_V 2) - judged on itself, a 5 is worth one redesign
+PROP_PASS = 6
 SPRITE_BELOW = 3       # a 3D design that still scores under this after its redesign becomes a 2D sprite - the small
                        # vision model gives most fine 3D props 3-4, which made nearly everything a flat picture
 
@@ -1376,10 +1382,68 @@ def redraw(kind, looks=None, log=print):
     log(f"[props] redrew '{kind}'")
 
 
+def made_def(d):
+    """A library prop that was made real 3D (Assets -> 🧊 Make it real 3D): its Made 3D model at the prop's own size,
+    or None (not made, or the model is gone - its shapes are used then)."""
+    made = (d or {}).get("made") or {}
+    if not made.get("id"):
+        return None
+    try:
+        import imported
+        md = imported.model_def(made["id"], d.get("kind", ""), d.get("looks", ""))
+    except Exception:
+        return None
+    if not md:
+        return None
+    return dict(md, height=d.get("height") or md.get("height"), made_3d=True, library_kind=d.get("kind"))
+
+
+def can_make_real(d):
+    """Props the button can remake: 3D ones built from shapes (not signs - their text is the point - nor explainers,
+    whose parts move, nor imported or already made ones)."""
+    return bool(d.get("parts")) and not d.get("sign") and not d.get("explainer") and d.get("source") != "imported" \
+        and not (d.get("made") or {}).get("id")
+
+
+def make_real(kind, log=print):
+    """Assets -> 🧊 Make it real 3D: the library prop is drawn and made by TRELLIS 2 (model3d.py) into the Made 3D pack;
+    the prop keeps its shapes and points at the model ("made"), so every set / video using it gets the real model on
+    its next render (and "Use the shapes again" undoes it). True when made."""
+    import imported
+    import model3d
+    import settings as S
+    import tempfile
+    d = library().get(kind)
+    if not d:
+        raise SystemExit(f"no prop '{kind}' in the library")
+    cfg = S.load_settings()
+    with tempfile.TemporaryDirectory() as tmp:
+        glb = model3d.make(kind, d.get("looks") or kind.replace("_", " "), cfg["comfy"], Path(tmp) / f"{kind}.glb",
+                           faces=int((cfg.get("model3d") or {}).get("faces", model3d.FACES)), log=log)
+        rec = imported.add_made(kind, glb, d.get("looks", ""), log) if glb else None
+    if not rec:
+        log(f"[3d] '{kind}' stays as it was")
+        return False
+    d["made"] = {"id": rec["id"], "at": time.time()}
+    _save(d)
+    log(f"[3d] '{kind}' is a real 3D model now - every set using it gets it on its next render")
+    return True
+
+
 if __name__ == "__main__":
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import settings as S
+    if len(sys.argv) > 2 and sys.argv[1] == "make3d":        # Assets: make one prop, or "all", real 3D
+        from progress import report
+        kinds = [k for k, d in sorted(library().items()) if can_make_real(d)] if sys.argv[2] == "all" else sys.argv[2:]
+        print(f"[3d] {len(kinds)} prop(s) to make real 3D", flush=True)
+        ok = 0
+        for i, k in enumerate(kinds):
+            report(i / max(1, len(kinds)), f"Making {k} real 3D ({i + 1}/{len(kinds)})")
+            ok += bool(make_real(k))
+        print(f"[3d] done: {ok} of {len(kinds)} made", flush=True)
+        sys.exit(0 if ok or not kinds else 1)
     if len(sys.argv) > 2 and sys.argv[1] == "redraw":
         redraw(sys.argv[2], " ".join(sys.argv[3:]) or None)
         sys.exit(0)

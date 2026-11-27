@@ -650,6 +650,9 @@ Easiest: Characters page → import a `.vrm`. By hand:
   folder (trellis_2_int8_convrot, dino_v3_L_naf_fp32, trellis_2_shape_vae_bf16, trellis_2_texture_vae_bf16,
   birefnet - ComfyUI's "Pixal3D & TRELLIS.2: Image to Model" template lists them). Without them, or switched off, the
   AI builds things from simple shapes as before. *3D model detail* sets how many faces (fewer = blockier).
+  Props made earlier from simple shapes can be remade too: Assets → Props → 🧊 on a card, or **🧊 Make all real 3D**
+  at the top. Every set and video using that prop gets the real model on its next render; *↩ Use the shapes again*
+  (in the prop's dialog) switches one back.
 Everything still works without them (except videos in other languages and ComfyUI "Required" mode), just with
 simpler results.
 

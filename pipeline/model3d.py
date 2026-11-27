@@ -22,9 +22,13 @@ import comfy
 FILES = {"unet": "trellis_2_int8_convrot.safetensors", "clip_vision": "dino_v3_L_naf_fp32.safetensors",
          "shape_vae": "trellis_2_shape_vae_bf16.safetensors", "texture_vae": "trellis_2_texture_vae_bf16.safetensors",
          "bg": "birefnet.safetensors"}
-DRAW_PROMPT = ("{looks}, a single {name}, the whole object fully visible and centered with space around it, "
-               "three-quarter front view, simple chunky low poly 3D game asset, flat bright colors, solid shapes, "
-               "plain white background, no shadow, no floor, nothing else in the picture, no text")
+# a 3D-looking render, never a flat drawing: "low poly game asset, flat colors" drew the snail as a flat outlined
+# sticker, TRELLIS guessed its depth and painted the black outlines on as dark smudges (production, 2026-11-27);
+# the duck drawn as a soft-shaded 3D toy came out clean
+DRAW_PROMPT = ("a 3D render of a single {name}, {looks}, a cute toy figurine made of smooth matte plastic, chunky "
+               "simple shapes, bright solid colors, soft even studio lighting, three-quarter front view from slightly "
+               "above, the whole object fully visible and centered with space around it, plain white background, "
+               "no black outlines, not a flat drawing, no shadow, no floor, nothing else in the picture, no text")
 FACES = 3000          # low-poly: the mesh is simplified to about this many faces (the studio's props are a few hundred)
 TIMEOUT = 900
 REMESH = 160         # voxel grid of the clean-up remesh (256 ~ 100k faces): enough for a few thousand faces

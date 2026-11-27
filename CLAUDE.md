@@ -244,7 +244,24 @@ Open items:
   (warm), the whole thing (drawing + TRELLIS + measure + picture) 73 s for a fire hydrant; storyboard
   `zz_check_made3d`: a whole, bright, faceted rubber duck at 0.3 m as a cutaway and beside her. `made_3d` returns
   it through `imported_def` so it gets the real height (hydrant 1.0 -> 0.75 m) and size words like any import.
-  Not run in production yet (same PC, same ComfyUI - the files are already there).
+  Production test (`zz_test_made3d`, snails): snail 41 s + slime trail 30 s made at render and used. The snail came
+  out a dark purple blob: Z-Image had drawn it as a FLAT outlined sticker ("low poly game asset, flat colors") and
+  TRELLIS painted the outlines on as smudges - `DRAW_PROMPT` now asks for a 3D-rendered toy figurine, soft studio
+  light, no black outlines, not a flat drawing (dev retest: a clean snail with a spiral shell and eye stalks; the
+  "old enamel lamp" made with it via Make it real 3D: clean, 30 s).
+- **Make it real 3D** (Assets -> Props, the user's pick): `propgen.can_make_real` (shape props; not signs, explainers,
+  imported or already made), `make_real(kind)` (model3d.make + imported.add_made -> the library prop gets
+  `made: {id, at}` and KEEPS its parts), `made_def(d)` = its Made 3D model at the prop's own height (None when the model
+  is gone -> the shapes). Used by `propgen.design` (library path), `run_episode.embed_set` (every set using it) and
+  `resolve_cast` (older videos' cast copies, also via `library_kind`). CLI `propgen.py make3d <kind>... | all`;
+  `POST /api/assets/props/<kind>/make3d`, `POST /api/assets/props/make3d_all` (job kind `props`), `PUT {form:
+  "shapes"}` drops the link ("↩ Use the shapes again"). `prop_info` gives `made` (the model's picture) and
+  `can_make_real`; Assets cards: 🧊 button + "🧊 real 3D" chip, a "Make all N real 3D" panel, the dialog's buttons.
+- **Tidy-up**: Assets -> Animations marks `animlib.NOT_ACTIONS` ones "🧹 made up" and `POST /api/anims/tidy` moves
+  them all to `assets/anims/.trash` (`anims_web._to_trash`). The production sets "Enter Wizard" / "The Void" were
+  moved to `sets/.trash` with the user's OK (the data / gravity videos need their shots redone to render again).
+- **Look check**: `PROP_PASS` back to 6 (lowered to 5 while the check judged her); `SPRITE_BELOW` 3 is the user's
+  choice and stays; the set / animation checks were never affected by that bug.
 - **Her name** (production "My name is Lila"; earlier videos "I'm Luna", "I'm Cat"): the writer is told
   `llm.name_rule(character)` - the Name box on the Characters page is her only name (the user: "pull her name from the
   character box"; they renamed "Catgirl" to her real name) - and `fix_self_names` rewrites "my name is X" /
