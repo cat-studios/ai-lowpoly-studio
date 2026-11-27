@@ -870,6 +870,18 @@ def story_weather(shots, text, set_name):
 def low_poses(shots):
     """Lying down / kneeling: a close camera aimed at standing head height loses her - medium instead, and a lie
     down on a line that names a bed / sofa lies ON it (Blender finds the set's nearest one)."""
+    # a pose holds for the whole script line: she lay down on its first beat and stood straight up at the next cut
+    for k, s in enumerate(shots):
+        g = s.get("beat_group")
+        if s.get("action") in LOW_POSES and g is not None:
+            hold = "kneel" if s["action"] == "kneel_place" else s["action"]
+            for t in shots[k + 1:]:
+                if t.get("beat_group") != g:
+                    break
+                if t.get("action") in (None, "idle", "nod", "think", "shake_head") and not t.get("cutaway"):
+                    t["action"] = hold
+                    if "on" in s:
+                        t["on"] = s["on"]
     for s in shots:
         if s.get("action") not in LOW_POSES:
             continue

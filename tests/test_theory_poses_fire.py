@@ -50,6 +50,15 @@ class Poses(unittest.TestCase):
         self.assertEqual((bed["action"], bed["expression"], bed["on"], bed["camera"]), ("lie_down", "sad", "bed", "medium"))
         self.assertEqual(sofa["on"], "sofa")
 
+    def test_pose_holds_for_the_whole_line(self):
+        r = A.direct("[medium] Hi.\n[lie_down] And if you felt this chill on my neck... it is real.\n"
+                     "[kneel_place] We would be seeing the world through two pairs of eyes.\nThe end.", "park",
+                     beat_words=4)
+        acts = [s["action"] for s in r["shots"]]
+        self.assertEqual(acts[1:4], ["lie_down"] * 3)
+        self.assertEqual(acts[4:6], ["kneel_place", "kneel"])
+        self.assertNotIn(acts[-1], A.LOW_POSES)
+
 
 class Fire(unittest.TestCase):
     def test_words(self):
