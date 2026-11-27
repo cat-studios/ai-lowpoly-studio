@@ -206,6 +206,15 @@ Open items:
   - Production test 1 (the writer): `talk_to_you` wrote [wide]/[closeup] too - the template camera now wins over the
     writer's camera words (only cutaways / show shots keep theirs); the writer is told no camera words and no new
     name for herself. `gadget_story` used [label:] but skipped [count:]/[tag:] (allowed).
+- **First production videos of the new kinds** (`zz_test_gadget_story`, `zz_test_talk_to_you`,
+  `zz_test_twist_stickers`): meters (90 -> 10, -80%), bubbles, name signs, sound stickers (BOING!, EXPLODE!) and the
+  selfie arm all render. Fixed: the free hand's talk gesture filled the selfie frame (`gesture_scale` 0.35 +
+  `phone_arm` in `secondary`); "auto" picked the falling sky set "Deep Air Bedroom" for a bedroom story
+  (`match_set` / `add_scene_plan` skip `air` sets unless `AIR_WORDS`; `catalog.all_sets` now carries `air`); a
+  made-up "whispering" pose replaced her `land` (`resolve_animations` never replaces move / float_up / land /
+  fall / float; whisper/shout/confused... in `NOT_ACTIONS`); "BED-SHAKER-O-MATIC 3000!" ran off both sides (a caption
+  group wider than 0.92 W gets a smaller `s`). Shot 9 of the gadget video was inside a cloud (air sets' floating
+  props don't block cameras - only seen there).
 - **Her name** (production "My name is Lila"; earlier videos "I'm Luna", "I'm Cat"): the writer is told
   `llm.name_rule(character)` - the Name box on the Characters page is her only name (the user: "pull her name from the
   character box"; they renamed "Catgirl" to her real name) - and `fix_self_names` rewrites "my name is X" /

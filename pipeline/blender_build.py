@@ -1411,12 +1411,14 @@ def secondary(p, tg, talk_t):
         if p.get("calm"):
             s = p.get("gesture_side", "R")
             o = "L" if s == "R" else "R"
-            g = 0.5 + 0.5 * wob(talk_t, 1.3, 1.0)
-            p["elbow" + s] += 0.9 * g + 0.3 * beat
-            p["arm" + s] -= 0.45 * g + 0.1 * beat
+            k = p.get("gesture_scale", 1.0)         # selfie: the lens is an arm's length away - small gestures
+            g = (0.5 + 0.5 * wob(talk_t, 1.3, 1.0)) * k
+            p["elbow" + s] += 0.9 * g + 0.3 * beat * k
+            p["arm" + s] -= 0.45 * g + 0.1 * beat * k
             p["raise" + s] += 0.12 * g
-            p["elbow" + o] += 0.25 * max(0.0, wob(talk_t, 0.9, 3.0))
-            p["arm" + o] -= 0.12 * max(0.0, wob(talk_t, 0.9, 3.0))
+            if not p.get("phone_arm"):              # the hand holding the phone stays still
+                p["elbow" + o] += 0.25 * max(0.0, wob(talk_t, 0.9, 3.0))
+                p["arm" + o] -= 0.12 * max(0.0, wob(talk_t, 0.9, 3.0))
 
 
 def write_pose(R, p, fr):
@@ -1845,7 +1847,9 @@ for who, tr in TRACKS.items():
             ts = (fr - sf0) / FPS - float(shot.get("lead", AUDIO_LEAD))   # first shot has a longer intro
             p["gesture_side"] = "R" if s["shot"] % 2 == 0 else "L"
             if who == PRIMARY and shot.get("camera") == "selfie":
-                p["gesture_side"] = "L"          # the right hand holds the phone: she talks with her left
+                p["gesture_side"] = "L"          # the right hand holds the phone: she talks with her left -
+                p["gesture_scale"] = 0.35        # a little: at full size her palm filled the side of the frame
+                p["phone_arm"] = True
             secondary(p, (fr - 1) / FPS, ts if speaks and 0 <= ts <= talk_len else None)   # only the speaker talks
             SM.apply(p)
             if isinstance(R, VRoidRig):

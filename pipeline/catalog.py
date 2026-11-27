@@ -187,7 +187,7 @@ def all_sets():
             continue
         out[sid] = {"name": r.get("name", sid), "description": r.get("description", ""), "theme": r.get("theme", ""),
                     "marks": r.get("marks", {}), "builtin": False, "light": r.get("light"),
-                    "indoor": r.get("indoor")}
+                    "indoor": r.get("indoor"), **({"air": r["air"]} if r.get("air") else {})}
     return out
 
 

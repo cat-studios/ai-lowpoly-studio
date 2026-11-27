@@ -624,6 +624,12 @@ def write_captions(path, ep, shots, timing, res, cap, brand, stickers=()):
             efx = ("{\\fscx40\\fscy40\\t(0,110,\\fscx125\\fscy125)\\t(110,240,\\fscx100\\fscy100)}" if big
                    else "{\\fscx50\\fscy50\\t(0,100,\\fscx130\\fscy130)\\t(100,220,\\fscx115\\fscy115)}"
                    if any(k in marks for k in chunk) else fx)
+            if not big:
+                # too wide for the frame ("BED-SHAKER-O-MATIC 3000!" was cut off on both sides): a smaller size
+                base = max(4, round(res[1] * cap["size"]))
+                wide = 0.68 * base * (sum(len(words[k]) for k in chunk) + len(chunk) - 1) * (1.15 if any(k in marks for k in chunk) else 1)
+                if wide > res[0] * 0.92:
+                    efx += "{\\fs" + str(max(4, int(base * res[0] * 0.92 / wide))) + "}"
             lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(end)},Caption,,0,0,{low},,{efx}{' '.join(parts)}")
             t += dur
     if cap.get("hud", True) or stickers:            # game overlays: meters, counters, tags, signs, bubbles, stickers
@@ -843,10 +849,14 @@ def resolve_animations(ep, log=print):
         line = next((s.get("line", "") for s in ep["shots"] if s.get("want") == w), "")
         made[w] = animgen.ensure(w, line, log=lambda m: log("  " + m))
     lib = animlib.library()
+    import catalog
+    keep = set(catalog.MOVE_ANIMS) | {"float_up", "land", "fall", "float"}
     for s in ep["shots"]:
         name = made.get(s.get("want"))
         if not name:
             continue
+        if s.get("action") in keep:
+            continue                  # a landing / lift-off / walk the story needs wins ("whispering" kept her up)
         s["action"] = name
         if (lib.get(name) or {}).get("needs_room") and s.get("camera") in ("closeup", "macro", "dramatic"):
             s["camera"] = "medium"

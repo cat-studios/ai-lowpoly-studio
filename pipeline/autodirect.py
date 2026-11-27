@@ -504,6 +504,10 @@ def fit_score(place, sid, s):
 HOME_WORDS = re.compile(r"\b(her room|my room|my bedroom|her bedroom|at home|home|bedroom)\b", re.I)
 
 
+AIR_WORDS = re.compile(r"\b(sky|skies|cloud|clouds|air|mid-?air|falling|fall|fell|float\w*|flying|fly|skydiv\w*|"
+                       r"space|orbit|zero gravity|weightless|underwater|under the sea|ocean floor|deep sea|core)\b", re.I)
+
+
 def match_set(place, sets, policy="reuse"):
     """The best existing set for a place description, or "new:<place>" if none fits (or policy == "new")."""
     if place.startswith("new:"):            # already decided (the Create popup's Scenes step)
@@ -519,7 +523,10 @@ def match_set(place, sets, policy="reuse"):
     if not q:
         return "new:" + place
     best, score = None, 0.0
+    airy = AIR_WORDS.search(place)
     for sid, s in sets.items():
+        if s.get("air") and not airy:
+            continue          # a sky / falling set only for sky words ("Deep Air Bedroom" for an alarm clock story)
         sc = fit_score(place, sid, s)
         if sc > score:
             best, score = sid, sc
@@ -649,7 +656,8 @@ def add_scene_plan(result, plan, set_name, policy="reuse"):
             sid = str(sc.get("set") or "")
             place = str(sc["place"])
             # the AI's pick has to actually share words with the place - it likes to grab any set
-            ok = policy == "reuse" and sid in sets and sid != set_name and fit_score(place, sid, sets[sid]) >= 0.34
+            ok = policy == "reuse" and sid in sets and sid != set_name and fit_score(place, sid, sets[sid]) >= 0.34 \
+                and (not sets[sid].get("air") or AIR_WORDS.search(place))
             changes[i] = sid if ok else match_set(place, {k: v for k, v in sets.items() if k != set_name}, policy)
     if not any(sh.get("set") for sh in shots):          # backstop for moves the AI missed
         for i, sh in enumerate(shots):
