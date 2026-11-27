@@ -24,8 +24,8 @@ B = None
 
 # name: shape, colours, count, box (w, d, h), velocity, wobble, size, unlit, spin, twinkle
 FX = {
-    "rain":        dict(shape="streak", colors=["#bcd6ff", "#9fc2f2"], n=150, box=(9, 8, 4.5), vel=(0.6, 0, -11), wob=0.0,
-                        size=(0.015, 0.015, 0.32), unlit=True),
+    "rain":        dict(shape="streak", colors=["#bcd6ff", "#9fc2f2"], n=120, box=(9, 8, 4.5), vel=(0.6, 0, -11), wob=0.0,
+                        size=(0.012, 0.012, 0.32), unlit=True, near=2.2),
     "snow":        dict(shape="ico", colors=["#ffffff", "#eef4ff"], n=150, box=(9, 8, 4.0), vel=(0.2, 0, -0.9), wob=0.35,
                         size=(0.05,) * 3, unlit=True),
     "droplets":    dict(shape="uv", colors=["#d6ecff", "#bfe0ff", "#eaf6ff"], n=90, box=(7, 7, 3.5), vel=(0, 0, 0.15),
@@ -259,7 +259,10 @@ def build(ns):
                 o.location = Vector(((w.x - corner.x) % size.x, (w.y - corner.y) % size.y,
                                      (w.z - corner.z) % size.z)) + corner
                 k = 0.45 + 0.55 * abs(math.sin(t * 3.1 + ph)) if spec.get("twinkle") else 1.0
-                o.scale = tuple(s * k) if on else (1e-4, 1e-4, 1e-4)
+                # nothing right in front of the lens: at low res a raindrop a metre away is a thick bar, and on a
+                # close-up the whole box sits by the camera (production zz_test_deep_theory: rain buried every shot)
+                near = (o.location - cam).length < spec.get("near", 1.2) and not depth
+                o.scale = tuple(s * k) if on and not near else (1e-4, 1e-4, 1e-4)
                 o.keyframe_insert("location", frame=fr)
                 o.keyframe_insert("scale", frame=fr)
                 if spec.get("spin"):
