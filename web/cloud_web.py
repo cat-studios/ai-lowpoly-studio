@@ -65,6 +65,15 @@ def check(key):
             "left": d.get("limit_remaining"), "free_tier": bool(d.get("is_free_tier"))}
 
 
+def today(o):
+    """Today's cloud spending (llm.spend_today, kept by every job) against the daily limit."""
+    import llm
+    d = llm.spend_today()
+    lim = llm.daily_limit(o)
+    return {"spent": round(float(d.get("spent") or 0), 4), "calls": d.get("calls", 0),
+            "estimated": d.get("estimated", 0), "limit": lim, "capped": lim > 0 and d.get("spent", 0) >= lim}
+
+
 def handle(h, method, parts):
     import settings as S
     what = parts[0] if parts else ""
@@ -74,5 +83,6 @@ def handle(h, method, parts):
         except Exception as exc:
             return h.send_json({"ok": False, "error": f"can't reach OpenRouter ({exc.__class__.__name__})", "models": []})
     if method == "GET" and what == "check":
-        return h.send_json(check(str((S.load_settings().get("openrouter") or {}).get("key") or "").strip()))
+        o = S.load_settings().get("openrouter") or {}
+        return h.send_json({**check(str(o.get("key") or "").strip()), "today": today(o)})
     return h.fail("not found", 404)

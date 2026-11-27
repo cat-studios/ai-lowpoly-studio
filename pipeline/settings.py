@@ -82,7 +82,8 @@ DEFAULTS = {
     # OpenRouter (openrouter.ai: online models - Gemini, Claude, GPT... - one key, paid per use from credits).
     # Jobs: text = all the AI's writing, vision = the picture checks, design = 3D props ("" model = the writing one)
     "openrouter": {"key": "", "text": True, "model": "", "vision": True, "vision_model": "",
-                   "design": True, "design_model": ""},
+                   "design": True, "design_model": "",
+                   "daily_limit": 2.0},     # dollars a day; reached = local AI until midnight (0 = no limit)
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
     "home": {"souvenirs": True},
     "instagram": {"token": "", "user_id": ""},   # Stats: your posts' numbers (Graph API, read only)

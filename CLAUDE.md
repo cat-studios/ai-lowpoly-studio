@@ -153,6 +153,13 @@ Open items:
   box + select, price/vision/context line), the old Ollama group = "🖥 Local AI (Ollama)". Status dot: "Cloud AI
   (OpenRouter)" row; Ollama rows say "switched off". OpenRouter's Gemini is paid; Google's free tier needs a Google
   AI Studio key (OpenRouter can use one as BYOK). Never run with a real key in dev (no key); `tests/test_cloud.py`.
+  - **Daily limit** (`openrouter.daily_limit`, default $2, 0 = none; asked for because idle auto-make has no limit):
+    every request sends `usage: {include: true}`; `call_cost` = the answer's `usage.cost`, else tokens x the model's
+    price (`_price`: public `/models`, once per process; marked `estimated`) -> `add_spend` -> `build/cloud_spend.json`
+    `{day, spent, calls, estimated}` (one file for every job process, atomic replace, a new day starts at 0).
+    `_openrouter_for` returns None once `over_limit` (logged once per process) -> local AI until midnight; with
+    local off -> `LocalOff` "today's cloud AI limit". `GET /api/cloud/check` adds `today` (`cloud_web.today`);
+    Settings shows "Today: $x of $y · N calls"; the status dot warns when it's reached.
 - **Random videos on the server** (`pipeline/randomvid.py`): the 🎲 cards (`CARDS` - `tests/test_randomvid.py`
   checks them against app.js `MW_STEPS_BASE`), never `conversation` (needs a co-star); in `batch.py` a `"random"`
   item writes for `new:<place>`, makes that set first (`/api/sets/generate` + `wait_job`), then directs there.

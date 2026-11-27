@@ -52,8 +52,12 @@ def checks(root, jobs):
         left = r.get("left")
         if left is not None and left <= 0.05:
             return "warn", "out of credit - local AI does the work", "Top up on openrouter.ai, or raise the key's limit."
-        used = f", ${r['used']:.2f} used" if isinstance(r.get("used"), (int, float)) else ""
-        return "ok", f"connected - {', '.join(jobs)}{used}", ""
+        t = cloud_web.today(orc)
+        spent = f"${t['spent']:.2f} today" + (f" of ${t['limit']:.2f}" if t["limit"] else "")
+        if t["capped"]:
+            return "warn", f"today's limit reached ({spent}) - local AI until midnight", \
+                "Raise 'Most to spend a day' in Settings → AI tools if you want more today."
+        return "ok", f"connected - {', '.join(jobs)} - {spent}", ""
 
     def big_server():
         if a.get("local") is False:

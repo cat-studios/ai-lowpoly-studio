@@ -4,6 +4,7 @@ written by hand. Output is plain script lines (with optional [directions]) that 
 normal auto-director, so the AI never needs to know the JSON format.
 """
 import json
+import os
 import random
 import re
 import time
@@ -173,7 +174,91 @@ def _openrouter_for(kind):
         return None
     if time.time() - _down_since("openrouter:" + model) < OR_RETRY:
         return None
+    if over_limit(o):
+        _note_capped(o)
+        return None
     return key, model
+
+
+# ---- today's cloud spending (Settings -> AI tools -> "Most to spend a day"): every job is its own process, so the
+# running total lives in a file; the cap switches the cloud off until midnight and local AI does the work
+SPEND_FILE = Path(__file__).resolve().parent.parent / "build" / "cloud_spend.json"
+_CAPPED_SAID = []
+
+
+def spend_today():
+    """{"day", "spent" (dollars), "calls", "estimated" (calls whose cost OpenRouter didn't report)} for today."""
+    today = time.strftime("%Y-%m-%d")
+    try:
+        d = json.loads(SPEND_FILE.read_text(encoding="utf-8"))
+        if d.get("day") == today:
+            return d
+    except Exception:
+        pass
+    return {"day": today, "spent": 0.0, "calls": 0, "estimated": 0}
+
+
+def add_spend(cost, estimated=False):
+    d = spend_today()
+    d["spent"] = round(float(d.get("spent") or 0) + max(0.0, float(cost or 0)), 6)
+    d["calls"] = int(d.get("calls") or 0) + 1
+    d["estimated"] = int(d.get("estimated") or 0) + (1 if estimated else 0)
+    try:
+        SPEND_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SPEND_FILE.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(d), encoding="utf-8")
+        os.replace(tmp, SPEND_FILE)
+    except Exception:
+        pass
+    return d
+
+
+def daily_limit(o):
+    try:
+        return max(0.0, float(o.get("daily_limit") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def over_limit(o):
+    lim = daily_limit(o)
+    return lim > 0 and float(spend_today().get("spent") or 0) >= lim
+
+
+def _note_capped(o):
+    if not _CAPPED_SAID:
+        _CAPPED_SAID.append(1)
+        print(f"[ai] today's cloud AI limit (${daily_limit(o):.2f}) is reached - "
+              + ("local AI does the work until midnight" if local_on() else "local AI is off, so no AI until midnight"))
+
+
+_PRICES = {}
+
+
+def _price(model):
+    """(dollars per prompt token, per completion token) from OpenRouter's public model list - only when a call's own
+    cost wasn't reported. Fetched once per process; None when unknown."""
+    if not _PRICES:
+        try:
+            req = urllib.request.Request(OPENROUTER + "/models", headers={"User-Agent": "LowPolyStudio"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                for m in json.loads(r.read().decode("utf-8")).get("data") or []:
+                    pr = m.get("pricing") or {}
+                    _PRICES[m.get("id")] = (float(pr.get("prompt") or 0), float(pr.get("completion") or 0))
+        except Exception:
+            _PRICES["?"] = None
+    return _PRICES.get(model)
+
+
+def call_cost(r, model):
+    """(dollars, estimated?) of one OpenRouter answer: its reported usage cost, else tokens x the model's price."""
+    u = r.get("usage") or {}
+    if isinstance(u.get("cost"), (int, float)):
+        return float(u["cost"]), False
+    p = _price(model)
+    if p:
+        return p[0] * float(u.get("prompt_tokens") or 0) + p[1] * float(u.get("completion_tokens") or 0), True
+    return 0.0, True
 
 
 def _image_url(b64):
@@ -186,9 +271,10 @@ def openrouter_payload(payload, model):
     msgs = []
     for m in payload.get("messages") or []:
         imgs = m.get("images") or []
-        content = [{"type": "text", "text": m.get("content", "")}] + [_image_url(b) for b in imgs] if imgs             else m.get("content", "")
+        content = ([{"type": "text", "text": m.get("content", "")}] + [_image_url(b) for b in imgs]) if imgs \
+            else m.get("content", "")
         msgs.append({"role": m.get("role", "user"), "content": content})
-    out = {"model": model, "messages": msgs, "stream": False,
+    out = {"model": model, "messages": msgs, "stream": False, "usage": {"include": True},   # = its cost in the answer
            "temperature": float((payload.get("options") or {}).get("temperature", 0.8))}
     if payload.get("format") == "json":
         out["response_format"] = {"type": "json_object"}
@@ -214,6 +300,8 @@ def openrouter_chat(key, model, payload):
         r = _or_post(key, {k: v for k, v in body.items() if k != "response_format"})
     if r.get("error"):
         raise ValueError(str((r["error"] or {}).get("message") or r["error"])[:200])
+    cost, est = call_cost(r, model)
+    add_spend(cost, est)                           # counted even when the answer turns out empty: it was paid for
     choice = (r.get("choices") or [{}])[0]
     text = (choice.get("message") or {}).get("content") or ""
     if not text.strip():
@@ -247,8 +335,10 @@ def _chat(url, payload, has_images=False):
             print(f"[ai] cloud AI ({orr[1]}) failed - {why} - "
                   + (f"using local AI for the next {OR_RETRY // 60} min" if local_on() else "local AI is off"))
     if not local_on():
+        capped = ai_cfg()[0].get("cloud") and over_limit(ai_cfg()[1])
         raise LocalOff(f"cloud AI failed ({why}) and local AI is switched off (Settings -> AI tools)" if why else
-                       "local AI is switched off and cloud AI isn't set up for this job (Settings -> AI tools)")
+                       "today's cloud AI limit is reached and local AI is switched off (Settings -> AI tools)" if capped
+                       else "local AI is switched off and cloud AI isn't set up for this job (Settings -> AI tools)")
     rem = _remote_for(url, has_images)
     if rem:
         p = dict(payload, model=rem[1]) if rem[1] else payload

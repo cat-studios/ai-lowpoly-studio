@@ -620,7 +620,9 @@ Easiest: Characters page → import a `.vrm`. By hand:
   With both switches on, local AI takes over whenever the cloud fails (no credit, a rate limit, offline) and the
   cloud is left alone for 5 minutes. With only one on, only that one is used. What the cloud works on (script text,
   check pictures) is sent to OpenRouter and the model's company. Drawings (ComfyUI) and voices always stay on this
-  PC. The status dot shows the key's state and the credit used; set a spending limit on the key at openrouter.ai.
+  PC. The status dot shows the key's state and the credit used. **Most to spend a day** (default $2, 0 = no limit)
+  caps the cloud: once today's calls have cost that much, local AI does the work until midnight - idle auto-make
+  included. Settings shows today's spending; you can also set a limit on the key itself at openrouter.ai.
 Everything still works without them (except videos in other languages and ComfyUI "Required" mode), just with
 simpler results.
 

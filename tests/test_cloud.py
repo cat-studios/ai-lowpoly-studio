@@ -83,6 +83,51 @@ class Routing(unittest.TestCase):
         self.assertNotIn(("local", "local-model"), self.calls)
 
 
+class DailyLimit(Routing):
+    """Routing's set-up, with today's spending in a temporary file."""
+    def setUp(self):
+        super().setUp()
+        self._spend = llm.SPEND_FILE
+        llm.SPEND_FILE = Path(self.tmp.name) / "spend.json"
+        llm._CAPPED_SAID.clear()
+
+    def tearDown(self):
+        llm.SPEND_FILE = self._spend
+        super().tearDown()
+
+    def test_spending_adds_up_per_day(self):
+        llm.add_spend(0.25)
+        d = llm.add_spend(0.5, estimated=True)
+        self.assertEqual((d["spent"], d["calls"], d["estimated"]), (0.75, 2, 1))
+        llm.SPEND_FILE.write_text('{"day": "2000-01-01", "spent": 9, "calls": 3}', encoding="utf-8")
+        self.assertEqual(llm.spend_today()["spent"], 0.0)          # yesterday's doesn't count
+
+    def test_limit_reached_means_local(self):
+        self.use(daily_limit=1.0)
+        llm.add_spend(0.99)
+        llm._chat("http://local", PAYLOAD)
+        llm.add_spend(0.02)
+        llm._chat("http://local", PAYLOAD)
+        self.assertEqual(self.calls, [("cloud", "google/gemini-x"), ("local", "local-model")])
+        self.use(daily_limit=0)                                     # 0 = no limit
+        llm._chat("http://local", PAYLOAD)
+        self.assertEqual(self.calls[-1], ("cloud", "google/gemini-x"))
+
+    def test_limit_reached_and_local_off(self):
+        self.use(local=False, daily_limit=0.5)
+        llm.add_spend(0.6)
+        with self.assertRaisesRegex(llm.LocalOff, "limit"):
+            llm._chat("http://local", PAYLOAD)
+
+    def test_cost_from_answer_or_price(self):
+        self.assertEqual(llm.call_cost({"usage": {"cost": 0.0123}}, "m"), (0.0123, False))
+        llm._PRICES.clear()
+        llm._PRICES["m"] = (0.000002, 0.00001)
+        cost, est = llm.call_cost({"usage": {"prompt_tokens": 1000, "completion_tokens": 500}}, "m")
+        self.assertEqual((round(cost, 6), est), (0.007, True))
+        llm._PRICES.clear()
+
+
 class Payload(unittest.TestCase):
     def test_pictures_and_json(self):
         p = dict(PAYLOAD, format="json", messages=[{"role": "user", "content": "look", "images": ["iVBORpng", "/9j/jpg"]}])

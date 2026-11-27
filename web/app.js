@@ -2693,6 +2693,7 @@ const S_TABS = {
     ["☁️ Cloud AI (OpenRouter)", [
       ["openrouter.key", "OpenRouter API key", "password", {}, "openrouter.ai → sign in → Keys → Create key, then add credit under Credits. You can give the key a spending limit there. One key covers Gemini, Claude, GPT and the rest - no separate Google key needed."],
       ["openrouter.check", "", "orcheck"],
+      ["openrouter.daily_limit", "Most to spend a day ($)", "range", { min: 0, max: 20, step: 0.5 }, "Once the cloud has cost this much today, local AI does the work until midnight (with local AI off, AI steps are skipped). Counts every job, idle auto-make included. 0 = no limit. You can also give the key a limit on openrouter.ai."],
       ["openrouter.text", "Writing - scripts, titles, ideas, sets, cast, translations, captions", "bool"],
       ["openrouter.model", "Model for writing", "ormodel", {}, "Price = dollars per million tokens in / out (a script is a few thousand). 🆓 = free (daily limits)."],
       ["openrouter.vision", "Picture checks - props, sets, covers, the check after each render", "bool", {}, "The biggest win: the local picture model is small and often misjudges props."],
@@ -2972,8 +2973,10 @@ function drawSettingsTab(st) {
     box.innerHTML = '<span class="muted">Checking the key…</span>';
     const r = await api("GET", "/api/cloud/check").catch((e) => ({ ok: false, error: e.message }));
     const money = (x) => typeof x === "number" ? "$" + x.toFixed(2) : "";
-    box.innerHTML = r.ok ? `<span class="ok">✓ Key works</span> <span class="muted">${esc(r.label || "")} · ${money(r.used)} used${r.limit != null ? ` of ${money(r.limit)} limit` : ""}${r.left != null && r.left <= 0.05 ? ' · <b class="err">out of credit</b>' : ""}</span>`
-      : `<span class="err">✗ ${esc(r.error)}</span>`;
+    const t = r.today || {};
+    const todayLine = t.calls || t.limit ? `<br><span class="${t.capped ? "err" : "muted"}">Today: ${money(t.spent || 0)}${t.limit ? ` of ${money(t.limit)}` : ""} · ${t.calls || 0} call${t.calls === 1 ? "" : "s"}${t.estimated ? ` (${t.estimated} estimated)` : ""}${t.capped ? " - limit reached: local AI until midnight" : ""}</span>` : "";
+    box.innerHTML = (r.ok ? `<span class="ok">✓ Key works</span> <span class="muted">${esc(r.label || "")} · ${money(r.used)} used in all${r.limit != null ? ` of ${money(r.limit)} limit` : ""}${r.left != null && r.left <= 0.05 ? ' · <b class="err">out of credit</b>' : ""}</span>`
+      : `<span class="err">✗ ${esc(r.error)}</span>`) + todayLine;
   };
   if ($("#or-check", body)) { orCheck(); $("#or-recheck", body).onclick = guard(orCheck); document.addEventListener("settings-saved", orCheck, { once: true }); }
   const orPicks = $$("[data-async=ormodel]", body);
