@@ -1139,9 +1139,13 @@ def a_fall(p, t, T, seg):
     flut = math.sin(t * 9)
     p["lean"] += 0.55 * e
     p["nod"] -= 0.45 * e                 # head up, looking at the camera
-    p["raiseL"] = p["raiseR"] = lerp(0.16, 1.5 + 0.08 * flut, e)
-    p["rotL"] = p["rotR"] = 1.2 * e
-    p["elbowL"] = p["elbowR"] = lerp(0.12, 0.9 + 0.1 * flut, e)
+    # arms up over her shoulders, flapping - spread level (raise 1.5) they read as a T-pose from the front, a
+    # whole video of it in a falling sky set (production, 2026-11-27)
+    flap = math.sin(t * 5.5)
+    p["raiseL"] = lerp(0.16, 2.25 + 0.15 * flap + 0.05 * flut, e)
+    p["raiseR"] = lerp(0.16, 2.25 - 0.15 * flap - 0.05 * flut, e)
+    p["rotL"] = p["rotR"] = 0.5 * e
+    p["elbowL"] = p["elbowR"] = lerp(0.12, 0.55 + 0.15 * flap, e)
     p["armL"] = p["armR"] = -0.15 * e
     p["legL"], p["legR"] = 0.35 * e + 0.05 * flut, 0.45 * e - 0.05 * flut
     p["kneeL"] = p["kneeR"] = 0.7 * e
@@ -1157,10 +1161,12 @@ def a_float(p, t, T, seg):
     p["loc"] = p["loc"] + Vector((0, 0, 0.12 * math.sin(t * 1.4)))
     p["lean"] += 0.12 * math.sin(t * 0.9) * e
     p["sway"] += 0.1 * math.sin(t * 0.7 + 1) * e
-    p["raiseL"] = lerp(0.16, 0.9 + 0.25 * math.sin(t * 1.1), e)
-    p["raiseR"] = lerp(0.16, 0.8 + 0.25 * math.sin(t * 1.3 + 2), e)
-    p["rotL"] = p["rotR"] = 0.8 * e
-    p["elbowL"] = p["elbowR"] = 0.6 * e
+    # arms drift a little away from her sides - raised to ~0.9 they were level with her shoulders: a T-pose in every
+    # shot of a sky set (production, 2026-11-27)
+    p["raiseL"] = lerp(0.16, 0.42 + 0.1 * math.sin(t * 1.1), e)
+    p["raiseR"] = lerp(0.16, 0.38 + 0.1 * math.sin(t * 1.3 + 2), e)
+    p["rotL"] = p["rotR"] = 0.35 * e
+    p["elbowL"] = p["elbowR"] = 0.45 * e
     p["legL"] = (0.25 * math.sin(t * 0.8)) * e
     p["legR"] = (-0.25 * math.sin(t * 0.8 + 0.5)) * e
     p["kneeL"] = p["kneeR"] = 0.4 * e

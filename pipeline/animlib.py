@@ -26,6 +26,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LIB = ROOT / "assets" / "anims"
+# words from the AI's brackets that are never body actions - the maker turned them into poses ("nya", "fast",
+# "moon", "shine", "closer"...) and then every [nya] made her do that pose (production, 2026-11-27). Never made,
+# and animations already saved under these names aren't used (they stay on Assets -> Animations to delete).
+NOT_ACTIONS = set("""nya meow mew purr fast faster slow slowly quick quickly closer closerup closer_up close angle shot
+moon sun star stars shine shining glow glowing sparkle sparkly seed noodle hold holding omega sideside side_side loop
+boom bang zoom blink blinking drool drooling intense sound micro mid goofy dreamy eager sinister celebratory spoiler
+drop_spoiler""".split())
 
 # ---------------------------------------------------------------------------- the pose vocabulary
 # arm poses: (arm, raise, rot, elbow) - most taken from the built-in animations that render well

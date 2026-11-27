@@ -818,11 +818,17 @@ def resolve_animations(ep, log=print):
     writes it from checked poses, a quick render is checked by the vision model) - or reuse it when it exists. A
     word that isn't a body action ("messy") keeps the shot's own action. Arms-out animations don't stay in close
     shots (they'd be cropped)."""
+    import animlib
+    for s in ep["shots"]:        # an older video's "nya" / "fast" pose (made from a non-action word): her plain idle
+        if s.get("action") in animlib.NOT_ACTIONS:
+            s["action"] = "idle"
+        for a in s.get("actions") or []:
+            if isinstance(a, dict) and a.get("anim") in animlib.NOT_ACTIONS:
+                a["anim"] = "idle"
     wants = {s["want"] for s in ep["shots"] if s.get("want")}
     if not wants:
         return
     import animgen
-    import animlib
     made = {}
     for w in sorted(wants):
         report(0.03, f"Making the animation '{w}'")

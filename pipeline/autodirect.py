@@ -152,8 +152,15 @@ def parse_directions(line, marks):
         inner = inner[:show.start()] + inner[show.end():]
     cut = re.search(r"\bcut(?:away)?\s*:\s*([^,\]]+)", inner, re.I)   # "cutaway: a plane flying past"
     if cut:
-        d["cutaway"] = cut.group(1).strip()
+        what = cut.group(1).strip()
+        cam_only = [w for w in re.split(r"[\s_-]+", what.lower()) if w]
         inner = inner[:cut.start()] + inner[cut.end():]
+        if what and all(w in catalog.CAMERAS or w in catalog.MOVES or w in CAM_WORDS or w in MOVE_WORDS
+                        or w in ("zoom", "in", "out", "up", "shot", "extreme") for w in cam_only):
+            # "[cutaway: macro]" / "[cutaway: zoom_in]": camera words, not a thing to show (the egg video, 2026-11-27)
+            inner += ", " + what.replace(" ", "_")
+        else:
+            d["cutaway"] = what
     sc = re.search(r"@\s*([^,\]]+)", inner)           # "@ falling through clouds" = scene change
     if sc:
         # "[@ kitchen jump, excited]" / "[@library enter]": direction words the AI glued onto the place go back to
@@ -267,7 +274,7 @@ def _known_word(t, marks):
 # words the AI writes in brackets that aren't in the vocabulary, mapped onto it
 CAM_WORDS = {    # -> camera ("[mid, wave]" asked the animation maker to invent a "mid" pose)
     **dict.fromkeys("mid mid_shot midshot medium_shot waist full full_shot two_shot".split(), "medium"),
-    **dict.fromkeys("close close_up closeshot close_shot face".split(), "closeup"),
+    **dict.fromkeys("close close_up closeshot close_shot face closer closerup closer_up".split(), "closeup"),
     **dict.fromkeys("wide_shot long long_shot establishing far_shot".split(), "wide"),
     **dict.fromkeys("overhead top_down birds_eye aerial".split(), "high"),
     **dict.fromkeys("low_angle worms_eye".split(), "low"),
@@ -430,9 +437,44 @@ def add_cast_plan(result, plan, skip=()):
             ev["from"] = e["from"]
         shot.setdefault("events", []).append(ev)
         _stage_for_events(shot, {})
+    tidy_events(shots, cast)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     result["cast"] = {k: v for k, v in cast.items() if k in used}
     return result
+
+
+ARRIVE_VERBS = {"enter", "crash_in", "appear", "run_to", "walk_to", "fall"}
+LEAVE_VERBS = {"exit", "vanish"}
+
+
+def tidy_events(shots, cast):
+    """One entrance per stay: someone already on stage doesn't enter again until they've left (the wizard "entered"
+    three times in a row, 2026-11-27), and people are never "held" (hold = a thing in her hand). Cutaway events
+    don't count - a cutaway subject comes and goes on its own. Changes `shots` in place."""
+    on = set()
+    for s in shots:
+        evs = s.get("events")
+        if not evs:
+            continue
+        keep = []
+        for e in evs:
+            who, do = e.get("who"), e.get("do")
+            person = ((cast or {}).get(who) or {}).get("type", cast_kind(who or "")) == "person"
+            if do == "hold" and person:
+                continue
+            if not e.get("cutaway") and do in ARRIVE_VERBS and who in on and do not in ("run_to", "walk_to"):
+                continue
+            if not e.get("cutaway"):
+                if do in ARRIVE_VERBS:
+                    on.add(who)
+                elif do in LEAVE_VERBS:
+                    on.discard(who)
+            keep.append(e)
+        if keep:
+            s["events"] = keep
+        else:
+            s.pop("events", None)
+    return shots
 
 
 STOP = set("a an the of in on at to into onto through inside outside with and my our your her his its is was "
@@ -562,6 +604,20 @@ def moved_to(line):
 
 
 AI_FX = {"rain", "snow", "confetti", "sparkles", "petals", "leaves", "embers", "bubbles", "stars", "fireflies"}
+NOT_PLACE = {"enter", "entering", "exit", "arrive", "appear", "scene", "place", "area", "somewhere"}
+
+
+def place_words(place, cast=None):
+    """The words that name a place the AI scene step picked: only its name (not the description after " - ", which
+    repeats the line's own words - "The Void - ... where she is drifting" matched "drifting"), without cast names,
+    people, stage verbs and filler. Empty = not a place ("Enter Wizard - a room with a smug wizard")."""
+    name = re.split(r"\s+[-–—:(]\s*|,|\.", str(place or ""), maxsplit=1)[0]
+    people = set()
+    for who in cast or {}:
+        people |= _words(who.replace("_", " "))
+    drop = NOT_PLACE | people | {w.rstrip("s") for w in catalog.PERSON_WORDS | ROLE_PEOPLE} \
+        | set(catalog.CAST_VERBS) | set(catalog.ANIMS)
+    return {w for w in _words(name) if w not in drop}
 
 
 def add_scene_plan(result, plan, set_name, policy="reuse"):
@@ -580,7 +636,10 @@ def add_scene_plan(result, plan, set_name, policy="reuse"):
             if not (0 < i < len(shots)) or not sc.get("place"):
                 continue
             line = str(shots[i].get("line", "")).lower()
-            if not MOVE_VERBS.search(line) and not (_words(sc["place"]) & _words(line)):
+            pw = place_words(sc["place"], result.get("cast"))
+            if not pw:
+                continue              # "Enter Wizard - a room with a smug wizard": a stage direction, not a place
+            if not MOVE_VERBS.search(line) and not (pw & _words(line)):
                 continue              # weather or talk, not a move ("then it started snowing")
             sid = str(sc.get("set") or "")
             place = str(sc["place"])
@@ -637,8 +696,9 @@ SPEAKER = re.compile(r"^\s*([A-Za-z][A-Za-z '-]{0,30}?)\s*:\s+")   # "Ethan: hey
 
 
 # a whole day in one video: the light goes day -> sunset -> night over the lines
-DAY_ARC = re.compile(r"\b(day in the life|all day|whole day|one day|from morning|morning (?:till|to|until) night|"
-                     r"24 hours|twenty-four hours|sunrise to sunset|dawn (?:till|to|until) dusk|my day)\b", re.I)
+# (not "all day" / "one day" / "my day": "I walked all day" turned a sky set orange, then night - 2026-11-27)
+DAY_ARC = re.compile(r"\b(day in the life|from morning|morning (?:till|to|until) night|(?:24|twenty-four) hours in|"
+                     r"sunrise to sunset|dawn (?:till|to|until) dusk|morning to night|day to night)\b", re.I)
 INDOOR_IDS, OUTDOOR_IDS = {"cafe"}, {"park"}
 FESTIVE_FX = {"confetti", "hearts", "sparkles", "music_notes", "candy", "coins", "stars"}
 
@@ -698,6 +758,8 @@ flower rose apple banana cookie cupcake donut sandwich candy lollipop sweet icec
 ball balloon remote camera ticket coin gem crystal shell leaf feather egg potion jar box gift present spoon fork
 fish magnifier compass torch flashlight lantern clock watch hat sock shoe""".split())
 HOLD_CUES = {"this", "my", "holding", "hold", "grab", "grabbed", "picked", "brought", "here's", "heres", "look"}
+BIG_WORDS = {"giant", "huge", "big", "massive", "enormous", "gigantic", "colossal", "entire", "whole", "large",
+             "tall", "towering", "mega", "jumbo"}
 MAX_HOLDS = 3
 
 
@@ -722,6 +784,8 @@ def held_things(shots, cast, text_of=lambda s: s.get("line", "")):
         thing = None
         for j, w in enumerate(words):                    # a holdable noun with "this/my/holding..." just before it
             noun = w if w in HOLDABLE else w[:-1] if w.endswith("s") and w[:-1] in HOLDABLE else None
+            if noun and BIG_WORDS & set(words[max(0, j - 2):j]):
+                continue                                 # "bounce on this giant shell": not in her hand
             if noun and HOLD_CUES & set(words[max(0, j - 4):j]):
                 thing = noun
                 break
@@ -874,6 +938,35 @@ def _merge_cutaway_beats(shots):
         k += 1
 
 
+ENTER_WORDS = re.compile(r"^(?:enter|enters|entering|in comes|here comes|cue)\s+\+([A-Za-z0-9_]+)\s*[,.!:;-]?\s*", re.I)
+
+
+def tidy_line(raw):
+    """Fix the AI's script slips before a line is cut into beats (cut first, half a bracket was spoken):
+    "[mid, sneeze, facepalm) Ahhh!" / "(facepalm] ..." -> one bracket; "Wizard: +Wizard: This..." -> one label;
+    "Enter +wizard, smug He just..." (a stage direction in the spoken words) -> "[+wizard enter] He just..."."""
+    s = raw
+    b = re.match(r"^\s*([\[(])([^\])\[(]{0,160})([\])])", s)
+    if b and b.group(1) + b.group(3) in ("[)", "(]"):           # opened one way, closed the other
+        s = s[:b.start(1)] + "[" + b.group(2) + "]" + s[b.end(3):]
+    m = re.match(r"^(\s*(?:\[[^\]]*\]\s*)?)(.*)$", s, re.S)
+    dirs, text = m.group(1), m.group(2)
+    text = re.sub(r"^\+?([A-Za-z][\w '-]{0,30}?)\s*:\s*\+?\1\s*:\s*", r"\1: ", text, flags=re.I)
+    extra = []
+    while True:
+        e = ENTER_WORDS.match(text)
+        if not e:
+            break
+        extra.append(f"+{e.group(1).lower()} enter")
+        text = text[e.end():]
+        mood = re.match(r"([a-z]+)\s*[,.!:;-]?\s+(?=[A-Z])", text)    # "smug He just..." - how they come in
+        if mood and (mood.group(1) in catalog.EXPRESSIONS or mood.group(1) in MOOD_WORDS):
+            text = text[mood.end():]
+    if extra:
+        dirs = (dirs.rstrip()[:-1] + ", " if dirs.strip() else "[") + ", ".join(extra) + "] "
+    return dirs + text
+
+
 def expand_beats_grouped(lines, n, speakers=None):
     """Split long lines into beats of about n words: each beat becomes its own shot, so the camera cuts about
     every two or three seconds (like the reference videos). Bracket directions stay with the first beat; a
@@ -965,7 +1058,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         chosen = sets.get(set_name) or next(iter(sets.values()), {"marks": {"center": (0, 0), "front": (0, -2.5)}})
     marks = list(chosen["marks"])
     start_marks = list(marks)              # "start" belongs to the first set, even if the script moves on
-    lines = [l for l in (script or "").splitlines() if l.strip()]
+    lines = [tidy_line(l) for l in (script or "").splitlines() if l.strip()]
     speakers = dict(speakers or {})
     brought = [ev["who"] for l in lines for ev in parse_directions(l, marks)[0].get("events", [])]
     for who in brought:
@@ -1181,9 +1274,11 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         if shot.get("action") in catalog.MOVE_ANIMS:
             shot.setdefault("to", _pick_dest(marks, pos, visits))
             a_, b_ = _xy(sets, cur_set, pos), _xy(sets, cur_set, shot["to"]) if isinstance(shot["to"], str) else None
-            if a_ and b_ and b_[1] - a_[1] > 1.0 and abs(b_[1] - a_[1]) > abs(b_[0] - a_[0]) and "camera" not in d:
+            if a_ and b_ and b_[1] - a_[1] > 1.0 and abs(b_[1] - a_[1]) > abs(b_[0] - a_[0]) \
+                    and shot.get("camera") not in ("lead", "back", "side", "silhouette", "tiny"):
                 # walking away from the camera: from the front that's her back for the whole line - a camera
-                # ahead of her looking back shows her face (side still showed her three-quarters from behind)
+                # ahead of her looking back shows her face (side still showed her three-quarters from behind).
+                # Also when the script named the camera: "[mid, run_to, center]" was her back (2026-11-27)
                 shot.update(camera="lead", move="follow")
             pos = shot["to"]
             visits[pos] = visits.get(pos, 0) + 1
@@ -1281,6 +1376,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         s.pop("_set_expr", None)
         s.pop("_set_cam", None)
     _merge_cutaway_beats(shots)
+    tidy_events(shots, cast)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     return {"start": start,
             "shots": shots,

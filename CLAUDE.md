@@ -160,6 +160,30 @@ Open items:
     `_openrouter_for` returns None once `over_limit` (logged once per process) -> local AI until midnight; with
     local off -> `LocalOff` "today's cloud AI limit". `GET /api/cloud/check` adds `today` (`cloud_web.today`);
     Settings shows "Today: $x of $y · N calls"; the status dot warns when it's reached.
+- **Four production videos reviewed** (2026-11-27 evening: egg building, T-rex guess, data on Earth, gravity on a
+  mist planet - per-shot grids from the mp4s; fixes checked with `tests/test_script_slips.py`, the four scripts
+  directed again offline, and a fall/float storyboard on a copy of the production sky set):
+  - `autodirect.tidy_line` runs on every script line BEFORE beats are cut (the "[ ... )" typo fix in
+    `parse_directions` came too late: "[mid, sneeze," was a spoken beat): mismatched `[ )` / `( ]` brackets, a doubled
+    label ("Wizard: +Wizard:"), "Enter +wizard, smug He..." -> `[+wizard enter] He...` (`ENTER_WORDS`).
+  - `[cutaway: macro]` / `[cutaway: zoom_in]` = camera / move words, not a thing to show.
+  - AI scene step: `place_words` = only the place's NAME (before " - "), minus cast names, people, stage verbs, anims -
+    "The Void - ... where she is drifting" matched the line's "drifting", "Enter Wizard - a room with a smug wizard"
+    was built as a whole new set mid-video. Empty = no scene change.
+  - `tidy_events` (end of `direct` and `add_cast_plan`): one entrance per stay (the wizard entered 3 times), people
+    are never `hold`.
+  - `held_things`: `BIG_WORDS` before the noun ("bounce on this giant shell") = not hand-held.
+  - `DAY_ARC` lost "all day / one day / whole day / my day" ("I walked all day" lit a sky set orange, then night).
+  - A walk/run away from the camera gets `lead` + follow also when the brackets named a camera ("[mid, run_to]").
+  - `animlib.NOT_ACTIONS` (nya, fast, moon, shine, closer, angle, hold, seed, noodle, omega, blink, drooling...):
+    `animgen.ensure` never makes them, `catalog.ANIMS` skips saved ones, `run_episode.resolve_animations` turns an
+    older shot's action into idle. Production had made poses for all of these; the files stay on Assets ->
+    Animations for the user to delete. `CAM_WORDS` + closer/closerup.
+  - `blender_fx`: weather particles never inside (also when a line asks: "[rain falling]" in a starship).
+  - Air sets: `a_fall` arms up over the shoulders, flapping (spread level at raise 1.5 = a T-pose from the front for
+    every shot of a `motion: fall` sky set - run_episode makes every shot there "fall"); `a_float` arms only a little
+    away from her sides (raise 0.9 was level too).
+  - Not fixed (writer quality): the T-rex title vs a mosquito-bite script on a "boat", made-up facts.
 - **Random videos on the server** (`pipeline/randomvid.py`): the 🎲 cards (`CARDS` - `tests/test_randomvid.py`
   checks them against app.js `MW_STEPS_BASE`), never `conversation` (needs a co-star); in `batch.py` a `"random"`
   item writes for `new:<place>`, makes that set first (`/api/sets/generate` + `wait_job`), then directs there.

@@ -199,7 +199,7 @@ def make(name, description="", ollama=None, log=print, tries=2, check=True):
 def ensure(word, line="", log=print):
     """For a script: the animation's name if it exists or could be made, else None (not a body action / no AI)."""
     name = animlib.slug(word)
-    if not name:
+    if not name or name in animlib.NOT_ACTIONS:
         return None
     import catalog
     lib = animlib.library()

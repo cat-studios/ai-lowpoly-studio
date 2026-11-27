@@ -187,7 +187,7 @@ def cam_at(fr):
     return B.CAM_POS.get(fr, B.char_loc.get(fr, Vector()) + Vector((0, -6, 2)))
 
 
-WEATHER = {"snow", "rain", "droplets", "leaves", "petals"}    # never a set's default inside (a shot may ask)
+WEATHER = {"snow", "rain", "droplets", "leaves", "petals"}    # never inside (a set's default or a line's ask)
 
 
 def build(ns):
@@ -199,6 +199,8 @@ def build(ns):
     if recipe.get("indoor"):     # an indoor set's own weather (sets made before the check): no snow in a post office
         default = [n for n in default if n not in WEATHER]
     want = [norm(shot["particles"]) if "particles" in shot else default for shot in B.SHOTS]
+    if recipe.get("indoor"):     # nor when a line asks for it: "[rain falling]" rained inside a starship (2026-11-27)
+        want = [[n for n in w if n not in WEATHER] for w in want]
     used = sorted({n for w in want for n in w})
     if not used:
         return
