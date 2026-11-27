@@ -1205,7 +1205,16 @@ def label_speaker(label, speakers):
         hits = {v for k, v in speakers.items() if want and all(w in re.split(r"[ _]+", k) for w in want)}
         if len(hits) == 1:
             return hits.pop()
-    return None
+    # her name isn't always among the speakers (the server only lists co-stars): "Past Lavender" - one word of the
+    # label names exactly one speaker, the other words name nobody
+    found = {}
+    for w in rest:
+        hits = {v for k, v in speakers.items() if w in re.split(r"[ _]+", k)}
+        if len(hits) > 1:
+            return None
+        if hits:
+            found[w] = hits.pop()
+    return next(iter(found.values())) if len(set(found.values())) == 1 else None
 
 
 def fix_labels(lines, speakers):

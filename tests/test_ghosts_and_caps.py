@@ -62,6 +62,10 @@ class GhostScriptSlips(unittest.TestCase):
         self.assertEqual(A.label_speaker("Past Lavender", sp), "past_self")
         self.assertIsNone(A.label_speaker("Old Lady", sp))
         self.assertIsNone(A.label_speaker("Warning", sp))
+        # production: her name isn't a speaker there
+        self.assertEqual(A.label_speaker("Past Lavender", {"past self": "past_self", "past_self": "past_self"}),
+                         "past_self")
+        self.assertIsNone(A.label_speaker("Old Lady", {"mom": "mom"}))
 
 
 class HerOtherSelves(unittest.TestCase):
