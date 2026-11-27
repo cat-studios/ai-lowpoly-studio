@@ -176,6 +176,16 @@ Open items:
   director lands her (`autodirect.FLOAT_LINES` 2) on the first beat of the script line after next when nothing
   holds her up - the loop runs per BEAT, so script lines are counted (`line_no`). Balloons still float until a
   landing word or "pop". Storyboard of the gold video: floating, arms relaxed.
+- **Signs, tags, symbols** (production `what_is_black_friday_80ltx`: the "massive discount tag" was a yellow cone,
+  two red boxes and a ball - primitive parts can't show writing): a template like animals/vehicles
+  (`propgen.sign_family` by the name's last word - `SIGN_FAMILIES` tag / board / banner / round, `SIGN_NOT` dog tag,
+  name tag...; `sign_text` = `SIGN_TEXT` words -> "-50%", "SALE", "$9.99", "FREE", "STOP"..., else the name's own
+  words: "BAKERY"; `SIGN_COLORS`). `make_sign` = portrait shapes (the 9:16 cutaway crops wide things) + `d["sign"]
+  {text, color, x, y, z, w, h}`; `blender_sets.sign_text` writes it on the face (Arial Black, as tall as the face,
+  then measured and shrunk to its width). No AI design for signs (the template is the design), no look-check
+  redesign (it would lose the text), shown in previews too; old library signs are rebuilt once (old file ->
+  `assets/props/.trash`). Imported models still come first. Storyboard: tag, board, banner, price tag, badge,
+  "WELCOME" all readable.
 
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no

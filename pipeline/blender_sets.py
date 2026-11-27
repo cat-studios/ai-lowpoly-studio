@@ -629,6 +629,47 @@ def p_custom(r, p, d):
         col = part.get("color", "#9a9180")
         P(kind, f"{p['kind']}_{i}", tuple(part.get("pos", (0, 0, sz))), (sx, sy, sz), col if glow else shade(col, f),
           r, unlit=glow, rot=(rx, ry, rz), **kw)
+    if d.get("sign"):
+        sign_text(r, p, d["sign"])
+
+
+SIGN_FONTS = ("C:/Windows/Fonts/ariblk.ttf", "C:/Windows/Fonts/arialbd.ttf")     # the captions' chunky font
+SIGN_CHAR_W = 0.72                     # an Arial Black letter is about this wide for a font size of 1
+
+
+def sign_text(r, p, s):
+    """The writing on a sign (propgen.make_sign): a text object on its face, looking at the camera (-y), as big as
+    fits the face (two lines when it's long)."""
+    import bpy
+    text = str(s.get("text") or "").strip()
+    if not text:
+        return None
+    lines = text.split(" ", 1) if len(text) > 7 and " " in text else [text]
+    cu = bpy.data.curves.new(f"{p['kind']}_text", "FONT")
+    cu.body = "\n".join(lines)
+    cu.align_x, cu.align_y = "CENTER", "CENTER"
+    cu.extrude = 0.003
+    cu.size = float(s["h"]) / (len(lines) * 1.1)          # as tall as the face allows...
+    for path in SIGN_FONTS:
+        try:
+            cu.font = bpy.data.fonts.load(path, check_existing=True)
+            break
+        except Exception:
+            continue                          # no such font: Blender's own
+    o = bpy.data.objects.new(f"{p['kind']}_text", cu)
+    H.scene.collection.objects.link(o)
+    o.parent = r
+    o.location = (float(s.get("x", 0.0)), float(s["y"]), float(s["z"]))
+    o.rotation_euler = (math.radians(90), 0.0, 0.0)      # the text's face (+z) turned to look at the camera (-y)
+    o.data.materials.append(H.mat(s.get("color", "#2a2320")))
+    try:                                                   # ...then as wide as the face: measured, not guessed
+        bpy.context.view_layer.update()
+        wide = o.dimensions.x / max(1e-6, max(o.scale.x, 1e-6))
+        if wide > float(s["w"]):
+            cu.size *= float(s["w"]) / wide
+    except Exception:
+        cu.size = min(cu.size, float(s["w"]) / (SIGN_CHAR_W * max(len(x) for x in lines)))
+    return o
 
 
 def _half(o, keep, cap_colour):

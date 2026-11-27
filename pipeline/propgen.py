@@ -484,8 +484,111 @@ def make_vehicle(d, kind, looks, fam):
     return d
 
 
+# ----------------------------------------------------------------------------- signs, tags, symbols
+# A tag, sign or symbol is a flat shape with WRITING on it - primitive parts can't show that (a Black Friday
+# "discount tag" came out as a yellow cone, two red boxes and a ball). The template is a flat board / tag / disc /
+# banner, and Blender writes the text on its face (blender_sets.p_custom, d["sign"]).
+SIGN_FAMILIES = {
+    "tag": {"tag", "label", "sticker", "coupon", "ticket", "voucher", "receipt"},
+    "board": {"sign", "signboard", "placard", "billboard", "plaque", "notice", "poster", "menu", "board"},
+    "banner": {"banner", "flag"},
+    "round": {"symbol", "logo", "badge", "emblem", "seal", "icon", "button"},
+}
+SIGN_NOT = {"dog", "name", "zodiac", "stop"}        # "dog tag"... stay as they are; a stop sign gets STOP below
+SIGN_TEXT = [                                       # (words in the name/looks, what's written) - the first that fits
+    (("discount", "percent", "markdown", "clearance", "off"), "-50%"),
+    (("sale", "friday", "deal", "deals"), "SALE"),
+    (("price", "cost", "priced"), "$9.99"),
+    (("free",), "FREE"),
+    (("open",), "OPEN"), (("closed",), "CLOSED"), (("stop",), "STOP"), (("exit",), "EXIT"),
+    (("wanted",), "WANTED"), (("welcome",), "WELCOME"), (("danger", "warning", "caution"), "!"),
+    (("question", "mystery"), "?"), (("love", "heart"), "<3"), (("winner", "first", "gold"), "#1"),
+]
+SIGN_COLORS = {"-50%": ("#d8262b", "#ffffff"), "SALE": ("#d8262b", "#fff2b0"), "$9.99": ("#f2c230", "#2a2320"),
+               "FREE": ("#3f9a4a", "#ffffff"), "STOP": ("#c9302c", "#ffffff"), "!": ("#f2c230", "#2a2320"),
+               "<3": ("#ff8fb8", "#ffffff"), "#1": ("#e0b23a", "#3a2a10")}
+SIGN_FILLER = {"a", "an", "the", "big", "giant", "huge", "massive", "small", "tiny", "little", "of", "with",
+               "red", "blue", "green", "yellow", "white", "black", "gold", "golden", "shiny", "glowing", "neon"}
+
+
+def sign_family(kind, looks=""):
+    """"tag" / "board" / "banner" / "round" when the thing is a flat sign-like object (its name's last word decides,
+    as for vehicles and animals), else None."""
+    ws = [w for w in re.split(r"[^a-z%$]+", str(kind).lower().replace("_", " ")) if w]
+    if not ws or (len(ws) > 1 and ws[-2] in SIGN_NOT and ws[-1] != "sign"):
+        return None
+    last = ws[-1]
+    for fam, names in SIGN_FAMILIES.items():
+        if last in names or last.rstrip("s") in names:
+            return fam
+    if "%" in ws or last in ("percent", "percentage"):
+        return "round"
+    return None
+
+
+def sign_text(kind, looks=""):
+    """What's written on a sign: from SIGN_TEXT words in its name/looks, else its own describing words."""
+    words = re.split(r"[^a-z%$0-9]+", f"{kind} {looks}".lower().replace("_", " "))
+    if "%" in f"{kind} {looks}":
+        return "-50%"
+    for keys, text in SIGN_TEXT:
+        if any(k in words for k in keys):
+            return text
+    nouns = {n for names in SIGN_FAMILIES.values() for n in names}
+    own = [w for w in re.split(r"[^a-z0-9]+", str(kind).lower().replace("_", " "))
+           if w and w not in nouns and w not in SIGN_FILLER]
+    return " ".join(own[:2]).upper()[:14] or "!"
+
+
+def make_sign(d, kind, looks, fam):
+    """Replace a sign-like definition's parts with a flat shape and the text to write on its face."""
+    import catalog
+    text = sign_text(kind, looks)
+    ws = re.split(r"[^a-z]+", f"{kind} {looks}".lower().replace("_", " "))
+    named = [catalog.CAST_COLORS[w] for w in ws if w in catalog.CAST_COLORS]
+    board, ink = SIGN_COLORS.get(text, ("#f4f0e6", "#2a2320"))
+    if named and text not in SIGN_COLORS:
+        board = named[0]
+        ink = "#2a2320" if sum(int(board[i:i + 2], 16) for i in (1, 3, 5)) > 380 else "#ffffff"
+    dark = _shade(board, 0.6)
+    # sizes are in each shape's own axes before its rotation (blender_build.prim): a cylinder turned 90 deg about x
+    # is (width, height, thickness) - its round face then looks at the camera (-y)
+    # portrait shapes: the video is 9:16 and the cutaway camera crops wide things (a 1.4 m tag lost its right side)
+    if fam == "tag":           # a hanging price tag: pointed top with the hole and string, the face 0.7 x 0.9
+        parts = [_part("box", (0, 0, 0.55), (0.7, 0.04, 0.9), board),
+                 _part("pyramid", (0, 0, 1.13), (0.7, 0.04, 0.26), board),                    # the pointed top
+                 _part("cylinder", (0, -0.02, 1.1), (0.07, 0.07, 0.01), "#2a2320", (90, 0, 0)),  # the hole
+                 _part("box", (0, 0, 1.4), (0.015, 0.015, 0.55), "#e8e0d0")]                   # the string
+        face = {"z": 0.55, "w": 0.62, "h": 0.75, "x": 0.0, "front": -0.02}
+    elif fam == "banner":      # a cloth between two poles
+        parts = [_part("box", (0, 0, 1.3), (1.2, 0.03, 0.45), board),
+                 _part("cylinder", (-0.64, 0, 0.8), (0.05, 0.05, 1.6), dark),
+                 _part("cylinder", (0.64, 0, 0.8), (0.05, 0.05, 1.6), dark)]
+        face = {"z": 1.3, "w": 1.1, "h": 0.38, "x": 0.0, "front": -0.015}
+    elif fam == "round":       # a disc standing up, facing the camera, on a little foot
+        parts = [_part("cylinder", (0, 0, 0.5), (0.8, 0.8, 0.06), board, (90, 0, 0)),
+                 _part("cylinder", (0, 0.03, 0.5), (0.88, 0.88, 0.04), dark, (90, 0, 0)),    # the rim behind
+                 _part("box", (0, 0.03, 0.05), (0.3, 0.2, 0.1), dark)]
+        face = {"z": 0.5, "w": 0.62, "h": 0.5, "x": 0.0, "front": -0.03}
+    else:                      # a board on a post
+        parts = [_part("box", (0, 0, 1.15), (1.1, 0.05, 0.7), board),
+                 _part("box", (0, 0.03, 1.15), (1.18, 0.03, 0.78), dark),                    # the frame behind
+                 _part("cylinder", (0, 0.05, 0.45), (0.07, 0.07, 0.9), dark)]
+        face = {"z": 1.15, "w": 1.0, "h": 0.6, "x": 0.0, "front": -0.025}
+    front = face.pop("front")
+    d.update(parts=parts, sign={"text": text, "color": ink, "y": round(front - 0.004, 3), **face}, complex=False,
+             size_checked=True, on="floor", height=round(max(p["pos"][2] + p["size"][2] / 2 for p in parts), 2),
+             radius={"tag": 0.36, "banner": 0.68, "round": 0.45}.get(fam, 0.6),        # its true half-width
+             width={"tag": 0.7, "banner": 1.35, "round": 0.9}.get(fam, 1.2))
+    d.pop("sprite", None)
+    return d
+
+
 def template_for(kind, looks=""):
-    """("animal", family) / ("vehicle", family) when the thing gets a body template, else None."""
+    """("sign", family) / ("animal", family) / ("vehicle", family) when the thing gets a template, else None."""
+    s = sign_family(kind, looks)
+    if s:
+        return "sign", s
     v = vehicle_family(kind, looks)
     if v:
         return "vehicle", v
@@ -494,7 +597,8 @@ def template_for(kind, looks=""):
 
 
 def apply_template(d, kind, looks, tpl):
-    return (make_vehicle if tpl[0] == "vehicle" else make_animal)(d, kind, looks, tpl[1])
+    fn = {"sign": make_sign, "vehicle": make_vehicle}.get(tpl[0], make_animal)
+    return fn(d, kind, looks, tpl[1])
 
 
 def shown_as_sprite(d):
@@ -679,7 +783,7 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         if ollama and not _preview() and not have.get("size_checked"):        # older library props get a real size...
             real_size(have, ollama, log)
             changed = have.get("size_checked", False)
-        if not have.get("animal") and not have.get("vehicle") and squeeze_to_width(have, log):
+        if not have.get("animal") and not have.get("vehicle") and not have.get("sign") and squeeze_to_width(have, log):
             changed = True                                   # ...the real width (older ones could be 8 m wide)...
         if ollama and _prop_check_on() and have.get("check_v", 1) < CHECK_V and have.get("parts") \
                 and have.get("form") != "sprite"                 and have.get("source") != "imported":       # ...a look check (once)...
@@ -694,9 +798,13 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
     d = None
     if _preview():                            # a quick preview: a stand-in now, the real design at the render
         d = fallback(kind, looks)
+        st = template_for(kind, looks)
+        if st and st[0] == "sign":            # a sign costs nothing to build: the preview shows the real one
+            apply_template(d, kind, looks, st)
         d["preview"] = True
         return d
-    if ollama:
+    tpl = template_for(kind, looks)
+    if ollama and not (tpl and tpl[0] == "sign"):      # a sign needs no AI shapes: its template is the whole design
         import llm
         user = (f"Object: {kind.replace('_', ' ')}\nWhat it looks like: {looks or kind.replace('_', ' ')}\n"
                 + (f"It is part of this place: {setting}\n" if setting else ""))
@@ -710,11 +818,11 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
                 break
     if not d:
         d = fallback(kind, looks)
-        log(f"[props] '{kind}': simple stand-in shape (no usable AI design)")
+        if not tpl:
+            log(f"[props] '{kind}': simple stand-in shape (no usable AI design)")
     else:
         log(f"[props] designed new prop '{kind}' ({len(d['parts'])} parts, {d['radius']} m wide, {d['height']} m tall)")
-    tpl = template_for(kind, looks)
-    if tpl:                                    # animals and vehicles: a body template, coloured like the design
+    if tpl:                                    # signs, animals, vehicles: a template (coloured like the design)
         apply_template(d, kind, looks, tpl)
         log(f"[props] '{kind}' built as a {tpl[1]}")
     real_size(d, ollama, log)
@@ -723,7 +831,7 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         d = look_checked(d, kind, looks, setting, ollama, log)
     if needs_picture(d):                       # 3D first: a picture only for complicated or shapeless objects
         add_sprite(d, comfy_cfg, log)
-    if save and (d.get("by") == "ollama" or d.get("sprite") or d.get("animal") or d.get("vehicle")):
+    if save and (d.get("by") == "ollama" or d.get("sprite") or d.get("animal") or d.get("vehicle") or d.get("sign")):
         _save(d)
     return d
 
@@ -837,7 +945,7 @@ def look_checked(d, kind, looks, setting, ollama, log=print):
             if d.get("form") != "sprite":
                 d["complex"] = False              # a bad old check had made it a picture
             return d
-        if attempt == 2:
+        if attempt == 2 or d.get("sign"):     # a sign's template (shape + its writing) isn't redesigned from shapes
             break
         user = (f"Object: {kind.replace('_', ' ')}\nWhat it looks like: {looks or kind.replace('_', ' ')}\n"
                 + (f"It is part of this place: {setting}\n" if setting else "")
