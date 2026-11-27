@@ -1796,6 +1796,18 @@ RIGHT_ARM_ANIMS = {"wave", "point", "celebrate", "clap", "blow_kiss", "facepalm"
                    "float_up", "land", "fall", "float"}
 
 
+def selfie_pose(p, t, seg):
+    """The selfie camera is her own phone: her right arm reaches forward to the lens (it leaves the frame at the
+    edge, like a video call). Gestures with that arm win - she lets go for a wave."""
+    if seg["anim"] in RIGHT_ARM_ANIMS or seg["shot"] in HELD:
+        return
+    for ch, v in SELFIE_ARM.items():
+        p[ch] = v
+
+
+SELFIE_ARM = {"armR": -0.85, "raiseR": 0.35, "rotR": 0.0, "elbowR": 0.05}
+
+
 def holding_pose(p, t, seg):
     """Something small in her right hand: forearm out in front, palm up (animlib "palm_up_out"), so it's shown."""
     if seg["shot"] not in HELD or seg["anim"] in RIGHT_ARM_ANIMS:
@@ -1826,10 +1838,14 @@ for who, tr in TRACKS.items():
             airborne(p, t, T, s)
             if who == PRIMARY:
                 holding_pose(p, t, s)
+                if shot.get("camera") == "selfie":
+                    selfie_pose(p, t, s)
             apply_expression(p, s["expr"])
             face_extras(p, t, s["expr"])
             ts = (fr - sf0) / FPS - float(shot.get("lead", AUDIO_LEAD))   # first shot has a longer intro
             p["gesture_side"] = "R" if s["shot"] % 2 == 0 else "L"
+            if who == PRIMARY and shot.get("camera") == "selfie":
+                p["gesture_side"] = "L"          # the right hand holds the phone: she talks with her left
             secondary(p, (fr - 1) / FPS, ts if speaks and 0 <= ts <= talk_len else None)   # only the speaker talks
             SM.apply(p)
             if isinstance(R, VRoidRig):
@@ -1889,6 +1905,7 @@ CAMS = {
     "tiny":     ((0.0, -11.0, 1.6),          "body", 35),     # a small figure in a big scene
     "silhouette": ((0.6, 3.0, 1.1),          "head", 35),     # low, from behind: she reads as a dark shape
     "lead":     ((0.5, 3.0, 1.55),           "head", 30),     # ahead of her walk, looking back (turned below)
+    "selfie":   ((0.15, -0.95, 1.42),        "head", 24),     # her own phone: close, just below, her arm to the lens
 }
 def _blockers(fr):
     """(x, y, radius, is_cast) of what can stand in a camera's way at frame fr: floor props and the cast."""

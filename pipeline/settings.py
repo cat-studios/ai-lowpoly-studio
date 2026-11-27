@@ -50,6 +50,8 @@ DEFAULTS = {
         "title_color": "#f0f0f0",
         "title_color2": "#f0e060",       # second line of the title
         "effect": "pop",                 # none, pop (scale in), bounce, fade
+        "hud": True,                     # [meter:] [count:] [tag:] [label:] [bubble:] game overlays (overlays.py)
+        "stickers": True,                # every sound effect shows its word as a comic sticker ("BOOM!")
         "hook_pop": True,                # the first line's key word pops up big as it's said (the hook)
     },
     "branding": {

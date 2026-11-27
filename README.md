@@ -356,6 +356,25 @@ Create → 1 Idea → **Kind of video** steers the title ideas, the script and t
 - 🤔 **Myth or fact?** - three things people believe: "Myth or fact?", then the reveal with the real reason.
 - ⚖️ **This or that?** - two things compared round by round; she picks one and asks for yours.
 - 🔍 **Guess what?** - clues from hard to easy, a moment to guess, then the big reveal.
+- 🤳 **Talk to you** - she talks straight to you through her phone camera (the 🤳 selfie camera: close, from just
+  below, her arm reaching to the lens): comfort, a pep talk, a little challenge, with a meter on screen that
+  changes as she helps and little "in... / ...out" bubbles for breathing.
+- 🛠️ **Gadget story** - a small problem, then sillier and bigger inventions, each with its name sign, a counter
+  that climbs, and a twist at the end that flips who's in charge.
+What if, Mini story and Conversation also end on a twist that flips the idea.
+
+### Game overlays and sound stickers
+Write these in a line's brackets (the AI writer uses them too, sparingly); they're drawn in the same pixel style as
+the captions (Settings → Text & branding → *Game overlays* / *Sound words as comic stickers*):
+```
+[meter: stress 99]          a bar with its name and %, written again later it slides to the new number (-39% pops up)
+[count: cookies 0]          a counter - later [count: cookies 500] ticks up to it
+[tag: BOSS: ME]             a corner tag until the next one ([tag: off] hides it) - flip it for a twist ending
+[label: SNACK-O-MATIC 3000] a name sign for that shot
+[bubble: in...]             a small speech bubble for that shot
+[sticker: NOM NOM]          a comic sound word
+```
+Every sound effect also shows its word by itself ("KABOOM!", "WHOOSH!").
 
 ### Series
 **📺 Make a series** (next to 🎲 Make a random video): one idea, 1-4 episodes. Each episode gets its own question

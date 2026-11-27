@@ -2605,6 +2605,8 @@ const S_TABS = {
       ["captions.mode", "Caption style", "select", { options: ["words", "line", "off"] }, "words = a few words at a time mid-screen (how many: the Create page's caption style), line = the whole line."],
       ["captions.font", "Font", "font", {}, "Any font installed in Windows."],
       ["captions.effect", "Entrance effect", "select", { options: () => META.effects }],
+      ["captions.hud", "Game overlays (meters, counters, tags, name signs, bubbles)", "bool", {}, "What the script asks for with [meter: stress 80], [count: cookies 12], [tag: BOSS: ME], [label: SNACK-O-MATIC], [bubble: in...] - drawn in the same pixel style as the captions."],
+      ["captions.stickers", "Sound words as comic stickers", "bool", {}, "Every sound effect shows its word on screen (BOOM!, WHOOSH!, NYA!), tilted, in its own colour, near the action."],
       ["captions.hook_pop", "Hook word pops up big", "bool", {}, "In the first line (the hook), its key word shows twice the size with a bounce as she says it - the first seconds decide if people keep watching."],
       ["captions.color", "Text colour", "color"],
       ["captions.shadow_color", "Shadow / outline colour", "color"],

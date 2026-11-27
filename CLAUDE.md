@@ -184,6 +184,25 @@ Open items:
     every shot of a `motion: fall` sky set - run_episode makes every shot there "fall"); `a_float` arms only a little
     away from her sides (raise 0.9 was level too).
   - Not fixed (writer quality): the T-rex title vs a mosquito-bite script on a "boat", made-up facts.
+- **Game-HUD ideas** (the user, 2026-11-27, from two creators' low-poly Reels - techniques only, nothing copied):
+  - `pipeline/overlays.py`: `[meter: stress 99]` (bar + name + %, slides to each new value in `STEPS` over `TWEEN`
+    0.6 s, "-39%" floats up; green/yellow/red the right way round by `BAD_METERS`), `[count: pats 397]` (ticks),
+    `[tag: BOSS: ME]` (corner box until the next tag / `off`), `[label: X-O-MATIC]` (orange sign for the shot, at
+    0.47 H), `[bubble: in...]` (white box by her head), `[sticker: NOM NOM]`. `parse` runs in
+    `autodirect.parse_directions` -> shot `hud` (first beat of the line); `events()` adds the ASS lines from
+    `run_episode.write_captions` (styles from `styles()`, everything at render resolution = pixelated), gone when the
+    end card starts. `hud` is in `SHOT_SKIP` (frames reused). Settings `captions.hud`, `captions.stickers`.
+  - Sound stickers: `overlays.sound_stickers` = every one-shot sound effect's word (the line's trigger word
+    "KABOOM!", else `STICKER_WORDS`), tilted, colour-cycled, `STICKER_GAP` 1.2 s, `MAX_STICKERS` 10.
+  - Selfie camera `CAMS["selfie"]` ((0.15, -0.95, 1.42), head, 24 mm) + `selfie_pose` (`SELFIE_ARM`: right arm to
+    the lens, out of frame at the edge) and her talk gestures move to the LEFT hand (`secondary` added to the right
+    arm on even shots and lifted it straight up - storyboard `zz_check_selfie`). `CAM_WORDS` facecam/vlog/phone ->
+    selfie; captions sit low on it; a `CLOSE_CAMS` member (no walks).
+  - Templates `talk_to_you` (pacing `camera: "selfie"` -> `autodirect.direct(camera=)` locks every shot without a
+    bracket camera, walks become idle; meter + bubbles, warm) and `gadget_story` (inventions with `[label:]`,
+    a climbing `[count:]`, a `[tag:]` flipped by the twist). `templates.TWIST` appended to what_if, mini_story,
+    conversation. `pacing(beats_on=False)` keeps the camera. The writer's system prompt lists the overlay words.
+  - Checked: overlays burned onto a still at 216x384 (`hud_check`), selfie storyboards; not in a real render yet.
 - **Random videos on the server** (`pipeline/randomvid.py`): the 🎲 cards (`CARDS` - `tests/test_randomvid.py`
   checks them against app.js `MW_STEPS_BASE`), never `conversation` (needs a co-star); in `batch.py` a `"random"`
   item writes for `new:<place>`, makes that set first (`/api/sets/generate` + `wait_job`), then directs there.

@@ -36,6 +36,7 @@ Cutaways show something else instead of her while her line plays as a voice-over
 import re
 
 import catalog
+import overlays
 import sfx as sfxlib
 
 ANGRY = re.compile(r"\b(hate|ugh|stupid|seriously|enough|grr+|hiss\w*|angry|mad|furious|idiot|fine\.)", re.I)
@@ -150,6 +151,9 @@ def parse_directions(line, marks):
     if show:
         d["show"] = show.group(1).strip().lower()
         inner = inner[:show.start()] + inner[show.end():]
+    hud, inner = overlays.parse(inner)               # "meter: stress 99", "tag: BOSS: ME"... (game overlays)
+    if hud:
+        d["hud"] = hud
     cut = re.search(r"\bcut(?:away)?\s*:\s*([^,\]]+)", inner, re.I)   # "cutaway: a plane flying past"
     if cut:
         what = cut.group(1).strip()
@@ -278,6 +282,7 @@ CAM_WORDS = {    # -> camera ("[mid, wave]" asked the animation maker to invent 
     **dict.fromkeys("wide_shot long long_shot establishing far_shot".split(), "wide"),
     **dict.fromkeys("overhead top_down birds_eye aerial".split(), "high"),
     **dict.fromkeys("low_angle worms_eye".split(), "low"),
+    **dict.fromkeys("phone phone_cam front_camera facecam face_cam video_call vlog".split(), "selfie"),
     **dict.fromkeys("extreme_closeup extreme_close_up eyes".split(), "macro"),
 }
 MOVE_WORDS = {"zoom_in": "push_in", "zoom": "push_in", "dolly_in": "push_in", "zoom_out": "pull_out",
@@ -1005,7 +1010,7 @@ def expand_beats_grouped(lines, n, speakers=None):
 EXITS = ("door", "far")
 ARRIVAL_CAMS = ("wide", "medium", "high", "low")   # blender_build frames her + an arrival together only for these
 PLAIN_MARKS = ("center", "front", "left", "right", "back", "far")   # places, not things she could point at                 # walking there mid-line looks like she's leaving
-CLOSE_CAMS = ("closeup", "macro", "dramatic")   # too tight to follow a walk (the camera ends up in her hair)
+CLOSE_CAMS = ("closeup", "macro", "dramatic", "selfie")   # too tight to follow a walk (the camera ends up in her hair)
 HAPPY_ANIMS = ["nod", "laugh", "clap", "idle", "celebrate", "nod", "laugh", "idle"]   # happy lines that aren't greetings
 SHOW_ANIMS = ("wave", "blow_kiss", "clap", "celebrate", "point")   # gestures that need the front and her hands
 
@@ -1044,7 +1049,8 @@ def _pick_dest(marks, pos, visits):
 
 
 def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse", speakers=None, beat_words=0,
-           beat_sets=None, walk_every=0, wipe_every=0, move_every=0, opening="hook", title="", story_fx=True):
+           beat_sets=None, walk_every=0, wipe_every=0, move_every=0, opening="hook", title="", story_fx=True,
+           camera=None):
     """walk_every: every Nth beat she walks, with the camera following her (0 = never), never within WALK_GAP shots
     of another walk. move_every: every Nth beat the camera moves instead (orbit / push in / pull out from a new
     angle) - she walked about too much when every 3rd beat was a walk.
@@ -1372,6 +1378,13 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
     conversations(shots, {"main"} | set((speakers or {}).values()))
     if story_fx:
         reactions(shots)
+    if camera in catalog.CAMERAS:          # a template that films the whole video one way ("Talk to you": selfie)
+        for s in shots:
+            if not s.get("_set_cam") and not s.get("cutaway") and not s.get("show"):
+                s["camera"], s["move"] = camera, "static"
+                if s.get("action") in catalog.MOVE_ANIMS:
+                    s["action"] = "idle"
+                    s.pop("to", None)
     for s in shots:
         s.pop("_set_expr", None)
         s.pop("_set_cam", None)

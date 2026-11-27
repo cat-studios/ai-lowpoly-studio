@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import settings as S  # noqa: E402
 from progress import FrameWatcher, report, quiet  # noqa: E402
 import sfx as sfxlib  # noqa: E402
+import overlays  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 BLENDER_DEFAULT = r"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe"
@@ -454,7 +455,7 @@ def hook_word(words):
 # worst case is a full render, never a stale picture.
 PICTURE_SKIP = {"captions", "branding", "look", "look_preset", "music", "ambience", "translations", "hook_style",
                 "brainrot", "idea", "series", "batch", "remix", "variation_of", "script"}      # top-level, never in Blender
-SHOT_SKIP = {"sfx", "sfx_at", "sfx_volume"}                                                  # per shot, sound only
+SHOT_SKIP = {"sfx", "sfx_at", "sfx_volume", "hud"}                       # per shot, sound / overlays only
 PICTURE_CODE = ["blender_build.py", "blender_sets.py", "blender_cast.py", "blender_fx.py", "blender_models.py",
                 "animlib.py", "catalog.py", "setgen.py"]
 FILE_EXTS = {".blend", ".vrm", ".glb", ".fbx", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".json"}
@@ -519,7 +520,8 @@ def highlight_marks(words, phrases):
     return marks
 
 
-def write_captions(path, ep, shots, timing, res, cap, brand):
+def write_captions(path, ep, shots, timing, res, cap, brand, stickers=()):
+    """stickers: [(WORD, seconds)] comic sound words (overlays.sound_stickers); the shots' "hud" overlays too."""
     fps = timing["fps"]
     font = cap["font"].replace(",", " ")
     up = (lambda s: s.upper()) if cap.get("uppercase", True) else (lambda s: s)
@@ -548,6 +550,7 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
         f"{3 if brand.get('watermark_corner', 'bottom-right').endswith('right') else 1},5,5,{round(res[1] * 0.03)},1",
         f"Style: End,{font},{max(4, round(res[1] * cap['size']))},{tcol2},{tcol2},{shadow},{shadow},"
         f"-1,0,0,0,100,100,1,0,1,{border},5,8,8,0,1",
+        *overlays.styles(res, font, shadow),
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     total = timing["total_frames"] / fps
@@ -576,7 +579,7 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
         start = (tm["f0"] - 1) / fps + float(shot.get("lead", AUDIO_LEAD))
         shot_end = (tm["f0"] - 1 + tm["n"]) / fps
         # close shots: her face fills the middle of the frame, so the words sit lower, over her shoulders
-        low = round(res[1] * 0.15) if shot.get("camera") in ("closeup", "dramatic", "macro") else 0
+        low = round(res[1] * 0.15) if shot.get("camera") in ("closeup", "dramatic", "macro", "selfie") else 0
         if cap["mode"] == "line":
             end = min(shot_end, start + shot["talk"] + 0.4)
             lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,{low},,"
@@ -623,6 +626,11 @@ def write_captions(path, ep, shots, timing, res, cap, brand):
                    if any(k in marks for k in chunk) else fx)
             lines.append(f"Dialogue: 0,{ass_time(t)},{ass_time(end)},Caption,,0,0,{low},,{efx}{' '.join(parts)}")
             t += dur
+    if cap.get("hud", True) or stickers:            # game overlays: meters, counters, tags, signs, bubbles, stickers
+        stop = total - float(brand.get("end_seconds", 2.0)) if brand.get("end_text") else total
+        lines += overlays.events(shots if cap.get("hud", True) else [{} for _ in shots], timing, res, total, stop,
+                                 stickers if cap.get("stickers", True) else (), AUDIO_LEAD,
+                                 seed=sum(map(ord, str(ep.get("title") or ""))))
     if brand.get("watermark"):
         top = brand.get("watermark_corner", "bottom-right").startswith("top")
         tag = "{\\an9}" if top and brand["watermark_corner"].endswith("right") else "{\\an7}" if top else ""
@@ -1684,8 +1692,15 @@ def main():
     if ep.get("brainrot") and br.get("highlight", True):
         cap["highlight_words"] = br.get("words") or []          # the bank's words show in their own colour
         cap["highlight_color"] = br.get("highlight_color") or "#ffe14d"
+    stickers = ()
+    if cap.get("stickers", True):                  # every sound effect shows its word ("BOOM!", "WHOOSH!")
+        try:
+            stickers = overlays.sound_stickers(ep, timing, S.deep_merge(cfg["sfx"], ep.get("sfx", {})), sfx_events,
+                                               sfxlib.all_slots, sfxlib.word_rx)
+        except Exception as exc:                   # never stops a render
+            print(f"  (sound stickers skipped: {exc})")
     write_captions(build / "captions.ass", ep, ep["shots"], timing, res, cap,
-                   S.deep_merge(cfg["branding"], ep.get("branding", {})))
+                   S.deep_merge(cfg["branding"], ep.get("branding", {})), stickers)
     out_dir = ROOT / "output" / ("previews" if args.preview else "")
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / (f"{name}_rough.mp4" if args.preview else f"{name}.mp4")

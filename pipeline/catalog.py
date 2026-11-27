@@ -67,6 +67,7 @@ CAMERAS = {
     "macro": "Close-up on the eyes",
     "tiny": "Tiny figure in a big scene",
     "silhouette": "Low, from behind (a dark shape)",
+    "selfie": "Her own phone camera: close, from just below, her arm reaching to the lens",
 }
 
 MOVES = {

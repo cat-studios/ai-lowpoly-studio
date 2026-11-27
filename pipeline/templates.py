@@ -140,8 +140,49 @@ TEMPLATES = {
         "lines": (7, 9),
         "direct": {"beat_words": 6, "walk_every": 0, "move_every": 0, "wipe_every": 5},
     },
+    "talk_to_you": {
+        "name": "Talk to you",
+        "icon": "🤳",
+        "about": "She talks straight to you through her phone camera - comfort, a pep talk, a little challenge - "
+                 "with a meter on screen that changes as she helps.",
+        "title_starts": ["Are you", "Is your", "Do you", "How tired", "How stressed", "Feeling"],
+        "title_hint": "something the viewer feels right now (stressed, tired, bored, nervous, sad) that she helps with",
+        "script": ("She talks TO THE VIEWER (\"you\") the whole time, like a video call on her phone: warm, calm, "
+                   "kind and a little playful. Pick ONE feeling to track and show it with a meter on the first line, "
+                   "e.g. [meter: <feeling> <number>]; then change it on most lines as she helps "
+                   "([meter: <feeling> <lower number>] ... down to almost nothing at the end, or up for a good feeling). "
+                   "For a breathing or counting moment use a small bubble: [bubble: in...] then [bubble: ...out]. "
+                   "No walking, no cutaways, no other people, no scene changes. The last line is a kind, warm "
+                   "goodbye to the viewer."),
+        "tone": "warm",
+        "lines": (8, 11),
+        "direct": {"beat_words": 4, "walk_every": 0, "move_every": 0, "wipe_every": 0, "camera": "selfie"},
+    },
+    "gadget_story": {
+        "name": "Gadget story",
+        "icon": "🛠️",
+        "about": "A small problem, then one silly invention after another, each bigger - with name signs, "
+                 "a counter that climbs and a twist ending.",
+        "title_starts": ["What if", "What would happen if", "How do you", "What if you built"],
+        "title_hint": "a small everyday problem that silly inventions could solve",
+        "script": ("Tell it as an escalating GADGET story: the first line is the problem; then 3 or 4 inventions, "
+                   "each sillier and bigger than the last. When an invention appears, bring it in with +name (one "
+                   "word or words_joined) and show its name sign: [label: <NAME>-O-MATIC] or [label: <NAME> 3000] - "
+                   "names you invent, never a real brand. Keep score with a counter that climbs: "
+                   "[count: <what you count> 0] early, much bigger numbers later. A corner tag says who's in charge: "
+                   "[tag: BOSS: ME]. The LAST line is a twist that flips the whole idea (the helper becomes the boss, "
+                   "the pet owns the house) - flip the tag too ([tag: BOSS: <the invention>])."),
+        "tone": "funny",
+        "lines": (7, 9),
+        "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},
+    },
 }
 DEFAULT = "what_if"
+# twist endings (the user, 2026-11-27, from game-HUD Reels): story kinds end on a line that flips the premise
+TWIST = ("End on a TWIST: the last line flips the whole idea around (who's in charge, who's the pet, what was "
+         "really going on) - set it up quietly earlier so it lands.")
+for _k in ("what_if", "mini_story", "conversation"):
+    TEMPLATES[_k]["script"] = (TEMPLATES[_k]["script"] + " " + TWIST).strip()
 
 
 def get(tid):
@@ -153,7 +194,8 @@ def pacing(tid, beats_on=True):
     """autodirect.direct keyword arguments for a template (beats off = one shot per line, no walks/beats)."""
     d = dict(get(tid)["direct"])
     if not beats_on:
-        d = {"beat_words": 0, "walk_every": 0, "move_every": 0, "wipe_every": 0}
+        d = {"beat_words": 0, "walk_every": 0, "move_every": 0, "wipe_every": 0,
+             **({"camera": d["camera"]} if d.get("camera") else {})}
     return d
 
 
