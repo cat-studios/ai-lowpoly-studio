@@ -87,6 +87,7 @@ class Fire(unittest.TestCase):
         lie = [x for x in s if "bed" in x["line"] or "slept" in x["line"] or "lay" in x["line"]]
         self.assertTrue(all(x["action"] == "lie_down" and x.get("on") == "bed" for x in lie))
         self.assertNotIn("confetti", str(lie))
+        self.assertNotIn("low", [x["camera"] for x in lie])          # a floor camera saw only the bed's side
 
     def test_fire_things(self):
         self.assertEqual(R.fire_height("campfire"), 0.8)

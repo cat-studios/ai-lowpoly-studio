@@ -1569,9 +1569,16 @@ def _obstacles():
         r = float(d.get("radius") or 0) or float(table.get(d.get("kind") or kind, 0.0) or 0.0)
         if r > 0:
             out.append((float(p["pos"][0]), float(p["pos"][1]), r))
+            h = float(d.get("height") or 0) * float(p.get("scale") or 1.0)
+            if h >= TALL_H and not d.get("parts") == [] and not kind.startswith("base_"):
+                TALL_PROPS.add(out[-1])
     return out
 
 
+# floor props this tall block a camera like a tree does: beside the lens or anywhere in the frame's width, not only
+# on the line to her (production zz_test_fire_ghost: a 1.5 m floor lamp filled half of the ghost's close-ups)
+TALL_H = 1.2
+TALL_PROPS = set()
 OBST = _obstacles()
 
 
@@ -2020,7 +2027,7 @@ def _view_blocked(cam, tgt, fr=None):
         p = Vector((ox, oy, 0.0))
         if (p - t).length < 0.3:                         # that's the speaker herself (a cast person speaking)
             continue
-        tree = (ox, oy, r) in PARK_TREES      # leaves at head height: in the way even when she stands beside it
+        tree = (ox, oy, r) in PARK_TREES or (ox, oy, r) in TALL_PROPS   # at head height: in the way beside her too
         if not cast and not tree and (r < 0.35 or (p - t).length < r + 0.35):   # small props, the furniture she stands at
             continue
         if tree and (p - c).length < r + 0.6:                       # a tree beside the lens fills half the frame

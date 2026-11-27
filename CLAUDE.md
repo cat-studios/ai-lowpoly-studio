@@ -89,8 +89,8 @@ Open items:
 - Whole-video loudness is ~-16 LUFS (voice -14; quiet intro/outro); the reference videos are -14.
 - A cast member's spot is picked beside where she stands when they arrive; if she walks on during that shot they can
   end up between her and the camera for a moment.
-- Generated sets' trees/tall props only block cameras through `OBST` (floor props up to 1 m are skipped for
-  walking); the built-in park's trees are handled (`PARK_TREES`).
+- Tall floor props (>= `TALL_H` 1.2 m with a known radius: `TALL_PROPS`) block cameras like the park's trees
+  (beside the lens / in the frame's width), since 2026-11-27 (a floor lamp filled half the ghost's close-ups).
 - Scene jobs can run while a video renders: Blender and ComfyUI can fight for the 12 GB GPU, and regenerating a set
   changes it under a video that's rendering with it.
 - The local Ollama model's Lithuanian needs checking (🌐 Check translation) - it wrote "Laukinis" for a plane.
@@ -350,6 +350,10 @@ Open items:
   opening, `line_voice` (rate -12%, Chatterbox exaggeration 0.3 / cfg 0.3) as every spoken shot's voice, `calm` (no
   gasps / face close-ups, no shake / orbit / hops), `loop_end` (`set_mood`: the last line goes back to the opening's
   place, light, weather and camera, static). Not changed: music and ambience (pick rain ambience by hand).
+- **Production tests 2026-11-27** (`zz_test_deep_theory`, `zz_test_fire_ghost` in Toy Box): fire in the windows, the
+  past-self ghost as her own model + voice, kneel, lie on the bed, rain + night + calm voice + loop all render. Fixed
+  after them: rain streaks within `near` 2.2 m of the lens hidden (blender_fx spec `near`, default 1.2; thinner, 120),
+  a lie-down on furniture never gets a low / back camera, tall floor props block cameras.
 - **Local voice batch**: a line said twice (Deep theory repeats the first line at the end) is voiced once (`prefetch_local` / `_local_jobs` dedupe by cache file) - production crashed moving the second copy.
 - **Lying down and kneeling** (`blender_build.a_lie_down`, `a_kneel`, `a_kneel_place`; catalog anims `lie_down`,
   `kneel`, `kneel_place`): new pose channels `roll` (the whole body tipped onto her side about its own front axis,

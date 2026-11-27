@@ -895,6 +895,9 @@ def low_poses(shots):
             continue
         if s.get("camera") in CLOSE_CAMS and s.get("camera") != "selfie":
             s["camera"] = "medium"
+        if s.get("on") and s.get("camera") in ("low", "back", "tiny", "silhouette"):
+            # on a bed a floor-level camera sees the bed's side and not her (zz_test_fire_ghost shot 16)
+            s["camera"] = "high" if s.get("camera") == "low" else "medium"
         if s.get("move") == "follow":
             s["move"] = "static"
         if s["action"] == "lie_down" and "on" not in s:
