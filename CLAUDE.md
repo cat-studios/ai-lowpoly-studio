@@ -206,6 +206,10 @@ Open items:
   - Production test 1 (the writer): `talk_to_you` wrote [wide]/[closeup] too - the template camera now wins over the
     writer's camera words (only cutaways / show shots keep theirs); the writer is told no camera words and no new
     name for herself. `gadget_story` used [label:] but skipped [count:]/[tag:] (allowed).
+- **Her name** (production "My name is Lila"; earlier videos "I'm Luna", "I'm Cat"): the writer is told
+  `llm.name_rule(character)` - the Name box on the Characters page is her only name (the user: "pull her name from the
+  character box"; they renamed "Catgirl" to her real name) - and `fix_self_names` rewrites "my name is X" /
+  "Hey guys, I'm X!" in her lines to it (an empty box = the clause goes). Other speakers' lines are left alone.
 - **Reaction sounds one by one** (the user: "toggle the sound effects like giggling"): Settings
   `audio.reaction_sounds {gasp, giggle, hmm, yay, aww, nya}` (Render & audio, under the main switch), checked at
   render in `run_episode` (old videos too); `tests/test_reaction_switches.py` keeps director, texts and rows in step.

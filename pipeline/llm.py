@@ -842,6 +842,7 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
     user = (
         f"Video title: {title}\n"
         f"Character: {character.get('name', 'the character')}. {character.get('about', '')}\n"
+        + name_rule(character) + "\n"
         + ("Other main characters in this video (they talk too - give each of them a few lines, reacting to and "
            "talking with the main character). Start each of their lines with EXACTLY the name shown here and a "
            "colon, even if the description calls them something else:\n"
@@ -873,10 +874,66 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         raise RuntimeError("The model returned no usable lines - try again or pick another model.")
     if polish:
         out = polish_script(url, model, title, out, tone)
+    return fix_self_names(out, character)
+
+
+# her name (2026-11-27: "My name is Lila" - the writer made names up: Lila, Luna, Cat...). The Name box on the
+# Characters page is the only name she uses.
+def real_name(character):
+    """Her name = the Name box on the Characters page (the user, 2026-11-27: "pull her name from the character box").
+    Empty = she has no name and never names herself."""
+    n = str((character or {}).get("name") or "").strip()
+    return n if n and len(n) <= 31 else ""
+
+
+def name_rule(character):
+    n = real_name(character)
+    return (f"Her name is {n}: if she ever says her name it is exactly \"{n}\" - never any other name."
+            if n else "She has NO name: she never introduces herself or names herself (no \"I'm Luna\", no "
+                      "\"my name is...\") - she just talks.")
+
+
+_MY_NAME = re.compile(r"\bmy name(?:'s| is)\s+([A-Z][\w'-]+)(\s+and\s+|\s*[,.!]+\s*|\s+)", re.I)
+_IM_NAME = re.compile(r"^((?:(?:hey|hi|hello|hiya|yo)\b[\s,!]*)?(?:(?:guys|everyone|friends|you)\b[\s,!]*)?)"
+                      r"(?:i'm|i am)\s+([A-Z][a-z]+)\s*([!,.]+)\s*", re.I)
+
+
+def fix_self_names(lines, character):
+    """A name the writer invented for her ("My name is Lila and...", "Hey guys, I'm Luna!") becomes her real profile
+    name, or goes when she has none. Other speakers' lines ("Mom: ...") are left alone."""
+    n = real_name(character)
+    out = []
+    for line in lines:
+        m = _LINE_HEAD.match(line)
+        head, text = m.group(1), m.group(2)
+        label = re.search(r"([A-Za-z][\w ]{0,30}):\s+$", head)
+        if label and label.group(1).strip().lower() not in {str((character or {}).get("name") or "").lower(),
+                                                            str((character or {}).get("id") or "").lower()}:
+            out.append(line)                       # someone else's line
+            continue
+
+        def mine(mm):
+            if n:
+                return mm.group(0).replace(mm.group(1), n) if mm.group(1).lower() != n.lower() else mm.group(0)
+            return " " if mm.group(2).strip() in ("and", "") else ""
+
+        new = _MY_NAME.sub(mine, text)
+        im = _IM_NAME.match(new)
+        if im and im.group(2).lower() not in ("catgirl", n.lower()) and im.group(2).lower() not in _NOT_NAMES:
+            greet = im.group(1).strip(" ,")
+            new = (f"{greet}, I'm {n}{im.group(3)} " if n else (f"{greet}! " if greet else "")) + new[im.end():]
+        new = re.sub(r"\s{2,}", " ", new).strip()
+        if new and new != text:
+            new = new[0].upper() + new[1:]
+        out.append(head + new if new else line)
     return out
 
 
-_LINE_HEAD = re.compile(r"^\s*((?:\[[^\]]*\]\s*)?(?:[A-Za-z][\w ]{0,30}:\s+)?)(.*)$")
+_NOT_NAMES = set("""so here back home ready done fine okay ok sorry hungry tired bored scared sure serious not just
+the a an in on at stressed happy sad excited going gonna literally totally also still really very""".split())
+
+
+_LINE_HEAD =re.compile(r"^\s*((?:\[[^\]]*\]\s*)?(?:[A-Za-z][\w ]{0,30}:\s+)?)(.*)$")
 
 
 def polish_script(url, model, title, lines, tone="funny", temperature=0.4):
