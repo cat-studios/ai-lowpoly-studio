@@ -344,6 +344,32 @@ Open items:
   `assets/props/.trash`). Imported models still come first. Storyboard: tag, board, banner, price tag, badge,
   "WELCOME" all readable.
 
+- **Deep theory kind** (the user, from an eerie explainer Reel): template `deep_theory` (slow, serious, honest
+  that it's a theory, last line repeats the first). Its pacing carries a mood for `autodirect.direct` (kept with beats
+  off: `templates.MOOD_KEYS`): `weather` ["rain"] on every shot (blender_fx drops it indoors), `light` night on the
+  opening, `line_voice` (rate -12%, Chatterbox exaggeration 0.3 / cfg 0.3) as every spoken shot's voice, `calm` (no
+  gasps / face close-ups, no shake / orbit / hops), `loop_end` (`set_mood`: the last line goes back to the opening's
+  place, light, weather and camera, static). Not changed: music and ambience (pick rain ambience by hand).
+- **Lying down and kneeling** (`blender_build.a_lie_down`, `a_kneel`, `a_kneel_place`; catalog anims `lie_down`,
+  `kneel`, `kneel_place`): new pose channels `roll` (the whole body tipped onto her side about its own front axis,
+  `LIE_ROLL`) and `lift` (raised), both sprung (`SPRINGS`), written on the root of both rigs; the blob shadow moves
+  under her middle (`lying_shadow`). She lies on her side facing the camera, head on the lower arm. Shot / action
+  `on` (bed, sofa, couch, bench...: `LIE_ON`) = she lies on the set's nearest prop of that kind (`point_target`; a
+  mark of that name is beside it, so not used), body centred on it, at its height. Kneels turn her three-quarters
+  (`KNEEL_TURN`: straight on she just looked short). Director: `POSE_WORDS` (graves, praying, placing flowers, lie
+  down / in bed / fall asleep) win over any mood but angry / scared, `[sad] ...lay down` = sad face + the pose,
+  `[lie_down bed]` = `on`, `low_poses` makes close cameras medium. Storyboard checked in a copy of a production
+  bedroom (floor, on the bed, kneel, kneel + place from the front and the side).
+- **Fire** (`pipeline/blender_fire.py`, run after blender_fx): shot `fire` = what burns, carried from shot to shot
+  by the director until `[fire: off]` (`[fire: x off]` = just that one): `[fire: window]`, `[fire]` / `[on_fire]`
+  (= "here"), words (`fire_of`: "the house is on fire", "the burning car", "caught fire"; "you're fired", "fire
+  truck", "my heart is on fire" are not). Blender finds the name as a cast thing (flames parented to `cast_<x>`),
+  else the set's props of that kind (`_props_named`: "window" finds base_window_l0; MAX_PROPS 4 nearest), else a
+  ground fire beside her. Flat panels burn in their face, solid things on top. A flame = tongues of three unlit cones
+  (red / orange / a yellow core in front) flickering every frame + an orange point light; `fire_pass` adds embers.
+  Cast things named fire / flames / campfire / bonfire / inferno (`run_episode.fire_def`: an ash disc, campfires get
+  logs and a stone ring) burn while they're on screen. Storyboard: burning window, bed, campfire, then out.
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours
@@ -1205,6 +1231,7 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
 | `pipeline/propgen.py` | AI-made props: Ollama designs an object as primitive parts (box/cylinder/cone/pyramid/sphere/rock, pos/size/rot/color/glow) → `clean()` (ground, recentre, gravity `_settle`, size caps) → `assets/props/<kind>.json`, reused by later sets. Recipes embed the defs they use (`custom_props`). `needs_picture(d)` (complex or no parts) → `add_sprite()` (ComfyUI `object_sprite` + `sprite_cut`). `real_size()` asks the real height/width and floor/table/wall. `redraw` CLI for the Assets page. |
 | `pipeline/sprite_cut.py` | voice-venv (Pillow): cuts a Z-Image object drawn on flat magenta out to an RGBA sprite (edge flood fill, hole cleanup, fringe erosion, crop, ≤128 px). |
 | `pipeline/picture_colors.py` | voice-venv (Pillow): sky/middle/ground colours and palette of a picture (scene from a picture). |
+| `pipeline/blender_fire.py` | Fire: flames on cast things / set props / the ground (shot `fire`, fire-named cast things). |
 | `pipeline/blender_fx.py` | Particle effects `FX` (rain, snow, droplets, bubbles, dust, specks, sparkles, embers, petals, leaves, confetti, beams, stars, speed_lines, fireflies, hearts, music_notes, coins, candy, puffs, sprinkles, pixels, bolts, bats, paws). Shared mesh per shape, per-object colour, world-space motion wrapped in a box between each shot's camera (`CAM_POS`) and her. Shot `particles` or the set's default. Runs after the cameras. `effective()` applies `assets/fx_overrides.json`. |
 | `pipeline/fx_preview.py` | Looping preview clips of the effects → `assets/fx_previews/<fx>.mp4/.jpg` (stars/fireflies on a night set). |
 

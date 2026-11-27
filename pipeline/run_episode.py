@@ -476,7 +476,7 @@ def hook_word(words):
 PICTURE_SKIP = {"captions", "branding", "look", "look_preset", "music", "ambience", "translations", "hook_style",
                 "brainrot", "idea", "series", "batch", "remix", "variation_of", "script"}      # top-level, never in Blender
 SHOT_SKIP = {"sfx", "sfx_at", "sfx_volume", "hud"}                       # per shot, sound / overlays only
-PICTURE_CODE = ["blender_build.py", "blender_sets.py", "blender_cast.py", "blender_fx.py", "blender_models.py",
+PICTURE_CODE = ["blender_build.py", "blender_sets.py", "blender_cast.py", "blender_fx.py", "blender_fire.py", "blender_models.py",
                 "animlib.py", "catalog.py", "setgen.py"]
 FILE_EXTS = {".blend", ".vrm", ".glb", ".fbx", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".json"}
 
@@ -961,6 +961,33 @@ def resolve_cutaways(ep, log=print):
         log(f"  cutaway (shot {i + 1}): {text} -> {who} ({ev['do']})")
 
 
+FIRE_THINGS = {"fire": 1.0, "flames": 1.0, "flame": 0.8, "blaze": 1.4, "inferno": 2.4, "campfire": 0.8,
+               "bonfire": 1.6, "fireplace": 0.7}      # the same names as blender_fire.FLAME_THINGS (no bpy here)
+
+
+def fire_height(who):
+    return FIRE_THINGS.get(re.split(r"[_\s]+", str(who or "").lower())[-1])
+
+
+def fire_def(who, h):
+    """A fire as a cast thing: a dark ash patch (campfire / bonfire: crossed logs and a ring of stones) under
+    blender_fire's flames."""
+    import math
+    parts = [{"shape": "cylinder", "pos": [0, 0, 0.01], "size": [0.8 * h + 0.3, 0.8 * h + 0.3, 0.02],
+              "color": "#2a2420"}]
+    if "camp" in who or "bon" in who:
+        r = 0.35 + 0.25 * h
+        for k in range(3):
+            parts.append({"shape": "cylinder", "pos": [0, 0, 0.07], "size": [0.12, 0.12, 2 * r],
+                          "rot": [90, 0, 60 * k], "color": "#6b4426"})
+        for k in range(8):
+            a = math.tau * k / 8
+            parts.append({"shape": "rock", "pos": [round(1.25 * r * math.cos(a), 3), round(1.25 * r * math.sin(a), 3),
+                                                   0.06], "size": [0.16, 0.14, 0.12], "color": "#7d7a74"})
+    return {"kind": who, "name": who.replace("_", " "), "parts": parts, "fire": True, "flame_h": h,
+            "height": round(0.2 + h * 0.2, 2), "exact": True}
+
+
 def resolve_cast(ep, cfg, log=print):
     """Fill in what Blender needs for the rest of the cast: a look for people, a 3D prop for things
     (from the prop library, a built-in prop, or designed now by Ollama - a simple stand-in when it's offline)."""
@@ -987,6 +1014,13 @@ def resolve_cast(ep, cfg, log=print):
                 s["events"] = [e for e in s["events"] if e.get("who") != who]
     for who, info in list(cast.items()):
         info = dict(info) if isinstance(info, dict) else {}
+        fh = fire_height(who)
+        if fh and (not info.get("def") or info["def"].get("fire")) and info.get("type") != "person":
+            # "+campfire appear", "+fire enter": flames (blender_fire) on an ash patch / logs, not AI blocks
+            info["type"], info["def"] = "thing", fire_def(who, fh)
+            log(f"  cast: {who} (a fire, {fh} m flames)")
+            cast[who] = info
+            continue
         if info.get("model_id") and info.get("type") == "person" and \
                 any(s.get("speaker") == who and s.get("line") for s in ep["shots"]):
             log(f"  cast: {who} speaks - an imported model can't play them (actors only), so it's left out")

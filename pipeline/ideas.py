@@ -297,7 +297,7 @@ def gather(log=print, cfg=None):
 
 # --------------------------------------------------------------------------- the AI picks and shapes ideas
 TEMPLATE_IDS = ("what_if", "how_it_works", "quick_facts", "mini_story", "top_five", "myth_or_fact", "this_or_that",
-                "guess_what", "conversation", "gadget_story", "talk_to_you")
+                "guess_what", "conversation", "gadget_story", "talk_to_you", "deep_theory")
 PICK = (
     "You find ideas for short, funny, family-friendly animated videos where a cute cartoon catgirl answers a "
     "curious question (kinds: what_if = an impossible situation imagined, how_it_works = how a real thing works, "

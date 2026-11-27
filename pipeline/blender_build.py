@@ -587,8 +587,8 @@ class VRoidRig:
 
     def write(self, p, fr):
         E = lambda x, y, z: Euler((x, y, z), "XYZ").to_quaternion()
-        self.root.location = p["loc"]
-        self.root.rotation_euler = (0, 0, p["yaw"])
+        self.root.location = p["loc"] + Vector((0, 0, p.get("lift", 0.0)))
+        self.root.rotation_euler = (0, p.get("roll", 0.0), p["yaw"])
         up, across = p.get("eye_up", 0.0), p.get("eye_side", 0.0)          # eye-roll (keyed every frame)
         self._set("eyeL", E(-up, 0, across), fr)
         self._set("eyeR", E(-up, 0, across), fr)
@@ -597,7 +597,7 @@ class VRoidRig:
             b.keyframe_insert("scale", frame=fr)
         self.root.keyframe_insert("location", frame=fr)
         self.root.keyframe_insert("rotation_euler", frame=fr)
-        write_shadow(self.shadow, p["loc"], fr)
+        write_shadow(self.shadow, lying_shadow(p), fr)
         leg_ik(p, self.thigh, self.shin)
         hp = self.pb["hips"]
         sh = p.get("shift", 0.0)
@@ -675,7 +675,8 @@ def default_pose():
                 nod=0.0, tilt=0.0, turn=0.0, earL=0.0, earR=0.0, ear_spread=0.25,
                 tail_lift=0.0, tail_sway=0.0, tail_speed=1.0,
                 eye=[1.0, 1.0], brow=0.0, brow_up=0.0, mouth=[1.0, 1.0],
-                kneeL=0.0, kneeR=0.0, expr="neutral", blink=False, talk_amt=0.0)
+                kneeL=0.0, kneeR=0.0, expr="neutral", blink=False, talk_amt=0.0,
+                roll=0.0, lift=0.0)        # whole body tipped onto her side / raised (lie_down)
 
 
 def env(t, T, seg, r=0.25):
@@ -703,6 +704,7 @@ SPRINGS = {   # channel: (frequency Hz, damping ratio). Lower damping = more ove
     "lean": (2.4, 0.9), "sway": (2.2, 0.9), "twist": (2.6, 0.85), "shift": (2.0, 1.0), "bob": (6.0, 0.9),
     "legL": (7.0, 0.95), "legR": (7.0, 0.95), "kneeL": (7.0, 0.95), "kneeR": (7.0, 0.95),
     "earL": (5.0, 0.4), "earR": (5.0, 0.4), "ear_spread": (4.0, 0.5), "tail_lift": (2.5, 0.5),
+    "roll": (1.6, 1.0), "lift": (1.6, 1.0),      # lying down / getting up takes about half a second
 }
 
 
@@ -1121,6 +1123,86 @@ def a_sit(p, t, T, seg):
     p["calm"] = True
 
 
+# lying on furniture: how high its top is (m) - "lie on the bed": she lies on the set's nearest bed
+LIE_ON = {"bed": 0.5, "sofa": 0.45, "couch": 0.45, "bench": 0.45, "table": 0.75, "hammock": 0.8, "mattress": 0.25,
+          "futon": 0.2, "rug": 0.0, "blanket": 0.0, "grass": 0.0, "floor": 0.0}
+
+
+def a_lie_down(p, t, T, seg):
+    """Lie on her side, facing the camera, head resting on her lower arm, knees a little bent. On furniture
+    (shot "on": bed, sofa...) she lies along the nearest one of that kind in the set, on top of it."""
+    e = env(t, T, seg, 0.5)
+    p["no_ik"] = True
+    on = seg.get("_on")
+    if on:                                     # her middle over the bed: the feet (the root) half a body to one side
+        c, h = on
+        side = Vector((math.cos(p["yaw"]), math.sin(p["yaw"]), 0.0))
+        p["loc"] = c - side * 0.72
+    else:
+        h = 0.0
+    p["roll"] = LIE_ROLL * e
+    p["lift"] = (LIE_LIFT + h) * e
+    p["legL"], p["legR"] = -0.45 * e, -0.2 * e
+    p["kneeL"], p["kneeR"] = 0.75 * e, 0.45 * e
+    p["armL"], p["raiseL"], p["elbowL"] = LIE_ARM_LOW[0] * e, lerp(0.16, LIE_ARM_LOW[1], e), LIE_ARM_LOW[2] * e
+    p["armR"], p["raiseR"], p["elbowR"] = -0.25 * e, lerp(0.16, 0.05, e), 0.3 * e
+    p["tilt"] += LIE_HEAD * e                  # head held up a little, looking at the camera
+    p["tail_lift"] = -0.5 * e
+    p["calm"] = True
+
+
+LIE_ROLL, LIE_LIFT, LIE_HEAD = 1.5708, 0.17, -0.35
+LIE_ARM_LOW = (-1.3, 0.3, 1.5)                 # the arm under her head (arm, raise, elbow)
+
+
+def lying_shadow(p):
+    """Where her blob shadow goes: under her feet, or under her middle while she lies on her side (and on the
+    furniture's top, raised with her)."""
+    w = clamp(p.get("roll", 0.0) / LIE_ROLL)
+    if w < 0.02:
+        return p["loc"]
+    side = Vector((math.cos(p["yaw"]), math.sin(p["yaw"]), 0.0))
+    return p["loc"] + side * (0.72 * w) + Vector((0, 0, max(0.0, p.get("lift", 0.0) - LIE_LIFT)))
+
+
+def a_kneel(p, t, T, seg):
+    """Kneel on both knees, hands together in front, head bowed (at a grave, praying, a quiet moment)."""
+    e = env(t, T, seg, 0.45)
+    p["no_ik"] = True
+    p["bob"] -= hip_height() * KNEEL_DROP * e
+    p["legL"] = p["legR"] = 0.0
+    p["kneeL"] = p["kneeR"] = 1.55 * e
+    # three-quarters to the camera: straight on, the shins behind her are hidden and she just looks short
+    p["yaw"] += KNEEL_TURN * e
+    p["turn"] -= 0.35 * e
+    p["lean"] += 0.1 * e
+    p["nod"] += 0.3 * e
+    p["armL"] = p["armR"] = -0.55 * e
+    p["raiseL"] = p["raiseR"] = lerp(0.16, 0.1, e)
+    p["elbowL"] = p["elbowR"] = 1.1 * e
+    p["tail_lift"] = -0.7 * e
+    p["calm"] = True
+
+
+KNEEL_TURN = 0.6
+KNEEL_DROP = 0.47      # the shin's share of her hip height: the knees touch the ground
+
+
+def a_kneel_place(p, t, T, seg):
+    """Kneel and lay something down (flowers at a grave): lean forward, the right hand goes down to the ground
+    in front of her, rests there, comes back; the left hand stays on her knee."""
+    a_kneel(p, t, T, seg)
+    e = env(t, T, seg, 0.45)
+    u = clamp((t - 0.35) / max(0.6, T * 0.75))
+    reach = math.sin(math.pi * u) ** 0.6 if 0 < u < 1 else 0.0
+    p["lean"] += 0.4 * reach * e
+    p["nod"] += 0.15 * reach * e
+    p["armR"] = lerp(-0.55, -0.55 - 0.55 * reach, e)
+    p["elbowR"] = lerp(1.1, 1.1 - 0.95 * reach, e)
+    p["raiseR"] = lerp(0.1, 0.12, e)
+    p["armL"], p["elbowL"], p["raiseL"] = -0.3 * e, 0.5 * e, lerp(0.16, 0.12, e)
+
+
 def a_look_around(p, t, T, seg):
     """Look left, pause, look right, pause - the head leads, the body follows."""
     e = env(t, T, seg, 0.3)
@@ -1328,6 +1410,7 @@ ANIMS = {
     "jump": a_jump, "wave": a_wave, "surprised": a_surprised, "sad": a_sad, "angry": a_angry,
     "think": a_think, "laugh": a_laugh, "dance": a_dance, "spin": a_spin, "celebrate": a_celebrate,
     "nod": a_nod, "shake_head": a_shake_head, "point": a_point, "stretch": a_stretch, "sit": a_sit,
+    "lie_down": a_lie_down, "kneel": a_kneel, "kneel_place": a_kneel_place,
     "look_around": a_look_around, "scared": a_scared, "fall": a_fall, "float": a_float,
     "float_up": a_float_up, "land": a_land,
 }
@@ -1424,10 +1507,10 @@ def secondary(p, tg, talk_t):
 def write_pose(R, p, fr):
     def k(o, path):
         o.keyframe_insert(data_path=path, frame=fr)
-    R.root.location = p["loc"]
-    R.root.rotation_euler = (0, 0, p["yaw"])
+    R.root.location = p["loc"] + Vector((0, 0, p.get("lift", 0.0)))
+    R.root.rotation_euler = (0, p.get("roll", 0.0), p["yaw"])
     k(R.root, "location"); k(R.root, "rotation_euler")
-    write_shadow(R.shadow, p["loc"], fr)
+    write_shadow(R.shadow, lying_shadow(p), fr)
     R.hips.location = (p.get("shift", 0.0), 0, HIP_Z + p["bob"]); k(R.hips, "location")
     R.torso.rotation_euler = (p["lean"], p["sway"], p["twist"]); k(R.torso, "rotation_euler")
     R.legs[0].rotation_euler = (p["legL"], 0, 0); R.legs[1].rotation_euler = (p["legR"], 0, 0)
@@ -1644,7 +1727,7 @@ def build_track(who, start_pos):
             acts = shot.get("actions")
             if not acts:
                 acts = [{"anim": shot.get("action", "idle"),
-                         **{k: shot[k] for k in ("to", "face", "times", "height", "turns", "at") if k in shot}}]
+                         **{k: shot[k] for k in ("to", "face", "times", "height", "turns", "at", "on") if k in shot}}]
         else:
             acts = [{"anim": shot.get("listen", "idle")}]
         want = float(shot.get("duration", 2.0))
@@ -1672,9 +1755,15 @@ def build_track(who, start_pos):
             expr = (a.get("expression") or (shot.get("expression") if speaks else None)
                     or ANIM_EXPR.get(anim, "neutral"))
             at_xy = point_target(a.get("at"), p1) if anim == "point" and speaks else None
+            on = None
+            if anim == "lie_down" and speaks and a.get("on") and LIE_ON.get(a["on"], 0.45) > 0:
+                tgt = point_target(a["on"], p1)          # the set's nearest bed / sofa (else she lies where she is)
+                mk = MARKS.get(a["on"])                  # a mark named "bed" stands BESIDE the bed: not on it
+                if tgt is not None and not (mk and (tgt - Vector((*mk, 0.0))).length < 1e-3):
+                    on = (tgt, LIE_ON.get(a["on"], 0.45))
             for pn, q0, q1, w0, w1 in _pieces(anim, n, p0, p1, yaw, y1):
                 segs.append(dict(f0=frame, n=pn, anim=anim, a=a, p0=q0, p1=q1, y0=w0, y1=w1, shot=si, alt0=a0,
-                                 alt1=alt, expr=expr, listener=not speaks, _at_xy=at_xy))
+                                 alt1=alt, expr=expr, listener=not speaks, _at_xy=at_xy, _on=on))
                 frame += pn
             pos, yaw = p1, y1
         if who == PRIMARY:
@@ -2145,6 +2234,8 @@ for ob in [o for o in scene.objects if o.get("billboard")]:
 import types as _types
 import blender_fx
 blender_fx.build(_types.SimpleNamespace(**globals()))
+import blender_fire    # flames on things (shot "fire", fire-named cast things) - after the set and the cast exist
+blender_fire.build(_types.SimpleNamespace(**globals()))
 
 
 # --------------------------------------------------------------------------- time of day

@@ -131,6 +131,28 @@ ACTION_WORDS = [
 ]
 
 
+# body poses the words ask for whatever the mood (a sad line at a grave still kneels) - checked before ACTION_WORDS
+POSE_WORDS = [
+    ("kneel_place", re.compile(r"\b(plac\w*|lay\w*|leav\w*|put\w*|set\w*) (down )?(the |some |these |a few |my |her |his )?"
+                               r"(flowers?|roses?|bouquet|wreath|candles?)\b", re.I)),
+    ("kneel", re.compile(r"\b(kneel\w*|knelt|on (my|her|his|our|their) knees|pray(ing|ed|s)?|"
+                         r"(the|a|her|his|my|their|your) grave(stone)?(?! (mistake|danger|error|concern|news|tone))|"
+                         r"tombstone|headstone)\b", re.I)),
+    ("lie_down", re.compile(r"\b(lie down|lying down|lay down|laid down|lies down|lie (on|in) (the|my|a|her)|"
+                            r"lying (on|in) (the|my|a|her)|in bed|(go|went|going) to sleep|fall(ing)? asleep|fell asleep|"
+                            r"take a nap|nap time|stretched out on)\b", re.I)),
+]
+LIE_ON_WORDS = re.compile(r"\b(bed|sofa|couch|bench|hammock|mattress|futon)\b", re.I)
+LOW_POSES = {"lie_down", "kneel", "kneel_place"}
+
+
+def pose_of(text):
+    for anim, rx in POSE_WORDS:
+        if rx.search(text or ""):
+            return anim
+    return None
+
+
 def action_of(text):
     """The animation a line's words ask for, or None."""
     for anim, rx in ACTION_WORDS:
@@ -151,6 +173,9 @@ def parse_directions(line, marks):
     if show:
         d["show"] = show.group(1).strip().lower()
         inner = inner[:show.start()] + inner[show.end():]
+    for fm in list(re.finditer(r"\bfire\s*:\s*([^,\]]+)", inner, re.I))[::-1]:
+        d.setdefault("fire", []).insert(0, fm.group(1).strip().lower())     # "fire: window", "fire: off"
+        inner = inner[:fm.start()] + inner[fm.end():]
     hud, inner = overlays.parse(inner)               # "meter: stress 99", "tag: BOSS: ME"... (game overlays)
     if hud:
         d["hud"] = hud
@@ -205,6 +230,8 @@ def parse_directions(line, marks):
             name = catalog.LIGHT_ALIASES.get(name, name)
             if name in catalog.LIGHTS:
                 d["light"] = name          # the light changes from this shot on: [night], [sunset], [dawn]
+        elif t in FIRE_WORDS:                       # "[fire]", "[on_fire]": flames beside her (and embers)
+            d.setdefault("fire", []).append("here")
         elif t in catalog.PARTICLES or t in catalog.PARTICLE_ALIASES or t.startswith("fx:") or t in ("no_fx", "nofx"):
             name = t.split(":", 1)[-1]
             if name in ("no_fx", "nofx", "none"):
@@ -239,7 +266,15 @@ def parse_directions(line, marks):
         d["action"] = late[0]
     if wants and "want" not in d and "action" not in d:
         d["want"] = wants[0]
-    if "to" in d and d.get("action") == "point":
+    if d.get("action") in catalog.EXPRESSIONS and pose_of(m.group(2)):
+        d["expression"] = d.pop("action")  # "[sad] ...lay down on the bed": the mood is a face, the words a pose
+    if d.get("action") == "lie_down" and "to" not in d:
+        on = LIE_ON_WORDS.search(m.group(1) if m else "")
+        if on:
+            d["on"] = on.group(1).lower()          # "[lie_down bed]" when the set has no mark called bed
+    if "to" in d and d.get("action") == "lie_down":
+        d["on"] = d.pop("to")              # "[lie_down bed]": lie ON the bed, don't walk to the mark beside it
+    elif "to" in d and d.get("action") == "point":
         d["at"] = d.pop("to")              # "[point counter]": point AT it, don't walk there
     elif "to" in d and d.get("action") not in catalog.MOVE_ANIMS:
         d["action"] = d.get("action") if d.get("action") in catalog.MOVE_ANIMS else "walk_to"
@@ -317,6 +352,8 @@ ANIM_WORDS = {   # -> animation, used only when the brackets name no action of t
     "clapping": "clap", "bowing": "bow", "spinning": "spin", "shivering": "shiver", "sneezing": "sneeze",
     "celebrating": "celebrate", "cheering": "celebrate", "stretching": "stretch", "nodding": "nod",
     "shrug": "shake_head", "shrugging": "shake_head", "facepalming": "facepalm",
+    "lying": "lie_down", "sleeping": "lie_down", "asleep": "lie_down", "napping": "lie_down",
+    "kneeling": "kneel", "praying": "kneel",
 }
 
 
@@ -651,7 +688,7 @@ FLOAT_UP = re.compile(   # about HER going up - not "the floating latte" or a ti
 LANDING = re.compile(r"\b(land(?:s|ed|ing)?|back down|com(?:e|ing) down|came down|touch(?:ed)? (?:the )?ground|"
                      r"pop(?:s|ped)?|fell down|crash(?:ed)? down|back on the ground)\b", re.I)
 BALLOONS = re.compile(r"\bballoons?\b", re.I)
-GROUND_ONLY = {"walk_to", "run_to", "sneak_to", "sit", "jump", "stretch"}
+GROUND_ONLY = {"walk_to", "run_to", "sneak_to", "sit", "jump", "stretch", "lie_down", "kneel", "kneel_place"}
 FLOAT_LINES = 2       # script lines she floats with nothing holding her up (the lift-off line + one), then lands
 
 
@@ -828,6 +865,104 @@ def story_weather(shots, text, set_name):
                     shots[idx[0]]["light"] = light
             for s in shots:
                 s.pop("_arc", None)
+
+
+def low_poses(shots):
+    """Lying down / kneeling: a close camera aimed at standing head height loses her - medium instead, and a lie
+    down on a line that names a bed / sofa lies ON it (Blender finds the set's nearest one)."""
+    for s in shots:
+        if s.get("action") not in LOW_POSES:
+            continue
+        if s.get("camera") in CLOSE_CAMS and s.get("camera") != "selfie":
+            s["camera"] = "medium"
+        if s.get("move") == "follow":
+            s["move"] = "static"
+        if s["action"] == "lie_down" and "on" not in s:
+            on = LIE_ON_WORDS.search(s.get("line") or "")
+            if on:
+                s["on"] = on.group(1).lower()
+
+
+FIRE_WORDS = {"fire", "flames", "on_fire", "burning", "ablaze", "inferno"}
+FIRE_OFF = {"off", "out", "none", "stop", "gone"}
+# "the house is on fire", "my toast caught fire", "the burning car", "the tree burst into flames" -> what burns
+FIRE_PHRASE = re.compile(r"(?:\b([a-z]+)(?:'s| is| are| was| were| just)? (?:on fire|in flames|ablaze|caught fire|"
+                         r"catch(?:es|ing)? fire|burst(?:s|ing)? into flames|burning (?:up|down)|went up in flames)|"
+                         r"\b(?:a|the|my|our|your|her|his) burning ([a-z]+))", re.I)
+FIRE_NOT = {"it", "this", "that", "everything", "something", "world", "heart", "soul", "i", "we", "you", "she", "he",
+            "they", "mouth", "tongue", "desire", "passion", "question", "here", "there"}
+FIRE_HERE = re.compile(r"\b(fire!|on fire|in flames|ablaze|burst into flames)", re.I)
+
+
+def fire_of(text):
+    """What a line sets burning by its words: a thing's name, "here", or None ("you're fired" isn't a fire)."""
+    m = FIRE_PHRASE.search(text or "")
+    if m:
+        w = (m.group(1) or m.group(2) or "").lower()
+        if w in FIRE_NOT:
+            return None                   # "my heart is on fire": a feeling, not flames
+        if w and w not in FIRE_THINGS_NOT:
+            return w
+    return "here" if FIRE_HERE.search(text or "") else None
+
+
+FIRE_THINGS_NOT = {"is", "are", "was", "were", "just"}
+
+
+def fire_pass(shots):
+    """Embers rise wherever something burns (on top of any particles the shot already has)."""
+    for s in shots:
+        if s.get("fire") and not s.get("cutaway") and "embers" not in (s.get("particles") or []):
+            s["particles"] = list(s.get("particles") or []) + ["embers"]
+
+
+CALM_MOVES = {"shake": "static", "orbit": "push_in"}     # a calm video never shakes; orbits read as busy
+
+
+def set_mood(shots, set_name, weather=None, light=None, line_voice=None, loop_end=False, calm=False):
+    """A template's mood over the whole video (after the director's own choices; the script's brackets win):
+    weather = particles on every shot without any (blender_fx drops weather indoors at render);
+    light = the opening's light when the first shot sets none; line_voice = a shot voice on every spoken shot
+    (a calm, slower voice); calm = no shaky / orbiting cameras and no hops; loop_end = the last script line goes
+    back to the opening's place, light, weather and framing, so the replay starts where it ended."""
+    if not shots:
+        return
+    if light and not shots[0].get("light"):
+        shots[0]["light"] = light
+    for s in shots:
+        if weather and "particles" not in s and not s.get("cutaway"):
+            s["particles"] = list(weather)
+        if line_voice and s.get("line") and not s.get("voice"):
+            s["voice"] = dict(line_voice)
+        if calm:
+            if s.get("move") in CALM_MOVES:
+                s["move"] = CALM_MOVES[s["move"]]
+            if s.get("action") in ("jump", "celebrate", "dance", "spin", "clap"):
+                s["action"] = "idle"
+    if not loop_end or len(shots) < 3:
+        return
+    first = shots[0]
+    g = shots[-1].get("beat_group")
+    last = [s for s in shots if g is not None and s.get("beat_group") == g] or [shots[-1]]
+    if last[0] is first:
+        return
+    first_set = first.get("set", set_name)
+    lit = next((s.get("light") for s in reversed(shots[: shots.index(last[0])]) if s.get("light")), None)
+    for k, s in enumerate(last):
+        if s.get("cutaway") or s.get("show"):
+            continue
+        if any(x.get("set", set_name) != first_set for x in shots):
+            s["set"] = first_set               # back where it began
+        if k == len(last) - 1:                 # the very last frame matches the very first
+            s["camera"], s["move"] = first.get("camera", "medium"), "static"
+        if s.get("action") in catalog.MOVE_ANIMS:
+            s["action"] = "idle"
+            s.pop("to", None)
+        if "particles" in first:
+            s["particles"] = list(first["particles"])
+    want = first.get("light")
+    if want and lit and lit != want:
+        last[0]["light"] = want
 
 
 # small things she can pick up and show while she talks about them ("look at this cup", "my favourite book")
@@ -1166,8 +1301,10 @@ def _pick_dest(marks, pos, visits):
 
 def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse", speakers=None, beat_words=0,
            beat_sets=None, walk_every=0, wipe_every=0, move_every=0, opening="hook", title="", story_fx=True,
-           camera=None):
-    """walk_every: every Nth beat she walks, with the camera following her (0 = never), never within WALK_GAP shots
+           camera=None, weather=None, light=None, line_voice=None, loop_end=False, calm=False):
+    """weather / light / line_voice / loop_end / calm: a template's mood ("Deep theory": rain, night, a slower calm
+    voice on every line, the last line back in the opening's place and framing, no gasps or comic face close-ups).
+    walk_every: every Nth beat she walks, with the camera following her (0 = never), never within WALK_GAP shots
     of another walk. move_every: every Nth beat the camera moves instead (orbit / push in / pull out from a new
     angle) - she walked about too much when every 3rd beat was a walk.
     wipe_every: a blurred foreground wipe at every Nth cut (0 = never)."""
@@ -1207,6 +1344,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             speakers.setdefault(who.replace("_", " ").lower(), who)
             speakers.setdefault(who.lower(), who)
     cur_set = set_name                     # scene changes ("@ place") carry on until the next one
+    burning = []                           # what's on fire ("[fire: window]" ... "[fire: off]")
     shown = None                           # the explainer object on stage ("[show: toilet]"): {who, at, open}
     airborne = holding = False             # floating (float_up ... land), holding balloons
     float_line = line_no = 0               # the script line she lifted off on / this beat's script line (lines are beats)
@@ -1275,7 +1413,9 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                     show_now = {"who": shown["who"], "open": shown["open"], **({"part": part} if part else {})}
         mood = mood_of(text)
         action, expr, cam, move = MOOD[mood]
-        if mood in ("neutral", "happy", "question", "smug") and action_of(text):
+        if pose_of(text) and mood not in ("angry", "scared"):
+            action = pose_of(text)                   # "at her grave", "lie down on the bed": whatever the mood
+        elif mood in ("neutral", "happy", "question", "smug") and action_of(text):
             action = action_of(text)                 # the words say what she does
         elif mood in ("neutral", "happy") and not starts_line and shots \
                 and shots[-1].get("beat_group") == line_groups[i] \
@@ -1321,7 +1461,20 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                     cb = CAMERA_BEATS[(i // move_every + 1) % len(CAMERA_BEATS)]
                 shot.update(camera=cb[0], move=cb[1])
         hook_cam = shot.get("camera") if i == 0 and opening == "hook" and shot.get("move") == "push_in" else None
+        fire_d = d.pop("fire", None)
+        if not fire_d and fire_of(text):
+            fire_d = [fire_of(text)]
+        for f in fire_d or []:              # what burns carries on from shot to shot until "[fire: off]"
+            words = f.split()
+            if f in FIRE_OFF:
+                burning.clear()
+            elif len(words) > 1 and words[-1] in FIRE_OFF:
+                burning[:] = [b for b in burning if b != "_".join(words[:-1])]
+            elif "_".join(words) not in burning:
+                burning.append("_".join(words))
         shot.update(d)
+        if burning:
+            shot["fire"] = list(burning)
         if "expression" in d:
             shot["_set_expr"] = True     # the script chose it: face_closeups leaves it
         if "camera" in d:
@@ -1495,10 +1648,14 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
     if story_fx:
         story_weather(shots, f"{title} {script}", set_name)
         held_things(shots, cast)
-        face_closeups(shots)
+        if not calm:
+            face_closeups(shots)
     conversations(shots, {"main"} | set((speakers or {}).values()))
-    if story_fx:
+    if story_fx and not calm:
         reactions(shots)
+    low_poses(shots)
+    fire_pass(shots)
+    set_mood(shots, set_name, weather=weather, light=light, line_voice=line_voice, loop_end=loop_end, calm=calm)
     if camera in catalog.CAMERAS:          # a template that films the whole video one way ("Talk to you": selfie)
         for s in shots:                    # - also over the writer's own camera words ([wide] broke the phone call)
             if not s.get("cutaway") and not s.get("show"):

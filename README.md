@@ -362,6 +362,9 @@ Create → 1 Idea → **Kind of video** steers the title ideas, the script and t
   changes as she helps and little "in... / ...out" bubbles for breathing.
 - 🛠️ **Gadget story** - a small problem, then sillier and bigger inventions, each with its name sign, a counter
   that climbs, and a twist at the end that flips who's in charge.
+- 🌧️ **Deep theory** - a slow, serious explainer of a big idea (simulation theory, déjà vu, quantum immortality):
+  a calmer, slower voice, longer shots, rain and night, no gasps or jokes, and the last line goes back to the opening
+  place and framing so the replay loops.
 What if, Mini story and Conversation also end on a twist that flips the idea.
 
 ### Game overlays and sound stickers
@@ -455,6 +458,16 @@ Add **ghost** or **shadow** after the verb for a pale see-through ghost (a spiri
 faceless silhouette: `[+mom enter ghost]`, `[+stranger appear shadow]`. Names like `+ghost`, `+spirit`,
 `+past_self`, `+shadow_figure` do it by themselves; `+crowd appear shadow` makes a whole crowd of silhouettes.
 (Words written in CAPITALS for emphasis are said as normal words; abbreviations like TV or NASA are still spelled.)
+`+past_self`, `+future_me`, `+evil_self` are played by **her own model** with her own voice (a ghost version of her
+with `ghost`). A label like "Past Lavender:" is understood as that person.
+
+**Poses:** `[lie_down]` (on her side, facing the camera), `[lie_down bed]` / "I lay down on the bed" (on the set's
+bed or sofa), `[kneel]` ("at her grave", praying) and `[kneel_place]` ("I placed some roses").
+
+**Fire:** `[fire: window]` sets the set's windows burning (any prop name works: bed, table, tree...), `[fire: car]`
+a cast thing, `[fire]` a fire beside her; it keeps burning until `[fire: off]` (`[fire: car off]` = just that one).
+Lines like "The house is on fire!" or "the burning car" do it by themselves. `+campfire appear`, `+bonfire`, `+fire`
+bring a fire in. Embers rise while anything burns.
 ```
 [+mom enter] Mom?! What are you doing here?
 Mom: You forgot your lunch again.

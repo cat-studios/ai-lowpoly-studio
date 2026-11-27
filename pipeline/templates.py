@@ -177,6 +177,26 @@ TEMPLATES = {
         "lines": (7, 9),
         "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},
     },
+    "deep_theory": {
+        "name": "Deep theory",
+        "icon": "🌧️",
+        "about": "A slow, serious explainer of a big idea (simulation theory, déjà vu, quantum immortality): calm "
+                 "voice, longer shots, rain and night, and an ending that loops back to the opening.",
+        "title_starts": ["What if", "Why do we", "Is it possible that", "What is", "Are we"],
+        "title_hint": "a famous mind-bending theory or mystery of the mind, time or reality",
+        "script": ("This is a slow, SERIOUS explainer of one big idea: calm, quiet, full of wonder, no jokes, no "
+                   "\"nya\", no exclamation marks. Explain it step by step in plain words: what the idea says, where "
+                   "it comes from (a scientist or thinker by name only if you are sure), the strongest reason people "
+                   "believe it, and what it would mean for the viewer. Say honestly that it is a theory, never a fact. "
+                   "Use one or two [cutaway: ...] to show what a line talks about, and you may move once with "
+                   "[@ place] to somewhere quiet. Lines are a little longer and slower than usual. The LAST line "
+                   "repeats the FIRST line's words (or nearly), so the video loops seamlessly."),
+        "tone": "calm and mysterious",
+        "lines": (8, 11),
+        "direct": {"beat_words": 7, "walk_every": 0, "move_every": 2, "wipe_every": 0,
+                   "weather": ["rain"], "light": "night", "loop_end": True, "calm": True,
+                   "line_voice": {"rate": "-12%", "exaggeration": 0.3, "cfg_weight": 0.3}},
+    },
 }
 DEFAULT = "what_if"
 # twist endings (the user, 2026-11-27, from game-HUD Reels): story kinds end on a line that flips the premise
@@ -191,12 +211,15 @@ def get(tid):
     return TEMPLATES.get(str(tid or ""), TEMPLATES[DEFAULT])
 
 
+MOOD_KEYS = ("camera", "weather", "light", "line_voice", "loop_end", "calm")   # kept with beats off too
+
+
 def pacing(tid, beats_on=True):
     """autodirect.direct keyword arguments for a template (beats off = one shot per line, no walks/beats)."""
     d = dict(get(tid)["direct"])
     if not beats_on:
         d = {"beat_words": 0, "walk_every": 0, "move_every": 0, "wipe_every": 0,
-             **({"camera": d["camera"]} if d.get("camera") else {})}
+             **{k: d[k] for k in MOOD_KEYS if d.get(k)}}
     return d
 
 
