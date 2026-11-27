@@ -350,6 +350,7 @@ Open items:
   opening, `line_voice` (rate -12%, Chatterbox exaggeration 0.3 / cfg 0.3) as every spoken shot's voice, `calm` (no
   gasps / face close-ups, no shake / orbit / hops), `loop_end` (`set_mood`: the last line goes back to the opening's
   place, light, weather and camera, static). Not changed: music and ambience (pick rain ambience by hand).
+- **Local voice batch**: a line said twice (Deep theory repeats the first line at the end) is voiced once (`prefetch_local` / `_local_jobs` dedupe by cache file) - production crashed moving the second copy.
 - **Lying down and kneeling** (`blender_build.a_lie_down`, `a_kneel`, `a_kneel_place`; catalog anims `lie_down`,
   `kneel`, `kneel_place`): new pose channels `roll` (the whole body tipped onto her side about its own front axis,
   `LIE_ROLL`) and `lift` (raised), both sprung (`SPRINGS`), written on the root of both rigs; the blob shadow moves

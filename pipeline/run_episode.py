@@ -117,7 +117,8 @@ def _local_jobs(items):
     """items: [(text, raw_path, voice)] -> one Chatterbox batch (model loads once)."""
     if not VOICE_PY.exists():
         sys.exit("Local voice engine not installed (tools/voice-venv). See README 'Voice'.")
-    jobs = []
+    jobs, seen = [], set()
+    items = [it for it in items if not (it[1] in seen or seen.add(it[1]))]     # one take per cache file
     for text, raw, voice in items:
         job = {"text": text, "out": str(raw.with_suffix(".src.wav"))}
         job.update({k: voice[k] for k in LOCAL_KEYS if k in voice})
@@ -184,6 +185,8 @@ def prefetch_local(lines, cache_dir):
         text = speakable(text)                         # the same text tts() will ask for
         key = _cache_key(text, voice)
         raw = cache_dir / f"{key}.raw"
+        if any(r == raw for _, r, _ in todo):
+            continue        # the same line twice (Deep theory's last line repeats the first): one take, shared
         if FRESH or (not (cache_dir / f"{key}.wav").exists() and not raw.exists()):
             todo.append((text, raw, voice))
     if todo:
