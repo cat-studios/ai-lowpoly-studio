@@ -533,6 +533,7 @@ LANDING = re.compile(r"\b(land(?:s|ed|ing)?|back down|com(?:e|ing) down|came dow
                      r"pop(?:s|ped)?|fell down|crash(?:ed)? down|back on the ground)\b", re.I)
 BALLOONS = re.compile(r"\bballoons?\b", re.I)
 GROUND_ONLY = {"walk_to", "run_to", "sneak_to", "sit", "jump", "stretch"}
+FLOAT_LINES = 2       # script lines she floats with nothing holding her up (the lift-off line + one), then lands
 
 
 def particles_for(text):
@@ -988,9 +989,12 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
     cur_set = set_name                     # scene changes ("@ place") carry on until the next one
     shown = None                           # the explainer object on stage ("[show: toilet]"): {who, at, open}
     airborne = holding = False             # floating (float_up ... land), holding balloons
+    float_line = line_no = 0               # the script line she lifted off on / this beat's script line (lines are beats)
     set_k = 0                              # beat_sets: each script line starts in the next set of the list
     for i, raw in enumerate(lines):
         starts_line = i == 0 or line_groups[i] is None or line_groups[i - 1] != line_groups[i]
+        if starts_line and i > 0:
+            line_no += 1
         if beat_sets and starts_line and i > 0:
             nxt = beat_sets[set_k % len(beat_sets)]
             set_k += 1
@@ -1158,8 +1162,13 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             if holding and re.search(r"\bpop", text, re.I):
                 shot.setdefault("events", []).append({"who": "balloons", "do": "vanish"})
                 holding = False
+        elif airborne and not holding and line_no >= float_line + FLOAT_LINES and "action" not in d:
+            # nothing holds her up: she comes down after the lift-off line and the next one. Writers ask for
+            # [float_up] and never land her - she floated the rest of the video (two production videos, 2026-11-27)
+            shot["action"] = "land"
         if shot.get("action") == "float_up":
             airborne = True
+            float_line = line_no
         elif shot.get("action") == "land":
             airborne = False
         elif airborne and shot.get("action") in GROUND_ONLY:

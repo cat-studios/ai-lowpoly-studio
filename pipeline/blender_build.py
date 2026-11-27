@@ -1206,7 +1206,9 @@ def airborne(p, t, T, seg):
     p["kneeR"] += 0.25 * w
     p["bob"] = max(p["bob"], 0.0)
     p["sway"] += 0.05 * math.sin(t * 0.9) * w
-    if seg["anim"] not in ("wave", "point", "think", "celebrate"):   # holding on with the right hand
+    # holding on with the right hand - only to something that carries her (balloons...). Floating with empty hands
+    # kept that hand up for the rest of the video (every float_up the writer never landed).
+    if seg.get("shot") in LIFTED and seg["anim"] not in ("wave", "point", "think", "celebrate"):
         p["raiseR"] = lerp(p["raiseR"], 2.55, w)
         p["armR"] = lerp(p["armR"], -0.15, w)
         p["rotR"] = lerp(p.get("rotR", 0.0), 0.2, w)
@@ -1764,6 +1766,26 @@ def _held_shots():
 
 
 HELD = _held_shots()
+LIFTERS = ("balloon", "kite", "umbrella", "parachute")        # things she can hang from while floating
+
+
+def _lifted_shots():
+    """Shots in which she holds something that carries her up (balloons, a kite...) - her right hand holds on to it
+    while she floats (airborne)."""
+    lifted, active = set(), set()
+    for k, s in enumerate(SHOTS):
+        for e in s.get("events") or []:
+            who = str(e.get("who") or "")
+            if e.get("do") == "hold" and any(w in who for w in LIFTERS):
+                active.add(who)
+            elif who in active:
+                active.discard(who)
+        if active:
+            lifted.add(k)
+    return lifted
+
+
+LIFTED = _lifted_shots()
 RIGHT_ARM_ANIMS = {"wave", "point", "celebrate", "clap", "blow_kiss", "facepalm", "sneeze", "dance", "think",
                    "float_up", "land", "fall", "float"}
 

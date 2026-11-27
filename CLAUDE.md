@@ -167,7 +167,15 @@ Open items:
   `blender_cast.event_frames` only made it vanish when it was never used again - a second cutaway kept it there.
   Now it vanishes after every cutaway shot unless its next event starts right then (an event always shows it
   again). And a one-frame vanish was drawn full size on its frame (`u` from 0): counted from 1 now. Checked with a
-  storyboard of that episode: the horse and car only in their own shots.
+  storyboard of that episode: the horse and car only in their own shots. People (`animate_person`) had the same
+  one-frame vanish - fixed too (storyboard: a pirate in two cutaways, only in its own shots).
+- **Her raised arm** (production `what_if_you_walked_through_pure_gold_112701551`, `are_catgirls_real_6weho`): the
+  writer asked `[float_up]` and never landed her, and `blender_build.airborne` raised her right hand whenever she
+  floated (made for balloon strings) - an arm up for the rest of both videos. Now the hand holds on only in
+  `LIFTED` shots (holding something whose name has a `LIFTERS` word: balloon, kite, umbrella, parachute), and the
+  director lands her (`autodirect.FLOAT_LINES` 2) on the first beat of the script line after next when nothing
+  holds her up - the loop runs per BEAT, so script lines are counted (`line_no`). Balloons still float until a
+  landing word or "pop". Storyboard of the gold video: floating, arms relaxed.
 
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
