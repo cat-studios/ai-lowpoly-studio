@@ -229,17 +229,48 @@ def idle_ready(cfg, jobs, now, activity_at, free_gb):
     """"" when idle auto-make should make a batch now, else why not: off / busy / not quiet / low disk.
     Quiet = since the last time someone used the studio AND since the last job finished (after a batch and its
     renders, the next one waits another quiet spell). No daily limit."""
+    return idle_state(cfg, jobs, now, activity_at, free_gb)["why"]
+
+
+def idle_state(cfg, jobs, now, activity_at, free_gb):
+    """What idle auto-make is doing, for the loop, the Settings switch and the top bar's 🌙:
+    {on, minutes, why ("" = make one now / off / busy / not quiet / low disk), wait (seconds of quiet still needed)}."""
+    minutes = float(cfg.get("minutes", 10))
+    out = {"on": bool(cfg.get("on")), "minutes": minutes, "why": "", "wait": 0, "free_gb": round(free_gb, 1)}
     if not cfg.get("on"):
-        return "off"
-    if any(j.status in ("queued", "running") for j in jobs):
-        return "busy"
-    last_end = max([j.ended or 0 for j in jobs] + [0])
-    if now - max(activity_at, last_end) < float(cfg.get("minutes", 10)) * 60:
-        return "not quiet"
-    if free_gb < IDLE_MIN_FREE_GB:                 # with no daily limit: never fill the disk
-        return "low disk"
-    return ""
-IDLE_IGNORE = ("/api/jobs", "/api/status", "/api/comfy/status", "/static/", "/media/", "/propimg/", "/favicon",
+        out["why"] = "off"
+    elif any(j.status in ("queued", "running") for j in jobs):
+        out["why"] = "busy"
+    else:
+        last_end = max([j.ended or 0 for j in jobs] + [0])
+        left = minutes * 60 - (now - max(activity_at, last_end))
+        if left > 0:
+            out.update(why="not quiet", wait=int(left))
+        elif free_gb < IDLE_MIN_FREE_GB:          # with no daily limit: never fill the disk
+            out["why"] = "low disk"
+    return out
+
+
+def idle_info():
+    """GET /api/idle: idle_state now + the idle batch that is making videos (if any) and when the last one started."""
+    jobs = list(JOBS.values())
+    st = idle_state(S.load_settings().get("idle") or {}, jobs, time.time(), ACTIVITY["at"],
+                    shutil.disk_usage(ROOT).free / 1e9)
+    mine = [j for j in jobs if j.kind == "batch" and (j.title or "").startswith("Idle auto-make")]
+    st["making"] = any(j.status in ("queued", "running") for j in mine)
+    st["last"] = max([j.started or 0 for j in mine] + [0]) or None
+    return st
+
+
+def counts_as_use(path, headers):
+    """Does this request mean someone is using the studio (idle auto-make waits)? Not polling, not the studio's own
+    jobs (X-Studio-Job), not programs that aren't a browser (a script on the PC asked /api/health every 15 min)."""
+    if path.startswith(IDLE_IGNORE) or headers.get("X-Studio-Job"):
+        return False
+    return "Mozilla" in (headers.get("User-Agent") or "")
+
+
+IDLE_IGNORE = ("/api/jobs", "/api/status", "/api/idle", "/api/health", "/api/comfy/status", "/static/", "/media/", "/propimg/", "/favicon",
                "/apple-touch-icon", "/manifest", "/sfx/", "/music/", "/fxprev/", "/setimg/", "/animimg/", "/actorimg/")
 
 
@@ -931,7 +962,7 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(urlparse(self.path).path)
         self._t0, self._logbody, self._raw_body = time.time(), "", None
         logs.set_request(self.client_address[0], method, path)
-        if not path.startswith(IDLE_IGNORE) and not self.headers.get("X-Studio-Job"):
+        if counts_as_use(path, self.headers):
             ACTIVITY["at"] = time.time()                  # someone is using the studio (polling and its own jobs don't count)
         if method != "GET" and "json" in (self.headers.get("Content-Type") or "") and path != "/login":
             n = int(self.headers.get("Content-Length") or 0)
@@ -1586,6 +1617,14 @@ class Handler(BaseHTTPRequestHandler):
             if method == "POST" and arg == "run":
                 job = run_weekly_plan()
                 return self.send_json(job.to_dict() if job else {"error": "no fresh ideas to make"})
+
+        if head == "idle":                            # 🌙 idle auto-make: its state (top bar, Settings), the switch
+            if method == "PUT":                       # only idle.on changes - the rest of the settings stay as saved
+                cfg = S.load_settings()
+                cfg.setdefault("idle", {})["on"] = bool((self.body_json() or {}).get("on"))
+                S.save_settings(cfg)
+                logs.event(f"IDLE AUTO-MAKE switched {'on' if cfg['idle']['on'] else 'off'}")
+            return self.send_json(idle_info())
 
         if head == "home":                            # her room: make it, list / remove its souvenirs
             import home

@@ -32,6 +32,26 @@ class IdleReady(unittest.TestCase):
         self.assertEqual(server.idle_ready({"on": False}, [], NOW, 0, 200.0), "off")
         self.assertEqual(server.idle_ready(ON, [], NOW, 0, server.IDLE_MIN_FREE_GB - 1), "low disk")
 
+    def test_state_says_how_long_until_it_starts(self):
+        st = server.idle_state(ON, [], NOW, NOW - 240, 200.0)        # used 4 min ago, needs 10
+        self.assertEqual((st["why"], st["wait"], st["on"]), ("not quiet", 360, True))
+        self.assertEqual(server.idle_state({"on": False}, [], NOW, 0, 200.0)["on"], False)
+
+
+class CountsAsUse(unittest.TestCase):
+    BROWSER = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/150"}
+
+    def test_a_browser_using_the_studio_counts(self):
+        self.assertTrue(server.counts_as_use("/api/episodes", self.BROWSER))
+
+    def test_polling_own_jobs_and_other_programs_dont(self):
+        self.assertFalse(server.counts_as_use("/api/jobs", self.BROWSER))
+        self.assertFalse(server.counts_as_use("/api/idle", self.BROWSER))
+        self.assertFalse(server.counts_as_use("/api/episodes", {**self.BROWSER, "X-Studio-Job": "1"}))
+        # production 2026-11-27: a script on the PC asked /api/health every ~15 min
+        self.assertFalse(server.counts_as_use("/api/health", {"User-Agent": "python-requests/2.34.2"}))
+        self.assertFalse(server.counts_as_use("/api/episodes", {"User-Agent": "python-requests/2.34.2"}))
+
 
 if __name__ == "__main__":
     unittest.main()

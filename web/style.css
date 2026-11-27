@@ -648,3 +648,21 @@ input[type=password] { width: 100%; background: var(--panel2); border: 1px solid
 .st-table td, .st-table th { padding: 6px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
 .st-table select { max-width: 220px; }
 .ac-group { margin: 14px 0 8px; }
+
+/* 🌙 idle auto-make: the top bar's moon (shown only while it's on) and the Settings switch */
+.idle-pill { background: rgba(140, 120, 255, .14); border: 1px solid rgba(140, 120, 255, .45); color: var(--text); border-radius: 999px;
+  padding: 2px 9px 2px 6px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
+.idle-pill[hidden] { display: none; }
+.idle-pill.making { border-color: var(--good); box-shadow: 0 0 8px var(--good); }
+.idle-pill.making b { animation: mw-glow .9s ease-in-out infinite alternate; }
+.idle-pill.paused { border-color: var(--accent2); }
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .sw { width: 52px; height: 28px; border-radius: 999px; background: var(--line); position: relative; transition: background .2s; flex: none; }
+.switch .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.switch input:checked + .sw { background: var(--good); }
+.switch input:checked + .sw::after { transform: translateX(24px); }
+.switch input:focus-visible + .sw { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch .sw-word { font-size: 14px; letter-spacing: .05em; }
+.idle-live { padding: 8px 10px; border-radius: 8px; background: rgba(255, 255, 255, .04); margin-bottom: 6px; }
+@media (max-width: 760px) { .idle-pill span { display: none; } .idle-pill { padding: 2px 6px; } }

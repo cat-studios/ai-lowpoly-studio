@@ -318,8 +318,7 @@ async function pageCreate() {
       <button id="make-custom" class="hero-btn" style="--d:3"><span class="hb-ico">🪄</span><b>Custom Video</b>
         <small>Step by step: your idea, your look, your script, your scenes</small></button>
     </div>
-    <div class="hero-foot"><span id="make-status" class="muted small"></span>
-      <button id="idle-toggle" class="ghost small" title="Makes a video from fresh ideas after a quiet spell (Settings → Idle auto-make)">${idleLabel()}</button></div>
+    <div class="hero-foot"><span id="make-status" class="muted small"></span></div>
     <div class="make-bar"><i id="make-fill"></i></div>
     <div class="inline-job" id="make-job"></div>
     <div id="job"></div>
@@ -666,14 +665,6 @@ async function pageCreate() {
   $("#br-on").onchange = (e) => { localStorage.setItem("lp_brainrot", e.target.checked ? "1" : "0"); toast(e.target.checked ? "Brain rot mode on" : "Brain rot mode off"); };
   if (CS.openWiz) { CS.openWiz = false; $("#make-custom").click(); }     // "Open in Custom Video" from the Videos page
   $("#make-batch").onclick = guard(() => openBatchPicker());
-  $("#idle-toggle").onclick = guard(async (e) => {
-    const btnEl = e.currentTarget;
-    const st = await api("GET", "/api/settings");
-    st.idle = { ...(st.idle || {}), on: !(st.idle || {}).on };
-    META.settings = await api("PUT", "/api/settings", st);
-    btnEl.textContent = idleLabel();
-    toast(st.idle.on ? `Auto-make is on: a video after ${st.idle.minutes} min with nobody using the studio` : "Auto-make is off");
-  });
   $("#make-all").onclick = guard(async (e) => {
     const btnEl = e.currentTarget;
     const picks = await openMakeWizard();        // the cards: place, topic, vibe, guest, time, length + a note
@@ -2196,12 +2187,6 @@ async function openPlan() {
   });
 }
 
-// 🌙 Idle auto-make button label (Create page; state in Settings -> Idle auto-make)
-function idleLabel() {
-  const i = (META.settings && META.settings.idle) || {};
-  return i.on ? `🌙 Auto-make when idle: on (after ${i.minutes || 10} min)` : "🌙 Auto-make when idle: off";
-}
-
 // 📊 Stats (pipeline/stats.py): how posted videos did, next to their kind, length, cover and set
 async function pageStats() {
   const s = await api("GET", "/api/stats");
@@ -2680,6 +2665,25 @@ const S_TABS = {
       ["postiz.made_with_ai", "Label as made with AI", "bool", {}, "Sets the platforms' AI-content label on the drafts."],
     ]],
   ]],
+  auto: ["🌙 Auto-make", [
+    ["🌙 Idle auto-make (the studio makes videos while nobody uses it)", [
+      ["idle.live", "", "idlelive"],
+      ["idle.on", "Auto-make when idle", "switch", {}, "When nobody has used the studio for the time below and nothing is rendering, it makes videos from fresh ideas. The switch works at once (no Save needed); while it's on, a 🌙 shows in the top bar. No daily limit: it keeps going while the studio is quiet (it pauses when the disk has under 15 GB free). Never reaches Postiz - these stay on your Videos page."],
+      ["idle.minutes", "Quiet minutes before it starts", "range", { min: 5, max: 120, step: 5 }, "Polling and the status dot don't count as using the studio."],
+      ["idle.count", "Videos each time", "range", { min: 1, max: 3, step: 1 }],
+      ["idle.random_chance", "Random videos, in %", "range", { min: 0, max: 100, step: 10 }, "Each video is a random one (a place, vibe, guest, time and length from the 🎲 cards) this often; the rest come from fresh ideas. 0 = ideas only, 100 = random only."],
+      ["idle.brainrot_chance", "🧠 Brain rot videos, in %", "range", { min: 0, max: 100, step: 10 }, "This often an idle video is made in brain rot mode (words and pacing: the Brain rot mode tab). 0 = never."],
+    ]],
+    ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
+      ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],
+      ["plan.day", "Day", "select", { options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], labels: { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" } }],
+      ["plan.hour", "Hour (24 h)", "range", { min: 0, max: 23, step: 1 }, "The PC and the studio must be on then - it runs the first time it's on after that hour that day."],
+      ["plan.count", "Videos", "range", { min: 1, max: 10, step: 1 }],
+      ["plan.length", "Length", "select", { options: ["short", "medium", "long"] }],
+      ["plan.drafts", "Make Postiz drafts", "bool", {}, "Drafts only - you post them yourself."],
+      ["plan.brainrot_chance", "🧠 Brain rot videos, in %", "range", { min: 0, max: 100, step: 10 }, "This often a weekly video is made in brain rot mode (words and pacing: the Brain rot mode tab). 0 = never."],
+    ]],
+  ]],
   ai: ["🤖 AI tools", [
     ["Ollama (script & title writing)", [
       ["ollama.url", "Server URL", "text"],
@@ -2719,22 +2723,6 @@ const S_TABS = {
       ["youtube.client_secret", "YouTube Analytics: OAuth client secret (optional)", "password", {}],
       ["youtube.refresh_token", "YouTube Analytics: refresh token (optional)", "password", {}, "Made once with the OAuth Playground (developers.google.com/oauthplayground, scope youtube.readonly and yt-analytics.readonly, your own OAuth client). Read only."],
     ]],
-    ["🌙 Idle auto-make (the studio makes videos while nobody uses it)", [
-      ["idle.on", "Make a video after a quiet spell", "bool", {}, "When nobody has used the studio for the time below and nothing is rendering, it makes videos from fresh ideas (the Create page's 🌙 button does the same). Stays off until you turn it on. No daily limit: it keeps going while the studio is quiet (it pauses when the disk has under 15 GB free). Never reaches Postiz - these stay on your Videos page."],
-      ["idle.minutes", "Quiet minutes before it starts", "range", { min: 5, max: 120, step: 5 }, "Polling and the status dot don't count as using the studio."],
-      ["idle.count", "Videos each time", "range", { min: 1, max: 3, step: 1 }],
-      ["idle.random_chance", "Random videos, in %", "range", { min: 0, max: 100, step: 10 }, "Each video is a random one (a place, vibe, guest, time and length from the 🎲 cards) this often; the rest come from fresh ideas. 0 = ideas only, 100 = random only."],
-      ["idle.brainrot_chance", "🧠 Brain rot videos, in %", "range", { min: 0, max: 100, step: 10 }, "This often an idle video is made in brain rot mode (words and pacing: the Brain rot mode tab). 0 = never."],
-    ]],
-    ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
-      ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],
-      ["plan.day", "Day", "select", { options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], labels: { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" } }],
-      ["plan.hour", "Hour (24 h)", "range", { min: 0, max: 23, step: 1 }, "The PC and the studio must be on then - it runs the first time it's on after that hour that day."],
-      ["plan.count", "Videos", "range", { min: 1, max: 10, step: 1 }],
-      ["plan.length", "Length", "select", { options: ["short", "medium", "long"] }],
-      ["plan.drafts", "Make Postiz drafts", "bool", {}, "Drafts only - you post them yourself."],
-      ["plan.brainrot_chance", "🧠 Brain rot videos, in %", "range", { min: 0, max: 100, step: 10 }, "This often a weekly video is made in brain rot mode (words and pacing: the Brain rot mode tab). 0 = never."],
-    ]],
     ["ComfyUI (set textures, prop pictures, music)", [
       ["comfy.mode", "Use ComfyUI", "select", { options: ["required", "auto", "off"], labels: { required: "Required - always texture sets (floor, walls/sky, pictures)", auto: "Only when needed - just picture props", off: "Off - never" } }],
       ["comfy.url", "Server URL", "text", {}, "ComfyUI's address (ComfyUI Desktop uses port 8666; 8188 and others are tried too)."],
@@ -2768,7 +2756,11 @@ async function pageSettings() {
   $$("[data-stab]").forEach((b) => b.onclick = () => { S_TAB = b.dataset.stab; $$("[data-stab]").forEach((x) => x.classList.toggle("on", x === b)); drawSettingsTab(st); });
   drawDisk();
   drawSettingsTab(st);
-  const save = async () => { META.settings = await api("PUT", "/api/settings", st); };
+  const save = async () => {
+    // only the 🌙 switch turns auto-make on/off: a page opened earlier must not put back an old on/off
+    try { const cur = await api("GET", "/api/idle"); st.idle = { ...(st.idle || {}), on: cur.on }; } catch {}
+    META.settings = await api("PUT", "/api/settings", st);
+  };
   $("#s-save").onclick = guard(async () => { await save(); toast("Settings saved"); });
   $("#s-restart").onclick = guard(async () => {
     const msg = $("#s-restart-msg");
@@ -2842,6 +2834,7 @@ function phoneHelp() {
 
 function drawSettingsTab(st) {
   const body = $("#s-body");
+  if (S_TAB === "auto") refreshIdle().then(() => { if (IDLE) { st.idle = { ...(st.idle || {}), on: IDLE.on }; const sw = $('[data-key="idle.on"]', body); if (sw) { sw.checked = IDLE.on; sw.closest(".switch").querySelector(".sw-word").textContent = IDLE.on ? "ON" : "OFF"; } } });
   const [, groups] = S_TABS[S_TAB];
   if (!groups) {   // default voice
     body.innerHTML = `<div class="panel"><h3>Default voice</h3><p class="muted small">Used by characters that don't set their own voice.</p><div id="s-voice"></div></div>`;
@@ -2855,6 +2848,8 @@ function drawSettingsTab(st) {
     const opts = typeof o.options === "function" ? o.options() : o.options;
     if (type === "range") { input = `<input type="range" data-key="${key}" min="${o.min}" max="${o.max}" step="${o.step}" value="${v}">`; val = `<span class="val mono">${v}</span>`; }
     else if (type === "bool") input = `<label class="check"><input type="checkbox" data-key="${key}" ${v ? "checked" : ""}> on</label>`;
+    else if (type === "switch") input = `<label class="switch"><input type="checkbox" data-key="${key}" data-now="1" ${v ? "checked" : ""}><span class="sw"></span><b class="sw-word">${v ? "ON" : "OFF"}</b></label>`;
+    else if (type === "idlelive") return `<div id="idle-live" class="idle-live small">${idleText(IDLE)}</div>`;
     else if (type === "select") input = `<select data-key="${key}">${options(opts.map(String), String(v), (typeof o.labels === "function" ? o.labels() : o.labels) || {})}</select>`;
     else if (type === "text") input = `<input type="text" data-key="${key}" value="${esc(v)}" placeholder="${esc(o.placeholder || "")}">`;
     else if (type === "password") input = `<input type="password" data-key="${key}" value="${esc(v || "")}" autocomplete="off" placeholder="${v ? "" : "paste your key"}">${v === "__saved__" ? '<span class="pill ok">saved</span>' : ""}`;
@@ -2886,6 +2881,7 @@ function drawSettingsTab(st) {
     if (el.type === "range" || el.type === "number" || ["render.fps", "comfy.texture_size"].includes(key)) v = Number(v);
     if (el.dataset.idx !== undefined) { const arr = [...getPath(st, key)]; arr[+el.dataset.idx] = v; v = arr; }
     setPath(st, key, v);
+    if (el.dataset.now && key === "idle.on") setIdle(v, el);       // the 🌙 switch: on/off right away, no Save
     const val = el.closest(".setting")?.querySelector(".val");
     if (val) val.textContent = el.value;
   }));
@@ -4192,6 +4188,48 @@ async function openVideoEditor(id) {
     },
   });
 }
+
+/* ---- 🌙 idle auto-make (web/server.py idle_info): the top bar's moon while it's on, the Settings switch */
+let IDLE = null;
+const fmtMin = (sec) => sec < 60 ? "under a minute" : `${Math.ceil(sec / 60)} min`;
+function idleText(i) {
+  if (!i) return "";
+  if (!i.on) return "⚪ <b>Off</b> - nothing is made by itself.";
+  if (i.making) return "🟢 <b>On</b> - making a video now (see the jobs at the top right).";
+  if (i.why === "busy") return "🟢 <b>On</b> - waiting: something is rendering or queued. It starts after that and a quiet spell.";
+  if (i.why === "not quiet") return `🟢 <b>On</b> - waiting for quiet: the next video starts in about ${fmtMin(i.wait)} if nobody uses the studio.`;
+  if (i.why === "low disk") return `🟡 <b>On but paused</b> - only ${i.free_gb} GB free on the disk (needs 15 GB). Free up disk space on the right.`;
+  return "🟢 <b>On</b> - starting a video within a minute.";
+}
+function drawIdle() {
+  const pill = document.getElementById("idle-pill");
+  if (pill) {
+    pill.hidden = !(IDLE && IDLE.on);
+    if (IDLE && IDLE.on) {
+      pill.className = "idle-pill " + (IDLE.making || IDLE.why === "" ? "making" : IDLE.why === "low disk" ? "paused" : "waiting");
+      pill.title = "Auto-make when idle is ON - " + idleText(IDLE).replace(/<[^>]+>/g, "").replace(/^\S+\s+On( but paused)? - /, "") + " (click for the switch)";
+      pill.querySelector("span").textContent = IDLE.making ? "making" : IDLE.why === "low disk" ? "paused" : "auto";
+    }
+  }
+  const live = document.getElementById("idle-live");
+  if (live) live.innerHTML = idleText(IDLE);
+}
+async function refreshIdle() {
+  try { IDLE = await api("GET", "/api/idle"); } catch { return; }
+  drawIdle();
+}
+async function setIdle(on, el) {
+  try { IDLE = await api("PUT", "/api/idle", { on }); }
+  catch (e) { if (el) el.checked = !on; return toast("Couldn't switch auto-make: " + e.message, true); }
+  if (META.settings) META.settings.idle = { ...(META.settings.idle || {}), on: IDLE.on };
+  const word = el?.closest(".switch")?.querySelector(".sw-word");
+  if (word) word.textContent = IDLE.on ? "ON" : "OFF";
+  drawIdle();
+  toast(IDLE.on ? `Auto-make is ON: a video after ${IDLE.minutes} quiet minutes` : "Auto-make is OFF");
+}
+document.getElementById("idle-pill")?.addEventListener("click", () => { S_TAB = "auto"; if (location.hash === "#settings") pageSettings(); else location.hash = "#settings"; });
+refreshIdle();
+setInterval(refreshIdle, 30000);
 
 /* ---- the status dot (top bar): every service the studio needs, green / amber / red (web/status_web.py) */
 const STATUS_ICON = { ok: "🟢", warn: "🟡", bad: "🔴" };
