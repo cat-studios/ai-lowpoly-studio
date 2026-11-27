@@ -220,8 +220,9 @@ Open items:
   bubbles, selfie on every shot but one), stickers BOOM!/POP!, long captions fit, a normal bedroom, no endless float.
   Fixed: the AI cast step cast `[bubble: in...]` as a 3D bubble crashing in and the arrival made the shot wide
   (`add_cast_plan` skips overlay words; `_stage_for_events` leaves a selfie camera alone); a name sign covered her
-  eyes in a close-up (`overlays.CLOSE` cameras put it at 0.62 H). Seen, not fixed: in a small room the `tiny`/far
-  cameras end up outside it - a white band of floor at the bottom of the frame (popcorn v2 shots 4, 20).
+  eyes in a close-up (`overlays.CLOSE` cameras put it at 0.62 H). A small room's wide (6 m) / tiny (11 m)
+  cameras stood past the floor's edge - a white band at the bottom (popcorn v2 shots 4, 20): `blender_sets.floor_indoor`
+  runs the floor `FRONT_APRON` 14 m on in front of the room (storyboard `zz_check_apron`: floor to the bottom).
 - **Her name** (production "My name is Lila"; earlier videos "I'm Luna", "I'm Cat"): the writer is told
   `llm.name_rule(character)` - the Name box on the Characters page is her only name (the user: "pull her name from the
   character box"; they renamed "Catgirl" to her real name) - and `fix_self_names` rewrites "my name is X" /

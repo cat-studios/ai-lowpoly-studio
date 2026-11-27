@@ -835,6 +835,9 @@ PROP_BUILDERS = {k[2:]: v for k, v in globals().items() if k.startswith("p_") an
 
 
 # --------------------------------------------------------------------------- floors & walls
+FRONT_APRON = 14.0       # metres of floor in front of an indoor room (the tiny camera is 11 m in front of her)
+
+
 def _room():
     """Half the room's width and depth (metres) for this set - small rooms are smaller, big halls bigger."""
     w, d = (R or {}).get("room") or [14.0, 12.0]
@@ -844,7 +847,9 @@ def _room():
 def floor_indoor(kind, pal):
     c1, c2 = (pal["floor"] + pal["floor"])[:2]
     hw, hd = _room()
-    x0, x1, y0, y1 = -hw, hw, -hd - 1.0, hd
+    # the floor runs on in front of the room, under the cameras: in a small room the wide (6 m) and tiny (11 m)
+    # cameras stand outside it, and the bottom of the frame showed a white band of nothing (2026-11-27)
+    x0, x1, y0, y1 = -hw, hw, -hd - FRONT_APRON, hd
     if kind == "planks":
         tiles(x0, x1, y0, y1, 2 * hw, 0.5, c1, c2, lambda i, j: j % 2)
     elif kind == "checker_small":
