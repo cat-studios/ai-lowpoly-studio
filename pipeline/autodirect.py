@@ -1379,8 +1379,8 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
     if story_fx:
         reactions(shots)
     if camera in catalog.CAMERAS:          # a template that films the whole video one way ("Talk to you": selfie)
-        for s in shots:
-            if not s.get("_set_cam") and not s.get("cutaway") and not s.get("show"):
+        for s in shots:                    # - also over the writer's own camera words ([wide] broke the phone call)
+            if not s.get("cutaway") and not s.get("show"):
                 s["camera"], s["move"] = camera, "static"
                 if s.get("action") in catalog.MOVE_ANIMS:
                     s["action"] = "idle"

@@ -96,7 +96,7 @@ class KindsAndCamera(unittest.TestCase):
         for sh in r["shots"]:
             if sh.get("cutaway"):
                 continue
-            want = "wide" if sh["line"].startswith("Look") else "selfie"     # a camera the script names still wins
+            want = "selfie"                     # the phone camera wins over the writer's own camera words
             self.assertEqual(sh["camera"], want, sh["line"])
             self.assertNotIn(sh.get("action"), ("walk_to", "run_to"))
         self.assertEqual(A.parse_directions("[facecam] hi", [])[0]["camera"], "selfie")

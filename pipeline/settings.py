@@ -64,6 +64,8 @@ DEFAULTS = {
     "audio": {"lead": 0.15, "tail_pad": 0.6, "music_volume": 0.05, "default_music": "",
               "intro": 0.7,               # seconds of calm before the first line (character idles, title shows)
               "reactions": True,          # her own gasps / giggles / "hmm" before fitting lines (autodirect.reactions)
+              # each reaction on its own (Settings -> Render & audio): off = that sound is never said
+              "reaction_sounds": {"gasp": True, "giggle": True, "hmm": True, "yay": True, "aww": True, "nya": True},
               "outro": 1.3,               # seconds held after the last line
               "fade": 0.35,               # video + audio fade in/out at the very start and end
               "music_fade": 1.5},         # music fade in/out

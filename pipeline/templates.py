@@ -152,8 +152,9 @@ TEMPLATES = {
                    "e.g. [meter: <feeling> <number>]; then change it on most lines as she helps "
                    "([meter: <feeling> <lower number>] ... down to almost nothing at the end, or up for a good feeling). "
                    "For a breathing or counting moment use a small bubble: [bubble: in...] then [bubble: ...out]. "
-                   "No walking, no cutaways, no other people, no scene changes. The last line is a kind, warm "
-                   "goodbye to the viewer."),
+                   "No walking, no cutaways, no other people, no scene changes, no camera words (her phone films "
+                   "it all), and she never gives herself a new name. The last line is a kind, warm goodbye to the "
+                   "viewer."),
         "tone": "warm",
         "lines": (8, 11),
         "direct": {"beat_words": 4, "walk_every": 0, "move_every": 0, "wipe_every": 0, "camera": "selfie"},

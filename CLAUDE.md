@@ -203,6 +203,12 @@ Open items:
     a climbing `[count:]`, a `[tag:]` flipped by the twist). `templates.TWIST` appended to what_if, mini_story,
     conversation. `pacing(beats_on=False)` keeps the camera. The writer's system prompt lists the overlay words.
   - Checked: overlays burned onto a still at 216x384 (`hud_check`), selfie storyboards; not in a real render yet.
+  - Production test 1 (the writer): `talk_to_you` wrote [wide]/[closeup] too - the template camera now wins over the
+    writer's camera words (only cutaways / show shots keep theirs); the writer is told no camera words and no new
+    name for herself. `gadget_story` used [label:] but skipped [count:]/[tag:] (allowed).
+- **Reaction sounds one by one** (the user: "toggle the sound effects like giggling"): Settings
+  `audio.reaction_sounds {gasp, giggle, hmm, yay, aww, nya}` (Render & audio, under the main switch), checked at
+  render in `run_episode` (old videos too); `tests/test_reaction_switches.py` keeps director, texts and rows in step.
 - **Random videos on the server** (`pipeline/randomvid.py`): the 🎲 cards (`CARDS` - `tests/test_randomvid.py`
   checks them against app.js `MW_STEPS_BASE`), never `conversation` (needs a co-star); in `batch.py` a `"random"`
   item writes for `new:<place>`, makes that set first (`/api/sets/generate` + `wait_job`), then directs there.

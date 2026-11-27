@@ -1555,6 +1555,8 @@ def main():
             r = shot.get("react")
             if r not in REACT_TEXT or shot.get("speaker") not in (None, "", "main"):
                 continue
+            if ((cfg.get("audio") or {}).get("reaction_sounds") or {}).get(r, True) is False:
+                continue                      # this one is switched off (Settings -> Render & audio)
             wav = audio_dir / f"react_{i:02d}.wav"
             try:
                 secs = tts(REACT_TEXT[r], wav, voice_for(ep, cfg, shot), ffmpeg, ROOT / "build" / "tts_cache")
