@@ -2210,7 +2210,7 @@ async function pageStats() {
   const tplName = (id) => { const t = tplOf(id); return t.name ? `${t.icon} ${t.name}` : id; };
   const HOOK_NAMES = { number: "🔢 A surprising number", question: "❓ A bold question", wait_what: "😳 Wait, what?",
     myth_buster: "🙅 Most people are wrong", confession: "🤫 A confession", "?": "Not recorded (older videos)" };
-  const label = (d, v) => d === "kind" ? tplName(v) : d === "hook" ? (HOOK_NAMES[v] || v) : d === "set" ? (META.catalog.sets[v]?.name || v) : v;
+  const valueName = (d, v) => d === "kind" ? tplName(v) : d === "hook" ? (HOOK_NAMES[v] || v) : d === "set" ? (META.catalog.sets[v]?.name || v) : v;
   const ytTable = (rows, head, name) => rows.length ? `<table class="st-table"><tr><th>${head}</th><th>Videos</th><th>Avg views</th><th>Avg % watched</th><th>Avg seconds watched</th><th>Subscribers gained</th></tr>
     ${rows.map((e) => `<tr><td>${esc(name(e.value))}</td><td>${e.videos}</td><td>${num(e.avg_views)}</td><td>${e.avg_view_pct == null ? "-" : e.avg_view_pct + "%"}</td><td>${num(e.avg_view_secs)}</td><td>${num(e.subs)}</td></tr>`).join("")}</table>` : "";
   app.innerHTML = `<div class="assets-head"><div><h2>📊 Stats</h2>
@@ -2227,7 +2227,7 @@ async function pageStats() {
         : '<p class="muted small">Matched uploads show here after a fetch.</p>'}
     </div>` : ""}
     ${s.rows.length ? `<div class="stats-by">${Object.entries(dims).map(([d, label]) => (s.by[d] || []).length ? `<div class="panel"><h4>${label}</h4>
-      ${(s.by[d] || []).map((e) => `<div class="st-bar"><span>${esc(label(d, e.value))}</span><b>${num(e.avg)}</b> <span class="muted small">avg · ${e.videos} video${e.videos > 1 ? "s" : ""}</span></div>`).join("")}</div>` : "").join("")}</div>`
+      ${(s.by[d] || []).map((e) => `<div class="st-bar"><span>${esc(valueName(d, e.value))}</span><b>${num(e.avg)}</b> <span class="muted small">avg · ${e.videos} video${e.videos > 1 ? "s" : ""}</span></div>`).join("")}</div>` : "").join("")}</div>`
       : '<p class="muted">No numbers yet - fetch them, or type a video\'s views below.</p>'}
     <div class="panel"><h4>Videos</h4><table class="st-table"><tr><th>Video</th><th>Instagram views</th><th>Likes</th><th>Saves</th><th>Instagram post</th><th>YouTube views</th><th>% watched</th><th>YouTube</th></tr>
       ${s.videos.map((v) => { const r = s.rows.find((x) => x.key === v.key) || {};
