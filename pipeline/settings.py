@@ -149,6 +149,11 @@ LOOK_PRESETS = {
     "Spooky Night": {"blur": 1.4, "fringe": 5, "saturation": 0.55, "contrast": 1.1, "black": [0.06, 0.07, 0.1],
                      "white": [0.85, 0.9, 0.95], "grain": 12, "scanlines": True, "vignette": True, "color_bits": 5,
                      "dither": False, "bloom": 0.2, "tint": "cool", "sharp_pixels": False},
+    # the storyboard preview's look (the user, 2026-11-27: "looks really cute"): the low-res render as it is -
+    # full colour, no haze, grain, lines or tint - just crisp big pixels
+    "Toy Box": {"blur": 0.0, "fringe": 0, "saturation": 1.0, "contrast": 1.0, "black": [0.0, 0.0, 0.0],
+                "white": [1.0, 1.0, 1.0], "grain": 0, "scanlines": False, "vignette": False, "color_bits": 8,
+                "dither": False, "bloom": 0.0, "tint": "none", "sharp_pixels": True},
 }
 TINTS = ["none", "warm", "cool", "purple", "sunset", "sepia", "noir", "gameboy"]
 CAPTION_EFFECTS = ["none", "pop", "bounce", "fade"]

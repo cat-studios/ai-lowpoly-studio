@@ -320,6 +320,56 @@ def _or_why(exc):
 
 
 def _chat(url, payload, has_images=False):
+    """Every AI call, traced for the 🔎 Logs page: what was sent (pictures saved), who answered, the answer, how long."""
+    import sys
+    t0 = time.time()
+    caller = ""
+    try:      # the function that asked (generate_script, design_set, look_score...) - skip llm's own helpers
+        fr = sys._getframe(1)
+        for _ in range(6):
+            if fr is None:
+                break
+            if fr.f_code.co_name not in ("chat", "chat_json", "_chat", "<lambda>", "design_call", "_ask"):
+                caller = f"{Path(fr.f_code.co_filename).stem}.{fr.f_code.co_name}"
+                break
+            fr = fr.f_back
+    except Exception:
+        pass
+    _ROUTE.set(None)
+    try:
+        r = _chat_routed(url, payload, has_images)
+    except Exception as exc:
+        _trace_ai(payload, caller, has_images, t0, error=f"{exc.__class__.__name__}: {exc}")
+        raise
+    _trace_ai(payload, caller, has_images, t0, answer=(r.get("message") or {}).get("content", ""), usage=r.get("usage"))
+    return r
+
+
+_ROUTE = contextvars.ContextVar("ai_route", default=None)
+
+
+def _trace_ai(payload, caller, has_images, t0, answer=None, error=None, usage=None):
+    try:
+        import studiotrace
+        route = _ROUTE.get() or {}
+        msgs = studiotrace.messages_for(payload)
+        user = next((m["content"] for m in reversed(msgs) if m["role"] == "user"), "")
+        head = re.sub(r"\s+", " ", str(user))[:80]
+        studiotrace.event(
+            "ai", f"{caller or 'AI'}: {head}", caller=caller, job_kind="vision" if has_images else _JOB.get(),
+            model=route.get("model") or payload.get("model"), where=route.get("where") or "this PC's Ollama",
+            fell_back=route.get("fell_back"), seconds=round(time.time() - t0, 1),
+            options=payload.get("options"), format=payload.get("format"), messages=msgs, answer=answer,
+            error=error, cost=(usage or {}).get("cost") if isinstance(usage, dict) else None)
+    except Exception:
+        pass
+
+
+def _note_route(where, model, fell_back=None):
+    _ROUTE.set({"where": where, "model": model, "fell_back": fell_back})
+
+
+def _chat_routed(url, payload, has_images=False):
     """POST /api/chat - on OpenRouter when Settings -> AI tools sends this kind of call there, else on the big text
     server when it's set up for all writing; whatever fails falls back to `url` (this PC's Ollama, or the big server
     for 3D design) with the caller's own model, so a video never stops because an online service didn't answer."""
@@ -328,6 +378,7 @@ def _chat(url, payload, has_images=False):
     why = ""
     if orr:
         try:
+            _note_route("cloud (OpenRouter)", orr[1])
             return openrouter_chat(orr[0], orr[1], payload)
         except (OSError, TimeoutError, ValueError) as exc:
             _mark_down("openrouter:" + orr[1], time.time())
@@ -339,10 +390,12 @@ def _chat(url, payload, has_images=False):
         raise LocalOff(f"cloud AI failed ({why}) and local AI is switched off (Settings -> AI tools)" if why else
                        "today's cloud AI limit is reached and local AI is switched off (Settings -> AI tools)" if capped
                        else "local AI is switched off and cloud AI isn't set up for this job (Settings -> AI tools)")
+    fell = f"cloud AI ({orr[1]}) failed: {why}" if why else None
     rem = _remote_for(url, has_images)
     if rem:
         p = dict(payload, model=rem[1]) if rem[1] else payload
         try:
+            _note_route(f"big server {rem[0]}", p.get("model"), fell)
             return _chat_once(rem[0], p, timeout=REMOTE_TIMEOUT)
         except (OSError, TimeoutError, ValueError) as exc:     # unreachable, no such model, bad answer, too slow
             slow = isinstance(exc, TimeoutError) or "timed out" in str(exc)
@@ -350,6 +403,8 @@ def _chat(url, payload, has_images=False):
             _mark_down(rem[0], time.time() + (REMOTE_SLOW_SKIP - REMOTE_RETRY if slow else 0))
             print(f"[ai] big text server {rem[0]} failed ({exc.__class__.__name__}: {str(exc)[:80]}) - "
                   f"using {url} for the next {(REMOTE_SLOW_SKIP if slow else REMOTE_RETRY) // 60} min")
+            fell = f"big server failed: {exc.__class__.__name__}: {str(exc)[:120]}"
+    _note_route("this PC's Ollama" if "127.0.0.1" in url or "localhost" in url else url, payload.get("model"), fell)
     return _chat_once(url, payload)
 
 

@@ -370,6 +370,31 @@ Open items:
   Cast things named fire / flames / campfire / bonfire / inferno (`run_episode.fire_def`: an ash disc, campfires get
   logs and a stone ring) burn while they're on screen. Storyboard: burning window, bed, campfire, then out.
 
+- **🔎 Logs page** (the user: "see what prompts and EVERYTHING is happening when rendering a video or prop... so I
+  can suggest fixes", in the web app): `pipeline/studiotrace.py` `event(kind, title, **data)` -> JSON lines in
+  `logs/trace/jobs/<job id>.jsonl` (the server starts every job with env `STUDIO_JOB_ID`) or, for the server's own
+  work, `logs/trace/app-<day>.jsonl` tagged with the request (`studiotrace.source("POST /api/ai/script")` around
+  every API call). Never raises; off under unittest (`STUDIO_TRACE_TESTS=1` turns it on for test_trace).
+  Hooks: `llm._chat` (every AI call: caller found by walking the stack past llm's helpers, the route that answered
+  - `_note_route`: cloud / big server / this PC + why it fell back - model, options, format, every message with
+  vision pictures saved once to `logs/trace/img/<sha1>.<ext>` (`/traceimg/`), the answer or error, seconds);
+  `comfy._json("/prompt")` (`trace_workflow`: prompt words, models, sizes, seeds - covers txt2img, TRELLIS, music);
+  `run_episode.tts` (each line, engine, voice, cached or a new take), the shots sent to each Blender pass (`plan`),
+  each Blender run (seconds, frames, its `[cast]`/`[fire]`/`[sets]` lines + the log's end), the final ffmpeg pass
+  (filters, command); `progress.report` stages become `step` events (counters like 3/12 or 40% skipped); the server
+  adds job start / finish and every job log line (`log`, or `warn` / `error` by its words).
+  `web/trace_web.py`: `GET /api/trace` (jobs in memory + older trace files, app days), `/api/trace/job/<id>?after=N`
+  (+ the live job), `/api/trace/app/<day>?after=N`. `web/logs.js` (page `#logs`, `#logs/job/<id>`,
+  `#logs/app/<day>`; `route()` uses the hash's first part): job list, header with progress / ETA / counts, the steps
+  strip with each step's time, filter chips per kind, search, follow-new, events appended live (1.2 s while running);
+  an event opens to its details (AI: instructions, prompt, pictures, answer; shots as a table; copy buttons). The job
+  panel's open job has "🔎 Everything". Checked in dev with a storyboard and an animation job (write + vision check
+  with its picture), desktop and phone. Trace files aren't cleaned automatically (`studiotrace.prune` exists).
+- **Look preset "Toy Box"** (the user liked the storyboard frames): the low-res render as it is - no blur, fringe,
+  grain, scanlines, vignette, tint; 8-bit colour, sharp pixels.
+- **No console windows on the desktop**: `server.NO_WINDOW` for jobs; the app's Restart gives the new server a
+  hidden console (it had none: DETACHED_PROCESS).
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours
@@ -1281,6 +1306,7 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
 | `web/ideas_web.py` | `/api/ideas` (list, fresh, fetch job, own ideas, star/hide, titles). |
 | `web/anims_web.py` | Assets → Animations: `/api/anims` (list, make job, delete → .trash), pictures at `/animimg/`. |
 | `web/cloud_web.py` | Cloud AI (OpenRouter) for Settings: `/api/cloud/models` (picker list, cached), `/api/cloud/check` (key + credit). The calls themselves: `llm._chat` → `openrouter_chat`. |
+| `web/trace_web.py`, `web/logs.js`, `pipeline/studiotrace.py` | The 🔎 Logs page: every AI prompt / answer, picture prompt, voice line, Blender / ffmpeg run, step and log line per job (and the app's own AI calls). |
 | `web/status_web.py` | The status dot in the top bar: `GET /api/status` = parallel checks (Ollama, big server, ComfyUI, Blender, ffmpeg, cloned voice tools, disk, job queue, ideas DB, page errors), each ok/warn/bad with a fix. |
 | `web/make_icons.py` | Makes the PWA icons (voice-venv / Pillow). |
 | `web/imported_web.py` | `/api/imported` (upload, models list, delete). |

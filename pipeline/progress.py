@@ -5,6 +5,7 @@ Progress reporting for background jobs. A pipeline script prints
 
 and the web server turns it into the job's progress bar (the line itself is kept out of the visible log).
 """
+import re
 import sys
 import threading
 import time
@@ -18,6 +19,13 @@ def report(frac, stage=""):
         return
     frac = max(0.0, min(1.0, float(frac)))
     print(f"PROGRESS {frac:.3f} {stage}".rstrip(), flush=True)
+    # counters ("Voice line 3/12", "Encoding (40%)", frame counts) tick all the time - they're not steps
+    if stage and not stage.startswith("Rendering frames") and not re.search(r"\d+/\d+|\d+%", stage):
+        try:
+            import studiotrace
+            studiotrace.step(stage)
+        except Exception:
+            pass
     sys.stdout.flush()
 
 

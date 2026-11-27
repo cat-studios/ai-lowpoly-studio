@@ -520,6 +520,18 @@ otherwise it appears). Each shot has a **📷 Cutaway** field, and the AI scene 
 - until `[land]`. The director also does it from the words: a line about balloons hands them to her, "look at me go
 up" / "I'm floating" lifts her, "it popped" / "back down" brings her down.
 
+
+## 🔎 Logs: see everything that happens
+The **Logs** page (top bar, or "🔎 Everything" on a job in the jobs panel) shows, for every video, set, prop,
+animation, music or other job - live while it runs:
+- every **AI prompt and answer** (which model, on this PC / the big server / the cloud, why it fell back, how long),
+  including the **pictures the AI was shown** when it judged a prop, an animation or a set;
+- the **picture prompts** sent to ComfyUI (Z-Image, TRELLIS 3D, music), each **voice line** (new take or cached),
+  the **shots sent to Blender** as a table, what **Blender** decided, the **ffmpeg** filters;
+- the **steps** with how long each took, warnings, errors and every log line.
+Filter by kind, search everything, copy any prompt. "The app itself" lists the AI calls the Create page makes
+(titles, scripts, directing). Spot something odd? Tell Claude what you saw there.
+
 ## Sending videos to Postiz (as drafts)
 1. **Settings → 📤 Postiz**: your Postiz address and API key (Postiz → Settings → Developers). Save, then
    **🔄 Load channels** and tick where drafts should go. For Discord paste the channel ID (Discord: Developer Mode
@@ -616,7 +628,7 @@ low resolution (so they're pixelated with the picture), two words at a time in c
 when she actually says it (the voice engines report when every word is spoken); the title is two lines at the top,
 white then yellow.
 
-Presets: N64 Haze (default), Clean Retro, VHS Tape, PS1 Crunch, Game Boy, Dreamy Pastel, Spooky Night - globally
+Presets: N64 Haze (default), Clean Retro, VHS Tape, PS1 Crunch, Game Boy, Dreamy Pastel, Spooky Night, Toy Box (crisp big pixels, full colour, none of the haze) - globally
 (Settings) or per episode. Every value can be changed in Settings, and an episode can override any of them:
 
 ```jsonc

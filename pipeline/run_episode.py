@@ -240,6 +240,15 @@ def speakable(text):
     return re.sub(r"\b[A-Z][A-Z']*[A-Z]\b", one, str(text or ""))
 
 
+def _trace(kind, title, **data):
+    """One event for the web app's 🔎 Logs page (pipeline/studiotrace.py); never fails the render."""
+    try:
+        import studiotrace
+        studiotrace.event(kind, title, **data)
+    except Exception:
+        pass
+
+
 def tts(text, out_wav, voice, ffmpeg, cache_dir):
     """Speak one line -> wav, with optional extra pitch shift ("shift": 1.2). Results are cached."""
     text = speakable(text)
@@ -251,7 +260,11 @@ def tts(text, out_wav, voice, ffmpeg, cache_dir):
     key = _cache_key(text, voice)
     cached = cache_dir / f"{key}.wav"
     stale = engine == "edge" and cached.exists() and not cached.with_suffix(".words.json").exists()
-    if FRESH or not cached.exists() or stale:     # Edge lines cached before word times existed: quick to redo
+    new_take = FRESH or not cached.exists() or stale
+    _trace("voice", f"{'New take' if new_take else 'From the cache'}: {text[:70]}", text=text, engine=engine,
+           voice={k: v for k, v in voice.items() if k not in ("ref",)}, ref=Path(str(voice.get("ref") or "")).name,
+           cached=not new_take, cache_file=cached.name)
+    if new_take:     # Edge lines cached before word times existed: quick to redo
         raw = cache_dir / f"{key}.raw"
         try:
             if not raw.exists() or (FRESH and engine != "local"):   # local raws were just prefetched
@@ -1173,6 +1186,10 @@ def encode_with_progress(cmd, cwd, seconds, lo, hi):
                     last = frac
                     report(lo + (hi - lo) * frac, f"Encoding the video ({int(frac * 100)}%)")
         rc = proc.wait()
+    fc = next((cmd[k + 1] for k, c in enumerate(cmd[:-1]) if c == "-filter_complex"), "")
+    _trace("ffmpeg", f"ffmpeg: the look, captions and sound {'done' if rc == 0 else 'FAILED'}",
+           command=" ".join(f'"{c}"' if " " in c else c for c in cmd), filters=fc.replace(";", ";\n"),
+           exit_code=rc, log=log.read_text(encoding="utf-8", errors="replace")[-6000:] if rc else "")
     if rc != 0:
         tail = log.read_text(encoding="utf-8", errors="replace")[-3000:]
         print(f"ffmpeg failed (exit {rc}). Full log: {log}\n{tail}")
@@ -1721,6 +1738,10 @@ def main():
                 shutil.rmtree(seg_frames)
             log = seg_dir / "blender.log"
             label = f"Rendering scene {gi + 1}/{len(segs)}" if multi else "Rendering frames"
+            _trace("plan", f"Shots sent to Blender{f' (scene {gi + 1}: {sid})' if multi else ''}",
+                   set=sid, shots=[{k: v for k, v in s.items() if k not in ("word_t",)} for s in sub["shots"]],
+                   cast=sub.get("cast"), render=f"{sub.get('render_res') or ''} @ {sub.get('fps') or ''} fps")
+            bt0 = time.time()
             with log.open("w", encoding="utf-8", errors="replace") as fh, \
                     FrameWatcher([frames_dir, seg_frames], expected, 0.30, 0.88, label):
                 res = subprocess.run([blender, "-b", "--factory-startup", "--python",
@@ -1728,6 +1749,12 @@ def main():
                                       str(seg_json), str(seg_frames), str(seg_dir / "scene.blend")],
                                      stdout=fh, stderr=subprocess.STDOUT)
             text = log.read_text(encoding="utf-8", errors="replace")
+            notes = [ln for ln in text.splitlines() if ln.startswith("[") or "warn" in ln.lower() or "Error" in ln]
+            _trace("blender", f"Blender {'built' if res.returncode == 0 else 'FAILED on'} "
+                              f"{'scene ' + str(gi + 1) + ': ' if multi else ''}{sid} "
+                              f"({len(list(seg_frames.glob('f_*.png')))} frames, {time.time() - bt0:.0f} s)",
+                   seconds=round(time.time() - bt0, 1), exit_code=res.returncode, log_file=str(log),
+                   notes="\n".join(notes), log=text[-20000:])
             check_only = bool(ep.get("_no_render"))      # a build check: scene + timing.json, no frames
             if res.returncode != 0 or "Traceback" in text or (not check_only and not any(seg_frames.glob("f_*.png"))):
                 print(text[-4000:])

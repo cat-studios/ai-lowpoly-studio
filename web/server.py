@@ -118,7 +118,13 @@ def run_job(job):
     job.status, job.started = "running", time.time()
     logs.job_started(job)
     try:
-        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "STUDIO_JOB_ID": job.id}
+        import studiotrace
+        try:
+            studiotrace.event("job", f"Started: {job.title}", job=job.id, job_kind=job.kind,
+                              command=" ".join(str(c) for c in job.cmd))
+        except Exception:
+            pass
         proc = subprocess.Popen(job.cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
         for line in proc.stdout:
@@ -135,6 +141,12 @@ def run_job(job):
                 job.log.append(line)
                 del job.log[:-3000]
                 logs.job_line(job, line)           # the whole output also goes to logs/jobs/<id>.log
+                # ... and into the 🔎 Logs timeline, between the AI calls / steps, with its time
+                low = line.lower()
+                kind = ("error" if "traceback" in low or low.startswith("error") or " failed" in low
+                        else "warn" if "warn" in low or line.lstrip().startswith("!!") or "skipped" in low
+                        else "log")
+                studiotrace.event(kind, line, job=job.id)
         ok = proc.wait() == 0
         if ok:
             job.progress = 1.0
@@ -147,6 +159,12 @@ def run_job(job):
         job.status = "failed"
     job.ended = time.time()
     logs.job_finished(job)
+    try:
+        import studiotrace
+        studiotrace.event("job", f"{'Finished' if job.status == 'done' else 'FAILED'}: {job.title} "
+                                 f"({job.ended - job.started:.0f} s)", job=job.id, status=job.status)
+    except Exception:
+        pass
 
 
 for _lane in LANES:
@@ -1078,8 +1096,15 @@ class Handler(BaseHTTPRequestHandler):
                 if not re.fullmatch(r"[\w .()-]+\.(mp3|wav|ogg|m4a|flac)", name, re.I):
                     return self.fail("not found", 404)
                 return self.send_file(MUSIC / name)
+            if method == "GET" and path.startswith("/traceimg/"):        # pictures an AI was shown (🔎 Logs page)
+                name = path[len("/traceimg/"):]
+                if not re.fullmatch(r"[0-9a-f]{20}\.(png|jpg|webp)", name):
+                    return self.fail("not found", 404)
+                return self.send_file(ROOT / "logs" / "trace" / "img" / name, cache=True)
             if path.startswith("/api/"):
-                return self.api(method, path[5:].strip("/").split("/"))
+                import studiotrace
+                with studiotrace.source(f"{method} {path}"):         # AI calls made right here are tagged with this
+                    return self.api(method, path[5:].strip("/").split("/"))
             return self.fail("not found", 404)
         except ValueError as exc:
             return self.fail(str(exc))
@@ -1744,6 +1769,9 @@ class Handler(BaseHTTPRequestHandler):
             import imported_web
             return imported_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
 
+        if head == "trace":            # the 🔎 Logs page: everything a job / the app did (web/trace_web.py)
+            import trace_web
+            return trace_web.handle(self, method, parts[1:], JOBS)
         if head == "cloud":            # cloud AI (OpenRouter): model list + key check (web/cloud_web.py)
             import cloud_web
             return cloud_web.handle(self, method, parts[1:])

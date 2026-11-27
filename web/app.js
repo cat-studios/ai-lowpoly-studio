@@ -191,10 +191,12 @@ async function drawJobPanel() {
           <span class="jp-status ${j.status}">${j.status === "running" && jobPct(j) != null ? jobPct(j) + "%" : j.status}</span>
           <span class="jp-chev">▾</span>
         </button>
-        ${j.status === "failed" ? `<div style="padding:0 12px 8px"><button data-retry="${esc(j.id)}" class="primary">↻ Retry</button></div>` : ""}
+        ${JOBUI.openLog === j.id || j.status === "failed" ? `<div class="jp-acts">${j.status === "failed" ? `<button data-retry="${esc(j.id)}" class="primary">↻ Retry</button>` : ""}
+          <a class="jp-every" href="#logs/job/${esc(j.id)}" data-everything>🔎 Everything (prompts, steps…)</a></div>` : ""}
         ${JOBUI.openLog === j.id ? `<pre class="jp-log" data-id="${esc(j.id)}">${esc((JOBUI.logs[j.id] || []).join("\n")) || "…"}</pre>` : ""}
       </div>`).join("") : `<p class="muted small" style="padding:14px">No jobs yet. Renders, new sets, music and uploads show up here.</p>`}</div>`;
   $(".jp-x", p).onclick = () => toggleJobPanel(false);
+  $$("[data-everything]", p).forEach((a) => a.onclick = () => toggleJobPanel(false));
   $$("[data-toggle]", p).forEach((b) => b.onclick = () => { JOBUI.openLog = JOBUI.openLog === b.dataset.toggle ? null : b.dataset.toggle; drawJobPanel(); });
   $$("[data-retry]", p).forEach((b) => b.onclick = guard(async () => {
     const job = await api("POST", `/api/jobs/${b.dataset.retry}/retry`);
@@ -3413,7 +3415,7 @@ function editFx(f) {
 /* ------------------------------------------------------------------ router */
 const PAGES = { create: pageCreate, ideas: pageIdeas, sets: pageSets, assets: () => pageAssets(), audio: pageAudio, videos: pageVideos, stats: pageStats, characters: pageCharacters, settings: pageSettings };
 async function route() {
-  const page = (location.hash || "#create").slice(1);
+  const page = (location.hash || "#create").slice(1).split("/")[0];     // "#logs/job/<id>" -> logs
   $$("nav a").forEach((a) => a.classList.toggle("on", a.dataset.page === (page === "audio" ? "assets" : page)));
   try { await (PAGES[page] || pageCreate)(); } catch (e) { app.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }

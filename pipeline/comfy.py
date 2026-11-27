@@ -22,7 +22,34 @@ def _get(url, path, timeout=5):
     return data
 
 
+def trace_workflow(graph):
+    """What a ComfyUI workflow asks for, readable: its prompt words, models, sizes, seeds (🔎 Logs page)."""
+    words, models, other = [], [], {}
+    for nid, node in (graph or {}).items():
+        ct, inp = node.get("class_type", "?"), node.get("inputs") or {}
+        for k, v in inp.items():
+            if not isinstance(v, (str, int, float)) or isinstance(v, bool):
+                continue
+            if k in ("text", "tags", "lyrics", "prompt") and isinstance(v, str):
+                words.append(f"{ct}.{k}: {v}")
+            elif k.endswith("_name") or k in ("ckpt_name", "unet_name", "clip_name", "vae_name", "model_name"):
+                models.append(str(v))
+            elif k in ("width", "height", "seed", "steps", "cfg", "seconds", "image", "filename_prefix",
+                       "target_face_count", "resolution"):
+                other[f"{ct}.{k}"] = v
+    return {"prompts": "\n\n".join(words), "models": sorted(set(models)),
+            "settings": other, "nodes": [n.get("class_type") for n in (graph or {}).values()]}
+
+
 def _json(url, path, payload=None, timeout=10):
+    if path == "/prompt" and isinstance(payload, dict):
+        try:
+            import studiotrace
+            w = trace_workflow(payload.get("prompt"))
+            first = (w["prompts"].split(": ", 1)[-1] if w["prompts"] else ", ".join(w["models"]))[:90]
+            studiotrace.event("image", f"ComfyUI: {first}", server=url, **w)
+        except Exception:
+            pass
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url.rstrip("/") + path, data=data,
                                  headers={"Content-Type": "application/json"} if data else {})
