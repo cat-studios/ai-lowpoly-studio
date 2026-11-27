@@ -24,6 +24,7 @@ boredom bored mess messy cringe heat pain sadness embarrassment awkward drama su
 STICKER_WORDS = {"boom": "BOOM!", "pop": "POP!", "boing": "BOING!", "jump": "HOP!", "coin": "CHING!", "ding": "DING!",
                  "tada": "TA-DA!", "whoosh": "WHOOSH!", "hiss": "HSSS!", "stomp": "THUD!", "laser": "ZAP!",
                  "fail": "WOMP WOMP", "buzz": "BZZT!", "meow": "NYA!", "click": "CLICK!", "sparkle": "SHINE!"}
+CLOSE = ("closeup", "dramatic", "macro", "selfie")      # her face fills the middle there: the name sign goes lower
 STICKER_COLORS = ["#ffe14d", "#6fe3ff", "#ff8ad8", "#9dff6a"]
 TWEEN = 0.6            # seconds a meter / counter takes to reach its new number
 STEPS = 6
@@ -107,7 +108,7 @@ def _timeline(shots, timing, lead_default):
     for i, (s, tm) in enumerate(zip(shots, timing["shots"])):
         a = (tm["f0"] - 1) / fps
         b = (tm["f0"] - 1 + tm["n"]) / fps
-        out.append((a, b, float(s.get("lead", lead_default)), s.get("hud") or []))
+        out.append((a, b, float(s.get("lead", lead_default)), s.get("hud") or [], s.get("camera")))
     return out
 
 
@@ -119,7 +120,7 @@ def events(shots, timing, res, total, stop_at, stickers=(), lead_default=0.15, s
     tl = _timeline(shots, timing, lead_default)
     meters, counts = {}, {}            # name -> [(time, value)] in order
     tags = []                          # [(time, text or "")]
-    for a, b, lead, hud in tl:
+    for a, b, lead, hud, cam in tl:
         at = a + min(lead, 0.4)
         for h in hud:
             k = h["kind"]
@@ -132,7 +133,7 @@ def events(shots, timing, res, total, stop_at, stickers=(), lead_default=0.15, s
             elif k == "label":
                 end = min(b, at + 2.6)
                 rot = rng.choice((-5, -3, 3, 5))
-                lines.append(f"Dialogue: 6,{_t(at)},{_t(end)},Label,,0,0,0,,{{\\pos({W // 2},{round(H * 0.47)})"
+                lines.append(f"Dialogue: 6,{_t(at)},{_t(end)},Label,,0,0,0,,{{\\pos({W // 2},{round(H * (0.62 if cam in CLOSE else 0.47))})"
                              f"\\frz{rot}\\fscx40\\fscy40\\t(0,120,\\fscx112\\fscy112)\\t(120,220,\\fscx100\\fscy100)"
                              f"\\fad(0,120)}}{_esc(h['text'].upper())}")
             elif k == "bubble":

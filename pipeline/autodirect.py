@@ -370,6 +370,8 @@ def _take_cast(tokens, marks, d):
 
 def _stage_for_events(shot, d):
     """Things crashing or falling in need a camera that shows the room, and a bit of shake."""
+    if shot.get("camera") == "selfie":
+        return                        # her phone films it: an arrival doesn't move the camera (Talk to you)
     big = [e for e in shot.get("events", []) if e["do"] in ("crash_in", "fall", "fly_by")]
     if big and "camera" not in d:
         shot["camera"] = "wide"
@@ -398,6 +400,7 @@ def add_cast_plan(result, plan, skip=()):
     shots, cast = result["shots"], result.setdefault("cast", {})
     flat = lambda s: re.sub(r"[^a-z0-9]+", "", str(s).lower())    # noqa: E731 - "Cat girl" == "catgirl"
     skip = {flat(s) for s in skip if s} | {flat(s) for s in SELF_WORDS} | BODY_PARTS   # a "head" was cast (an imported celebrity head played it)
+    skip |= {"bubble", "meter", "counter", "tag", "label", "sticker", "count", "score"}   # [bubble: in...] is an overlay
     for name, info in (plan.get("cast") or {}).items():
         who = re.sub(r"[^a-z0-9_]+", "", str(name).lower().replace(" ", "_"))[:24]
         if not who or not isinstance(info, dict) or flat(who) in skip:

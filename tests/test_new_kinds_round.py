@@ -31,6 +31,24 @@ class Landing(unittest.TestCase):
         self.assertIn("whispering", animlib.NOT_ACTIONS)
 
 
+class SecondRound(unittest.TestCase):
+    def test_overlay_words_are_never_cast(self):
+        r = {"shots": [{"line": "Breathe in", "camera": "selfie"}], "cast": {}}
+        A.add_cast_plan(r, {"cast": {"bubble": {"type": "thing", "looks": "a soap bubble"}},
+                            "events": [{"line": 0, "who": "bubble", "do": "crash_in"}]})
+        self.assertNotIn("bubble", r["cast"])
+        self.assertEqual(r["shots"][0]["camera"], "selfie")
+
+    def test_name_sign_goes_lower_in_close_shots(self):
+        import overlays as O
+        tm = {"fps": 12, "total_frames": 72, "shots": [{"f0": 1, "n": 36}, {"f0": 37, "n": 36}]}
+        shots = [{"camera": "closeup", "hud": [{"kind": "label", "text": "BED-ALARM"}]},
+                 {"camera": "wide", "hud": [{"kind": "label", "text": "FAN-O-MATIC"}]}]
+        lines = O.events(shots, tm, (216, 384), 6.0, 6.0)
+        y = {t: int(l.split("\\pos(")[1].split(",")[1].split(")")[0]) for l in lines for t in ("BED-ALARM", "FAN-O-MATIC") if t in l}
+        self.assertGreater(y["BED-ALARM"], y["FAN-O-MATIC"])
+
+
 class WideCaptions(unittest.TestCase):
     def test_a_long_word_group_is_made_smaller(self):
         import tempfile
