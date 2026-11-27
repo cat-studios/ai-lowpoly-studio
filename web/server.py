@@ -222,35 +222,53 @@ def run_idle_batch(cfg):
 
 
 ACTIVITY = {"at": time.time()}                  # last time someone used the studio (see route())
+IDLE_MIN_FREE_GB = 15                           # idle auto-make pauses below this much free disk space
+
+
+def idle_ready(cfg, jobs, now, activity_at, free_gb):
+    """"" when idle auto-make should make a batch now, else why not: off / busy / not quiet / low disk.
+    Quiet = since the last time someone used the studio AND since the last job finished (after a batch and its
+    renders, the next one waits another quiet spell). No daily limit."""
+    if not cfg.get("on"):
+        return "off"
+    if any(j.status in ("queued", "running") for j in jobs):
+        return "busy"
+    last_end = max([j.ended or 0 for j in jobs] + [0])
+    if now - max(activity_at, last_end) < float(cfg.get("minutes", 10)) * 60:
+        return "not quiet"
+    if free_gb < IDLE_MIN_FREE_GB:                 # with no daily limit: never fill the disk
+        return "low disk"
+    return ""
 IDLE_IGNORE = ("/api/jobs", "/api/status", "/api/comfy/status", "/static/", "/media/", "/propimg/", "/favicon",
                "/apple-touch-icon", "/manifest", "/sfx/", "/music/", "/fxprev/", "/setimg/", "/animimg/", "/actorimg/")
 
 
 def idle_loop():
     """Every minute: after `idle.minutes` with nobody using the studio and nothing queued, running or just finished,
-    make a batch (`idle.count` videos, Settings -> Idle auto-make), `idle.per_day` batches a day at most. Requests
-    the studio makes itself (batch.py, series.py: X-Studio-Job) don't count as use. Doesn't count as the week's plan."""
+    make a batch (`idle.count` videos, Settings -> Idle auto-make) - no daily limit (the user, 2026-11-27: a cap of
+    3 a day stopped it at 3 overnight), so it keeps going while the studio is quiet; it pauses while the disk has
+    less than IDLE_MIN_FREE_GB free. Requests the studio makes itself (batch.py, series.py: X-Studio-Job) don't
+    count as use. Doesn't count as the week's plan."""
     import weekly
+    low_disk = False
     while True:
         time.sleep(60)
         try:
             cfg = S.load_settings().get("idle") or {}
-            if not cfg.get("on"):
+            free_gb = shutil.disk_usage(ROOT).free / 1e9
+            why = idle_ready(cfg, list(JOBS.values()), time.time(), ACTIVITY["at"], free_gb)   # a copy of the jobs
+            if why == "low disk":
+                if not low_disk:
+                    logs.event(f"IDLE AUTO-MAKE paused: only {free_gb:.1f} GB free (needs {IDLE_MIN_FREE_GB} GB) - "
+                               "Settings -> Free up disk space")
+                low_disk = True
+            if why:
                 continue
-            jobs = list(JOBS.values())                  # a copy: requests add jobs meanwhile
-            if any(j.status in ("queued", "running") for j in jobs):
-                continue
-            # quiet = since the last time someone used it AND since the last job finished (so after a batch and its
-            # renders, the next one waits another quiet spell); up to `per_day` batches a day
-            last_end = max([j.ended or 0 for j in jobs] + [0])
-            if time.time() - max(ACTIVITY["at"], last_end) < float(cfg.get("minutes", 10)) * 60:
-                continue
+            low_disk = False
             st = weekly.state()
             today = time.strftime("%Y-%m-%d")
             made = int(st.get("idle_count") or 0) if st.get("idle_day") == today else 0
-            if made >= int(cfg.get("per_day", 3)):
-                continue
-            st.update(idle_day=today, idle_count=made + 1)
+            st.update(idle_day=today, idle_count=made + 1)      # kept for information only - no limit
             weekly.save_state(st)
             run_idle_batch(cfg)
         except Exception as exc:

@@ -121,11 +121,12 @@ Open items:
 - **Writer**: `llm.HOOK_STYLES` (one picked per script, `hook_rule`) + `ENDING_RULE` (the last line echoes the
   first so the video loops).
 - **Weekly plan by numbers**: `weekly.kind_rank()` (Stats averages, kinds with 2+ videos) orders `pick`'s kinds.
-- **Idle auto-make** (`server.idle_loop`, Settings `idle {on, minutes, count, per_day, random_chance}`, 🌙 button
+- **Idle auto-make** (`server.idle_loop`, Settings `idle {on, minutes, count, random_chance, brainrot_chance}`, 🌙 button
   on the Create page): every minute; quiet = since max(last real request, last job finished) >= minutes and
   nothing queued/running -> `run_idle_batch` (old trending ideas fetched first; each video random with
-  `random_chance` % = `randomvid.item()`, else `weekly.pick`), `per_day` batches a day (state in
-  `build/weekly_plan.json` `idle_day/idle_count`), never Postiz, not the week's plan. "Real request" = not
+  `random_chance` % = `randomvid.item()`, else `weekly.pick`), NO daily limit (the user, 2026-11-27: the old
+  `per_day` 3 stopped it at 3 overnight - removed; `idle_ready()` decides, tested) but a pause while the disk has
+  under `IDLE_MIN_FREE_GB` 15 GB free (logged once); `idle_day/idle_count` in `build/weekly_plan.json` are info only, never Postiz, not the week's plan. "Real request" = not
   `IDLE_IGNORE` polling and not `X-Studio-Job` (sent by `series.call`, so batch/series calls don't count).
 - **Random videos on the server** (`pipeline/randomvid.py`): the 🎲 cards (`CARDS` - `tests/test_randomvid.py`
   checks them against app.js `MW_STEPS_BASE`), never `conversation` (needs a co-star); in `batch.py` a `"random"`

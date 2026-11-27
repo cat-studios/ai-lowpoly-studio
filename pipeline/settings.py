@@ -92,7 +92,7 @@ DEFAULTS = {
                  "highlight": True, "highlight_color": "#ffe14d"},      # the bank's words in their own colour
     # idle auto-make: after `minutes` with nobody using the studio (and nothing running), make `count` videos from fresh ideas
     # brainrot_chance (here and in "plan"): how often (0-100 %) a video made without you is in brain rot mode
-    "idle": {"on": False, "minutes": 10, "count": 1, "per_day": 3, "random_chance": 50, "brainrot_chance": 0},
+    "idle": {"on": False, "minutes": 10, "count": 1, "random_chance": 50, "brainrot_chance": 0},   # no daily limit
     "plan": {"on": False, "day": "mon", "hour": 3, "count": 5, "length": "medium", "drafts": True,
              "brainrot_chance": 0},     # her room (sets/home.json) keeps one thing from every video
     "sets": {"style": "base",            # how new sets are made: base (hand-built, A) / palette / judged / classic

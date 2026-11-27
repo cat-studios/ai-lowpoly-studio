@@ -2720,12 +2720,11 @@ const S_TABS = {
       ["youtube.refresh_token", "YouTube Analytics: refresh token (optional)", "password", {}, "Made once with the OAuth Playground (developers.google.com/oauthplayground, scope youtube.readonly and yt-analytics.readonly, your own OAuth client). Read only."],
     ]],
     ["🌙 Idle auto-make (the studio makes videos while nobody uses it)", [
-      ["idle.on", "Make a video after a quiet spell", "bool", {}, "When nobody has used the studio for the time below and nothing is rendering, it makes videos from fresh ideas (the Create page's 🌙 button does the same). Stays off until you turn it on."],
+      ["idle.on", "Make a video after a quiet spell", "bool", {}, "When nobody has used the studio for the time below and nothing is rendering, it makes videos from fresh ideas (the Create page's 🌙 button does the same). Stays off until you turn it on. No daily limit: it keeps going while the studio is quiet (it pauses when the disk has under 15 GB free). Never reaches Postiz - these stay on your Videos page."],
       ["idle.minutes", "Quiet minutes before it starts", "range", { min: 5, max: 120, step: 5 }, "Polling and the status dot don't count as using the studio."],
       ["idle.count", "Videos each time", "range", { min: 1, max: 3, step: 1 }],
       ["idle.random_chance", "Random videos, in %", "range", { min: 0, max: 100, step: 10 }, "Each video is a random one (a place, vibe, guest, time and length from the 🎲 cards) this often; the rest come from fresh ideas. 0 = ideas only, 100 = random only."],
       ["idle.brainrot_chance", "🧠 Brain rot videos, in %", "range", { min: 0, max: 100, step: 10 }, "This often an idle video is made in brain rot mode (words and pacing: the Brain rot mode tab). 0 = never."],
-      ["idle.per_day", "Most batches per day", "range", { min: 1, max: 10, step: 1 }, "Never reaches Postiz - these stay on your Videos page."],
     ]],
     ["📅 Weekly plan (fresh ideas → videos → Postiz drafts)", [
       ["plan.on", "Make videos every week by themselves", "bool", {}, "On the day and hour below the studio picks fresh ideas (starred first, a mix of kinds), makes one video from each, and - with Postiz set up - leaves each as a DRAFT (never posted). ▶ Run it now: Ideas page."],
