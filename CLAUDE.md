@@ -262,6 +262,19 @@ Open items:
   moved to `sets/.trash` with the user's OK (the data / gravity videos need their shots redone to render again).
 - **Look check**: `PROP_PASS` back to 6 (lowered to 5 while the check judged her); `SPRITE_BELOW` 3 is the user's
   choice and stays; the set / animation checks were never affected by that bug.
+- **Ghost and shadow people** (from an eerie explainer Reel, the user's pick): `autodirect.cast_style` = a style word
+  after the verb (`STYLE_OPTIONS`: `[+mom enter ghost]`, `[+crowd appear shadow]`), else the name (`GHOST_NAMES`
+  ghost/spirit/memory/phantom..., `GHOST_PHRASES` past_self/other_me..., `SHADOW_NAMES` shadow/silhouette...), else the
+  looks (ghostly, translucent / silhouette, faceless); `apply_styles` (end of `direct` and `add_cast_plan`) writes cast
+  `style` and makes a ghost/shadow name a person (`FIGURE_WORDS`: "shadow_figure" was a rock on a box). Blender:
+  `blender_cast.build` notes the objects before each styled cast member and `styled()` gives every new mesh one
+  flat material (`STYLES`: ghost = pale blue-white, emission 0.9, alpha 0.42 BLENDED - dithered was a speckle at 1
+  sample - no ground shadow; shadow = near-black, opaque-ish, keeps its blob shadow). Works for the studio body, VRoid
+  actors, imported models, crowds. The writer is told (eerie / memory stories only). Storyboard `zz_check_ghosts`.
+- **Spelled-out words** (the user: "she speaks the letters of words"): words in capitals for emphasis ("an EGG",
+  "going UP") were read as abbreviations. `run_episode.speakable` lower-cases them for the voice (`tts` and
+  `prefetch_local`, so the cache key matches); `SPELLED` abbreviations (TV, NASA, DNA, OK...) keep their capitals.
+  Captions are unchanged; `word_starts` already compares case-insensitively. Lines with capitals get a new take once.
 - **Her name** (production "My name is Lila"; earlier videos "I'm Luna", "I'm Cat"): the writer is told
   `llm.name_rule(character)` - the Name box on the Characters page is her only name (the user: "pull her name from the
   character box"; they renamed "Catgirl" to her real name) - and `fix_self_names` rewrites "my name is X" /

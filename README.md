@@ -451,6 +451,10 @@ It started raining though.
   sets*). Each shot also has a **Scene** and **Effects** picker.
 
 ### Other people and things
+Add **ghost** or **shadow** after the verb for a pale see-through ghost (a spirit, a memory, another you) or a dark
+faceless silhouette: `[+mom enter ghost]`, `[+stranger appear shadow]`. Names like `+ghost`, `+spirit`,
+`+past_self`, `+shadow_figure` do it by themselves; `+crowd appear shadow` makes a whole crowd of silhouettes.
+(Words written in CAPITALS for emphasis are said as normal words; abbreviations like TV or NASA are still spelled.)
 ```
 [+mom enter] Mom?! What are you doing here?
 Mom: You forgot your lunch again.

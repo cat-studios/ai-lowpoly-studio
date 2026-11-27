@@ -320,6 +320,54 @@ ANIM_WORDS = {   # -> animation, used only when the brackets name no action of t
 }
 
 
+# ghost and shadow people (2026-11-27, from an eerie explainer Reel): pale see-through figures for spirits, memories,
+# other versions of you; flat dark silhouettes for faceless strangers. By a word after the verb, or by the name.
+STYLE_OPTIONS = {"ghost": "ghost", "ghostly": "ghost", "spirit": "ghost", "transparent": "ghost",
+                 "shadow": "shadow", "silhouette": "shadow", "dark": "shadow"}
+GHOST_NAMES = set("ghost ghosts spirit spirits phantom phantoms specter spectre apparition memory memories echo soul "
+                  "souls afterlife".split())
+GHOST_PHRASES = ("past_self", "future_self", "other_me", "other_self", "past_me", "future_me", "old_me", "younger_me")
+SHADOW_NAMES = set("shadow shadows silhouette silhouettes shade shades".split())
+FIGURE_WORDS = set("figure figures stranger strangers person man woman guy girl boy kid child someone".split())
+
+
+def cast_style(who, info=None, events=()):
+    """"ghost", "shadow" or None for a cast member: a style its events ask for, else its name ("ghost_mom",
+    "shadow_people", "past_self"), else its looks."""
+    for e in events:
+        if e.get("who") == who and e.get("style") in ("ghost", "shadow"):
+            return e["style"]
+    if (info or {}).get("style") in ("ghost", "shadow"):
+        return info["style"]
+    words = set(re.split(r"[_\s]+", str(who).lower()))
+    looks = set(re.findall(r"[a-z]+", str((info or {}).get("looks") or "").lower()))
+    if words & GHOST_NAMES or any(p in str(who).lower() for p in GHOST_PHRASES) \
+            or looks & {"ghost", "ghostly", "translucent"}:
+        return "ghost"
+    if words & SHADOW_NAMES or looks & {"silhouette", "shadowy", "faceless"}:
+        return "shadow"
+    return None
+
+
+def apply_styles(shots, cast):
+    """Every cast member gets its "style" (cast_style); a ghost or shadow that's only a name ("+ghost", "+shadow")
+    is a person - "shadow" is otherwise a thing word (NOT_PEOPLE). Changes `cast` in place."""
+    evs = [e for s in shots for e in s.get("events") or []]
+    for who, info in list((cast or {}).items()):
+        if not isinstance(info, dict):
+            continue
+        st = cast_style(who, info, evs)
+        if not st:
+            continue
+        info["style"] = st
+        rest = set(re.split(r"[_\s]+", who.lower())) - GHOST_NAMES - SHADOW_NAMES - {"self", "me", "past", "future",
+                                                                                     "other", "old", "younger"}
+        if info.get("type") != "person" and not (rest & GROUP_WORDS) and (
+                not rest or rest <= FIGURE_WORDS or cast_kind("_".join(rest)) == "person"):
+            info["type"] = "person"
+    return cast
+
+
 def _take_cast(tokens, marks, d):
     """Pull '+name verb [from_side] [mark]' groups out of the token list into d['events']."""
     rest, i = [], 0
@@ -360,6 +408,8 @@ def _take_cast(tokens, marks, d):
                 ev["to"] = o
             elif o.startswith("to:") and o[3:] in marks:
                 ev["to"] = o[3:]
+            elif o in STYLE_OPTIONS:          # "+mom enter ghost": she comes on as a ghost
+                ev["style"] = STYLE_OPTIONS[o]
             else:
                 break
             i += 1
@@ -446,6 +496,7 @@ def add_cast_plan(result, plan, skip=()):
         shot.setdefault("events", []).append(ev)
         _stage_for_events(shot, {})
     tidy_events(shots, cast)
+    apply_styles(shots, cast)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     result["cast"] = {k: v for k, v in cast.items() if k in used}
     return result
@@ -1401,6 +1452,7 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         s.pop("_set_cam", None)
     _merge_cutaway_beats(shots)
     tidy_events(shots, cast)
+    apply_styles(shots, cast)
     used = {e["who"] for s in shots for e in s.get("events", [])}
     return {"start": start,
             "shots": shots,

@@ -32,7 +32,7 @@ LIB = ROOT / "assets" / "anims"
 NOT_ACTIONS = set("""nya meow mew purr fast faster slow slowly quick quickly closer closerup closer_up close angle shot
 moon sun star stars shine shining glow glowing sparkle sparkly seed noodle hold holding omega sideside side_side loop
 boom bang zoom blink blinking drool drooling intense sound micro mid goofy dreamy eager sinister celebratory spoiler
-drop_spoiler whisper whispering whispers shout shouting yell yelling loud quiet quietly softly confused chaos
+drop_spoiler whisper whispering whispers shout shouting yell yelling loud quiet quietly softly confused chaos ghost ghostly shadow silhouette transparent
 celebratory""".split())
 
 # ---------------------------------------------------------------------------- the pose vocabulary

@@ -181,6 +181,7 @@ def prefetch_local(lines, cache_dir):
         voice = _normalize_voice(voice)
         if voice.get("engine") != "local":
             continue
+        text = speakable(text)                         # the same text tts() will ask for
         key = _cache_key(text, voice)
         raw = cache_dir / f"{key}.raw"
         if FRESH or (not (cache_dir / f"{key}.wav").exists() and not raw.exists()):
@@ -223,8 +224,25 @@ def sound_length(wav, ffmpeg, total):
         return total
 
 
+# Words written in capitals for emphasis ("going UP", "an EGG", "WHY?!") were read out letter by letter, like
+# abbreviations (the user, 2026-11-27). The voice gets them in lower case; the captions are unchanged. Real
+# abbreviations keep their capitals so they're still spelled out.
+SPELLED = set("""TV USA UK US EU UN NASA DNA RNA UFO UFOs AI PC CEO FBI CIA GPS CPU GPU USB WIFI LOL OMG BRB ASMR DIY
+FAQ ID IQ ATM ABC VIP RIP BBQ KO NPC HP XP RPG FPS MVP ETA PS OK OKAY ASAP IRL BTW TBH FYI LED LCD HD VR AR SOS SUV""".split())
+
+
+def speakable(text):
+    """The text the voice is given: words in capitals for emphasis -> lower case (kept: SPELLED abbreviations, "I")."""
+    def one(m):
+        w = m.group(0)
+        core = w.rstrip("'sS") if w.endswith(("'S", "'s")) else w
+        return w if core in SPELLED or w in SPELLED or len(w) < 2 else w.lower()
+    return re.sub(r"\b[A-Z][A-Z']*[A-Z]\b", one, str(text or ""))
+
+
 def tts(text, out_wav, voice, ffmpeg, cache_dir):
     """Speak one line -> wav, with optional extra pitch shift ("shift": 1.2). Results are cached."""
+    text = speakable(text)
     voice = _normalize_voice(voice)
     engine = voice.get("engine", "edge")
     if engine not in ENGINES:

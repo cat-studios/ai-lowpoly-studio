@@ -810,6 +810,68 @@ def note_focus(f, where):
             return
 
 
+STYLES = {
+    # pale, glowing, half see-through - spirits, memories, other versions of you; no shadow on the ground
+    "ghost": {"color": (0.86, 0.9, 1.0), "glow": 0.9, "alpha": 0.42, "ground_shadow": False},
+    # a flat near-black silhouette - faceless strangers, "them"; it stands on the ground like anyone
+    "shadow": {"color": (0.035, 0.035, 0.05), "glow": 0.0, "alpha": 0.94, "ground_shadow": True},
+}
+
+
+def styled(who, objs, style):
+    """Ghost / shadow people (autodirect.cast_style): one flat material over every mesh of this cast member (the studio
+    body, a VRoid actor, an imported model or a crowd - the silhouette is what reads), see-through where it asks."""
+    bpy = B.bpy
+    spec = STYLES[style]
+    m = bpy.data.materials.new(f"{style}_{who}")
+    try:
+        m.use_nodes = True
+    except Exception:
+        pass
+    bsdf = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    col = (*spec["color"], 1.0)
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = col
+        for name, v in (("Roughness", 1.0), ("Specular IOR Level", 0.0), ("Alpha", spec["alpha"]),
+                        ("Emission Strength", spec["glow"])):
+            if name in bsdf.inputs:
+                bsdf.inputs[name].default_value = v
+        em = bsdf.inputs.get("Emission Color") or bsdf.inputs.get("Emission")
+        if em is not None:
+            em.default_value = col
+    if spec["alpha"] < 1.0:
+        # blended, not dithered: the studio renders 1 EEVEE sample, and dithered see-through was a speckle of dots
+        for attr, val in (("surface_render_method", "BLENDED"), ("blend_method", "BLEND")):
+            try:
+                setattr(m, attr, val)
+            except Exception:
+                pass
+        for attr in ("use_transparency_overlap", "show_transparent_back"):
+            try:
+                setattr(m, attr, False)            # one clean layer, no tangle of inside faces showing through
+            except Exception:
+                pass
+    n = 0
+    for o in objs:
+        blob = o.name.startswith(("blob_shadow", "shadow_", "sprite_shadow"))
+        if blob:
+            if not spec["ground_shadow"]:
+                o.hide_render = True              # a ghost leaves no shadow on the ground
+            continue
+        if o.type != "MESH":
+            continue
+        me = o.data
+        me.materials.clear()
+        me.materials.append(m)
+        if not spec["ground_shadow"]:
+            try:
+                o.visible_shadow = False
+            except Exception:
+                pass
+        n += 1
+    print(f"[cast] {who}: {style} ({n} meshes)")
+
+
 def build(ns):
     global B
     B = ns
@@ -821,8 +883,11 @@ def build(ns):
         info = info if isinstance(info, dict) else {}
         if info.get("type") != "person" and any(B.speaker_of(s) == who for s in B.SHOTS):
             print(f"[cast] warning: {who} has lines but is a thing - things have no mouth, so it won't look like it talks")
+        before = set(B.bpy.data.objects.keys()) if info.get("style") in STYLES else None
         if info.get("type") == "person":
             animate_person(who, info, side)
         else:
             animate_thing(who, info, side)
+        if before is not None:                 # 👻 ghost / shadow person: everything just built for them
+            styled(who, [o for o in B.bpy.data.objects if o.name not in before], info["style"])
         side = -side
