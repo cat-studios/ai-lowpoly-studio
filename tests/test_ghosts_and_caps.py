@@ -41,5 +41,28 @@ class Capitals(unittest.TestCase):
         self.assertEqual(R.speakable("My DNA is 100% CAT"), "My DNA is 100% cat")
 
 
+class GhostScriptSlips(unittest.TestCase):
+    """From the first ghost test video (zz_test_ghosts): a second bracket group was spoken ("Past"), the label
+    "Past Lavender:" wasn't a speaker, the AI cast step added a half-named "past", [wide_eyes] was made a pose."""
+    def test_two_bracket_groups_and_a_named_label(self):
+        r = A.direct("[medium] Hi.\n[wide, scared] [+past_self appear ghost] Past Lavender: You forgot us!\n"
+                     "[closeup, wide_eyes] Oh.", "park", speakers={"lavender": "main"}, beat_words=4)
+        ghost = [s for s in r["shots"] if s.get("events")][0]
+        self.assertEqual(ghost["speaker"], "past_self")
+        self.assertEqual(ghost["line"], "You forgot us!")
+        self.assertEqual(ghost["camera"], "wide")
+        self.assertEqual(r["shots"][-1]["expression"], "surprised")
+        self.assertNotIn("want", r["shots"][-1])
+        r = A.add_cast_plan(r, {"cast": {"past": {"type": "person", "looks": "a ghost"}}, "events": []})
+        self.assertEqual(sorted(r["cast"]), ["past_self"])
+
+    def test_label_speaker(self):
+        sp = {"mom": "mom", "lavender": "main", "past self": "past_self", "past_self": "past_self"}
+        self.assertEqual(A.label_speaker("Ghost Mom", sp), "mom")
+        self.assertEqual(A.label_speaker("Past Lavender", sp), "past_self")
+        self.assertIsNone(A.label_speaker("Old Lady", sp))
+        self.assertIsNone(A.label_speaker("Warning", sp))
+
+
 if __name__ == "__main__":
     unittest.main()

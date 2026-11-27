@@ -297,7 +297,7 @@ NOT_PEOPLE = set("sun moon star stars cloud clouds rain storm wind lightning rai
                  "light shadow ghost_light clock alarm_clock tv phone robot_arm car bus truck van train plane".split())
 MOOD_WORDS = {   # -> expression
     **dict.fromkeys("excited joyful cheerful delighted glad thrilled giddy ecstatic playful".split(), "happy"),
-    **dict.fromkeys("shocked amazed startled stunned shook astonished gasp".split(), "surprised"),
+    **dict.fromkeys("shocked amazed startled stunned shook astonished gasp wide_eyes wide_eyed wideeyed".split(), "surprised"),
     **dict.fromkeys("mad furious annoyed grumpy frustrated irritated".split(), "angry"),
     **dict.fromkeys("worried nervous afraid terrified panicked frightened anxious".split(), "scared"),
     **dict.fromkeys("upset gloomy disappointed sorry heartbroken".split(), "sad"),
@@ -455,6 +455,8 @@ def add_cast_plan(result, plan, skip=()):
         who = re.sub(r"[^a-z0-9_]+", "", str(name).lower().replace(" ", "_"))[:24]
         if not who or not isinstance(info, dict) or flat(who) in skip:
             continue
+        if who not in cast and any(set(who.split("_")) < set(k.split("_")) for k in cast):
+            continue                         # "past" when the script has +past_self: the same one, half-named
         if set(who.split("_")) & GROUP_WORDS:
             # "crowd", "audience": a group of the user's imported people (or animals) - only when it can be built;
             # a made-up shape for "feline_army" was four boxes
@@ -1016,6 +1018,11 @@ def tidy_line(raw):
     b = re.match(r"^\s*([\[(])([^\])\[(]{0,160})([\])])", s)
     if b and b.group(1) + b.group(3) in ("[)", "(]"):           # opened one way, closed the other
         s = s[:b.start(1)] + "[" + b.group(2) + "]" + s[b.end(3):]
+    while True:     # "[wide, scared] [+past_self appear ghost] ..." - two groups; the second was spoken
+        g = re.match(r"^(\s*)\[([^\]]*)\]\s*\[([^\]]*)\]", s)
+        if not g:
+            break
+        s = g.group(1) + "[" + ", ".join(x for x in (g.group(2).strip(), g.group(3).strip()) if x) + "]" + s[g.end():]
     m = re.match(r"^(\s*(?:\[[^\]]*\]\s*)?)(.*)$", s, re.S)
     dirs, text = m.group(1), m.group(2)
     text = re.sub(r"^\+?([A-Za-z][\w '-]{0,30}?)\s*:\s*\+?\1\s*:\s*", r"\1: ", text, flags=re.I)
@@ -1032,6 +1039,44 @@ def tidy_line(raw):
     if extra:
         dirs = (dirs.rstrip()[:-1] + ", " if dirs.strip() else "[") + ", ".join(extra) + "] "
     return dirs + text
+
+
+LABEL_DROP = {"the", "my", "your", "old", "young", "little", "big"} | set(STYLE_OPTIONS)
+
+
+def label_speaker(label, speakers):
+    """The speaker a "Name:" label means. Exact first; else a label of two or more words that names a speaker with
+    her own name or a style word mixed in: "Past Lavender:" = past_self, "Ghost Mom:" = mom. Speaker names in the
+    label are dropped (her name), the rest must all be words of ONE speaker's name. None = not a speaker."""
+    if not speakers:
+        return None
+    l = re.sub(r"\s+", " ", str(label).strip().lower())
+    if l in speakers:
+        return speakers[l]
+    words = l.split()
+    if len(words) < 2:
+        return None
+    rest = [w for w in words if w not in speakers and w not in LABEL_DROP] or [w for w in words if w not in LABEL_DROP]
+    for want in (rest, [w for w in rest if w not in speakers]):
+        hits = {v for k, v in speakers.items() if want and all(w in re.split(r"[ _]+", k) for w in want)}
+        if len(hits) == 1:
+            return hits.pop()
+    return None
+
+
+def fix_labels(lines, speakers):
+    """Rewrite a label that label_speaker understands but isn't a speaker's own name ("Past Lavender:") to that
+    speaker's name, so beat cutting and the director both see it (it was cut into "Past" / "Lavender: ...")."""
+    out = []
+    for raw in lines:
+        head = re.match(r"^\s*(\[[^\]]*\]\s*)?", raw).group(0)
+        m = SPEAKER.match(raw[len(head):])
+        if m and m.group(1).strip().lower() not in speakers:
+            who = label_speaker(m.group(1), speakers)
+            if who:
+                raw = head + who.replace("_", " ") + ": " + raw[len(head) + m.end():]
+        out.append(raw)
+    return out
 
 
 def expand_beats_grouped(lines, n, speakers=None):
@@ -1130,9 +1175,14 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
     speakers = dict(speakers or {})
     brought = [ev["who"] for l in lines for ev in parse_directions(l, marks)[0].get("events", [])]
     for who in brought:
-        if cast_kind(who) == "person":     # "[+mom enter] ..." then "Mom: ..." - mom says that line
+        if cast_kind(who) == "person" or cast_style(who):   # "[+mom enter] ..." then "Mom: ..." - mom says it
             speakers.setdefault(who.replace("_", " "), who)
             speakers.setdefault(who, who)
+    for who in (cast or {}):               # cast people can say lines too: "Clerk: ..." or "store clerk: ..."
+        if ((cast or {})[who] or {}).get("type") != "thing":
+            speakers.setdefault(who.replace("_", " ").lower(), who)
+            speakers.setdefault(who.lower(), who)
+    lines = fix_labels(lines, speakers)
     pairs = expand_beats_grouped(lines, beat_words, speakers)
     lines, line_groups = [t for t, _ in pairs], [g for _, g in pairs]
     line_text = {}                         # beat group -> the whole script line (a pointed-at thing may be named later)

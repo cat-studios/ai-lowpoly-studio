@@ -109,13 +109,18 @@ def worker(lane):
         run_job(LANES[lane].get())
 
 
+# Windows: start child programs without a console window of their own (CREATE_NO_WINDOW; they share a hidden
+# console, so Blender / ffmpeg / Python under a job never flash up on the desktop).
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+
 def run_job(job):
     job.status, job.started = "running", time.time()
     logs.job_started(job)
     try:
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
         proc = subprocess.Popen(job.cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, encoding="utf-8", errors="replace")
+                                text=True, encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
         for line in proc.stdout:
             line = line.rstrip()
             if line.startswith("PROGRESS "):           # progress bar update, not shown in the log
@@ -1917,7 +1922,8 @@ class Handler(BaseHTTPRequestHandler):
                 if out.exists():
                     out.replace(VOICES / f"{arg}-{stamp()}.wav")
                 r = subprocess.run([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp),
-                                    "-ac", "1", "-ar", "48000", str(out)], capture_output=True, text=True)
+                                    "-ac", "1", "-ar", "48000", str(out)], capture_output=True, text=True,
+                                   creationflags=NO_WINDOW)
                 tmp.unlink(missing_ok=True)
                 if r.returncode != 0:
                     raise ValueError("could not read that audio file: " + r.stderr[-300:])
@@ -1978,7 +1984,9 @@ def restart_app():
     """Start a fresh copy of this server (same arguments), then let this one exit. The new copy waits for the port."""
     time.sleep(1.0)                                  # let the browser get its reply first
     logs.event("RESTART: starting a new copy of the app")
-    flags = (0x00000008 | 0x00000200) if os.name == "nt" else 0   # detached, own process group on Windows
+    # Windows: a hidden console + its own process group. NOT detached: a process with no console at all makes every
+    # console program it starts (job scripts, Blender, ffmpeg) open its own window on the desktop.
+    flags = (NO_WINDOW | 0x00000200) if os.name == "nt" else 0
     subprocess.Popen([sys.executable, str(WEB / "server.py")] + sys.argv[1:], cwd=ROOT,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      creationflags=flags, close_fds=True)

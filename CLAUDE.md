@@ -270,7 +270,7 @@ Open items:
   `blender_cast.build` notes the objects before each styled cast member and `styled()` gives every new mesh one
   flat material (`STYLES`: ghost = pale blue-white, emission 0.9, alpha 0.42 BLENDED - dithered was a speckle at 1
   sample - no ground shadow; shadow = near-black, opaque-ish, keeps its blob shadow). Works for the studio body, VRoid
-  actors, imported models, crowds. The writer is told (eerie / memory stories only). Storyboard `zz_check_ghosts`.
+  actors, imported models, crowds. The writer is told (eerie / memory stories only). Storyboard `zz_check_ghosts`. From the first production ghost video: `tidy_line` joins two leading bracket groups ("[wide, scared] [+past_self appear ghost] ..." - the second was spoken), `label_speaker` / `fix_labels` read "Past Lavender:" (her name or a style word + part of a speaker's name) as past_self, ghost-styled names count as speakers in the pre-scan, the AI cast step skips a half-named copy ("past" beside past_self), `wide_eyes` = surprised.
 - **Spelled-out words** (the user: "she speaks the letters of words"): words in capitals for emphasis ("an EGG",
   "going UP") were read as abbreviations. `run_episode.speakable` lower-cases them for the voice (`tts` and
   `prefetch_local`, so the cache key matches); `SPELLED` abbreviations (TV, NASA, DNA, OK...) keep their capitals.
@@ -1387,6 +1387,9 @@ render. CSS `.mw-*` in style.css (respects prefers-reduced-motion).
   security policy - report it, don't work around it.
 - `Stop-Process` on the user's processes was refused by the auto-mode classifier until the user said so. Ask first.
 - Each set build runs in its own process, so a batch picks up code changes made mid-batch.
+- Console windows popping up on the desktop: a server with NO console (the old `restart_app` used DETACHED_PROCESS)
+  makes every console child (job scripts, Blender, ffmpeg) open its own window. Jobs now start with
+  `server.NO_WINDOW` (CREATE_NO_WINDOW) and a restart gets a hidden console instead of none.
 
 **ffmpeg**
 - `blend` multiply must run on `gbrp` inputs (YUV turned everything green); `bandpass` needs `width_type=h`
