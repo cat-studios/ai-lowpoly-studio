@@ -50,9 +50,14 @@ def find_server(url):
 
 def _options(url, node, field):
     try:
-        return _json(url, f"/object_info/{node}")[node]["input"]["required"][field][0]
+        spec = _json(url, f"/object_info/{node}")[node]["input"]["required"][field]
     except Exception:
         return []
+    if isinstance(spec[0], list):
+        return spec[0]
+    if len(spec) > 1 and isinstance(spec[1], dict):       # newer nodes: ["COMBO", {"options": [...]}]
+        return list(spec[1].get("options") or [])
+    return []
 
 
 def image_models(url):

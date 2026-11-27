@@ -2755,6 +2755,8 @@ const S_TABS = {
       ["comfy.cfg", "CFG", "range", { min: 2, max: 12, step: 0.5 }, "For classic checkpoints. Z-Image Turbo always uses CFG 1."],
       ["comfy.texture_size", "Texture size (px)", "select", { options: [64, 128, 256] }, "Smaller = more N64."],
       ["comfy.style", "Style words added to every prompt", "text"],
+      ["model3d.on", "🧊 Make real 3D models on this PC (TRELLIS 2)", "bool", {}, "A prop that isn't in your imported packs or the prop library is drawn, then turned into a real 3D model by TRELLIS 2 in ComfyUI (about 1-3 minutes each, on your graphics card). It's saved in Assets → Imported → Made 3D and reused in every later video. Off, or when ComfyUI / the TRELLIS 2 files aren't there = the AI builds it from simple shapes, as before."],
+      ["model3d.faces", "3D model detail (faces)", "range", { min: 500, max: 12000, step: 500 }, "Fewer = blockier, more N64; more = smoother. The studio's own props have a few hundred."],
     ]],
   ]],
 };

@@ -643,6 +643,13 @@ Easiest: Characters page → import a `.vrm`. By hand:
   PC. The status dot shows the key's state and the credit used. **Most to spend a day** (default $2, 0 = no limit)
   caps the cloud: once today's calls have cost that much, local AI does the work until midnight - idle auto-make
   included. Settings shows today's spending; you can also set a limit on the key itself at openrouter.ai.
+- **Real 3D models made on this PC** (Settings → AI tools → *🧊 Make real 3D models on this PC*): when a video needs a
+  thing that isn't in your imported packs or the prop library, the studio draws it with ComfyUI and turns the drawing
+  into a low-poly 3D model with **TRELLIS 2** (in ComfyUI, on your graphics card - a few minutes each). It's saved in
+  Assets → Imported → **Made 3D** and reused in every later video. Needs the TRELLIS 2 files in ComfyUI's models
+  folder (trellis_2_int8_convrot, dino_v3_L_naf_fp32, trellis_2_shape_vae_bf16, trellis_2_texture_vae_bf16,
+  birefnet - ComfyUI's "Pixal3D & TRELLIS.2: Image to Model" template lists them). Without them, or switched off, the
+  AI builds things from simple shapes as before. *3D model detail* sets how many faces (fewer = blockier).
 Everything still works without them (except videos in other languages and ComfyUI "Required" mode), just with
 simpler results.
 

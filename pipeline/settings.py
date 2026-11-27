@@ -120,6 +120,8 @@ DEFAULTS = {
                "extra_hashtags": "#catgirl #animation #lowpoly"},
     # ComfyUI: "required" = always texture sets (pictures + floor + walls/sky), "auto" = only when a set
     # has picture props, "off" = never. ComfyUI Desktop listens on 8666 (comfy.find_server also tries 8188...)
+    # real 3D models made on this PC (model3d.py): a drawing -> TRELLIS 2 in ComfyUI -> a low-poly GLB in "Made 3D"
+    "model3d": {"on": True, "faces": 3000},
     "comfy": {"mode": "auto", "url": "http://127.0.0.1:8666", "checkpoint": "", "steps": 20, "cfg": 6.5,
               "texture_size": 128, "style": "low poly retro game texture, simple shapes, flat colors"},
 }

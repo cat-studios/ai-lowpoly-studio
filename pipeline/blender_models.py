@@ -34,13 +34,55 @@ def load_model(path, fmt):
                 bpy.data.objects.remove(o, do_unlink=True)
             else:
                 bpy.context.scene.collection.objects.link(o)
+    elif fmt in ("glb", "gltf"):
+        bpy.ops.import_scene.gltf(filepath=path)
     else:
         raise RuntimeError(f"{fmt} files can't be loaded by Blender (convert to OBJ or FBX first)")
     new = [o for o in bpy.data.objects if o.name not in before and o.name in bpy.context.scene.objects]
+    for o in [o for o in new if o.type in ("CAMERA", "LIGHT")]:     # a GLB can carry its own camera / lights too
+        bpy.data.objects.remove(o, do_unlink=True)
+        new.remove(o)
+    if fmt in ("glb", "gltf"):
+        vertex_colour_materials(new)
     recolour_grey(new, path)
     fix_invisible(new, path)
     names = {o.name for o in new}
     return [o for o in new if o.parent is None or o.parent.name not in names]
+
+
+def vertex_colour_materials(objs, glow=0.35):
+    """GLB models from model3d.py (TRELLIS 2 + PaintMesh) carry their colours on the mesh corners, not in a texture:
+    a flat material reads that colour attribute (lit by the sun plus a little glow of the same colour, like her own
+    cartoon look). Meshes with a real texture keep the material the GLB brought."""
+    for o in objs:
+        if o.type != "MESH":
+            continue
+        me = o.data
+        attrs = getattr(me, "color_attributes", None)
+        if not attrs or not len(attrs):
+            continue
+        mats = [m for m in me.materials if m]
+        textured = any(n.type == "TEX_IMAGE" and n.image for m in mats if m.node_tree for n in m.node_tree.nodes)
+        if textured:
+            continue
+        m = bpy.data.materials.new(f"{o.name}_colours")
+        try:
+            m.use_nodes = True
+        except Exception:
+            pass
+        nt = m.node_tree
+        bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None) or nt.nodes.new("ShaderNodeBsdfPrincipled")
+        ca = nt.nodes.new("ShaderNodeVertexColor")
+        ca.layer_name = attrs[0].name
+        nt.links.new(ca.outputs["Color"], bsdf.inputs["Base Color"])
+        for name, v in (("Roughness", 0.9), ("Specular IOR Level", 0.15), ("Emission Strength", glow)):
+            if name in bsdf.inputs:
+                bsdf.inputs[name].default_value = v
+        em = bsdf.inputs.get("Emission Color") or bsdf.inputs.get("Emission")
+        if em is not None:
+            nt.links.new(ca.outputs["Color"], em)
+        me.materials.clear()
+        me.materials.append(m)
 
 
 def brighten_person(objs, glow=0.45, lift=1.25, log=print):

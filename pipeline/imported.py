@@ -36,7 +36,7 @@ INDEX = LIB / "index.json"
 UPLOADS = LIB / ".uploads"
 PROBE = Path(__file__).resolve().parent / "imported_probe.py"
 BLENDER = os.environ.get("BLENDER", r"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe")
-MODEL_FORMATS = {".obj": "obj", ".fbx": "fbx", ".blend": "blend", ".mdl": "mdl"}
+MODEL_FORMATS = {".obj": "obj", ".fbx": "fbx", ".blend": "blend", ".mdl": "mdl", ".glb": "glb"}
 TEXTURE_EXT = {".mtl", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".dds"}   # textures and OBJ material libraries
 # Source-engine models need these companion files next to the .mdl (".dx90.vtx" also ends in .vtx)
 COMPANION_EXT = {".vvd", ".vtx", ".phy", ".ani", ".lmp"}    # .lmp: Quake's palette.lmp
@@ -383,6 +383,48 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
     return pack
 
 
+MADE_PACK = "made_3d"          # models the studio made itself (model3d.py: a drawing -> TRELLIS 2 -> GLB)
+
+
+def add_made(kind, glb, looks="", log=print):
+    """A model the studio made (model3d.make) joins the library in its own pack, "Made 3D": measured and pictured
+    like an import, so it's matched by name, sized, look-checked and reused in every later video. Returns the model
+    record (status "ok"), or None when Blender couldn't measure it."""
+    glb = Path(glb)
+    dest = PACKS / MADE_PACK
+    dest.mkdir(parents=True, exist_ok=True)
+    stem = slug(kind)[:40] or "thing"
+    target, n = dest / f"{stem}.glb", 2
+    while target.exists():
+        target, n = dest / f"{stem}_{n}.glb", n + 1
+    shutil.copyfile(glb, target)
+    drawing = glb.with_suffix(".drawing.png")
+    if drawing.exists():
+        shutil.copyfile(drawing, target.with_suffix(".drawing.png"))
+    m = _probe([(target, "glb")], log).get(str(target), {})
+    if not m.get("ok"):
+        log(f"[3d] Blender couldn't measure the made model for '{kind}': {m.get('error')}")
+        return None
+    rel = target.relative_to(dest)
+    rec = {"id": f"{MADE_PACK}_{target.stem}_{hashlib.md5(str(rel).encode('utf-8')).hexdigest()[:6]}",
+           "name": kind.replace("_", " "), "file": str(target.relative_to(ROOT)).replace("\\", "/"), "format": "glb",
+           "folder": "", "size_mb": round(target.stat().st_size / 1048576, 2),
+           "tags": sorted(words(kind) | words(looks)), "description": str(looks or "")[:160],
+           "height": m["height"], "width": m["width"], "depth": m["depth"], "status": "ok", "made": True,
+           "hash": file_hash(target)}
+    make_previews([rec], log)
+    idx = load_index()
+    pack = next((p for p in idx["packs"] if p["id"] == MADE_PACK), None)
+    if pack is None:
+        pack = {"id": MADE_PACK, "name": "Made 3D (made by the studio on this PC)", "license": "Made by the studio",
+                "source": "model3d.py (TRELLIS 2 in ComfyUI)", "added": time.time(), "skipped": 0, "models": []}
+        idx["packs"].append(pack)
+    pack["models"].append(rec)
+    save_index(idx)
+    log(f"[3d] '{kind}' is in your library now (Assets -> Imported -> Made 3D)")
+    return rec
+
+
 def delete_pack(pid):
     idx = load_index()
     pack = next((p for p in idx["packs"] if p["id"] == pid), None)
@@ -458,7 +500,7 @@ def known_hashes(idx):
     return out
 
 
-FORMAT_PREF = ["obj", "fbx", "blend", "mdl"]          # which copy of a model saved in several formats is kept
+FORMAT_PREF = ["obj", "fbx", "blend", "glb", "mdl"]          # which copy of a model saved in several formats is kept
 
 
 def find_duplicates():

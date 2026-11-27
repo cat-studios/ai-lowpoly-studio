@@ -223,6 +223,28 @@ Open items:
   eyes in a close-up (`overlays.CLOSE` cameras put it at 0.62 H). A small room's wide (6 m) / tiny (11 m)
   cameras stood past the floor's edge - a white band at the bottom (popcorn v2 shots 4, 20): `blender_sets.floor_indoor`
   runs the floor `FRONT_APRON` 14 m on in front of the room (storyboard `zz_check_apron`: floor to the bottom).
+- **Local 3D models** (the user, 2026-11-27: "generate 3D models with a local option"; they chose TRELLIS 2 and
+  OK'd the download): `pipeline/model3d.py` - `draw` (Z-Image, `DRAW_PROMPT`, 1024 px, plain white background) ->
+  `_upload` (/upload/image) -> `graph()` = ComfyUI's own "Pixal3D & TRELLIS.2: Image to Model" template, TRELLIS 2
+  path only (RemoveBackground BiRefNet -> ImageCropToMask -> Trellis2Conditioning (dino_v3) -> structure / shape /
+  texture KSamplers with the template's CFGOverride + RescaleCFG + ModelSamplingSD3), no upsample stage by default
+  (`upsample=False`: the 512-voxel shape is plenty), then `RemeshMesh` (solid, `REMESH` 160, smooth 2 - straight
+  decimation of the raw mesh shattered the first duck into loose triangles) -> `DecimateMesh` (`FACES` 3000) ->
+  `PaintMesh` (voxel colours onto the corners) -> `SaveGLB`; `run` polls /history and fetches the GLB (`_find_file`).
+  The files (Comfy-Org repackages, ~8.9 GB) are in ComfyUI Desktop's shared models folder
+  (`AppData/Local/Comfy-Desktop/ComfyUI-Shared/models`): `FILES`; `missing_files` / `ready`. Newer nodes list choices
+  as `["COMBO", {"options": [...]}]` - `comfy._options` reads both; dynamic-combo sub-inputs go in as
+  `"sign_mode.fill"` etc. (all required in the API format; a 400 names the missing ones).
+  `imported.add_made` puts the GLB in pack `made_3d` ("Made 3D", `MADE_PACK`): measured (`_probe`), pictured, matched
+  and reused like any import; `.glb` is a `MODEL_FORMATS` format and `blender_models.load_model` imports it
+  (`import_scene.gltf`; a GLB's cameras/lights dropped) with `vertex_colour_materials` (the colour attribute -> base
+  colour + 0.35 emission, flat like her). `propgen.made_3d` runs in `design` after imported / library / preview and
+  before the AI's shapes (not for signs); Settings `model3d {on (default True), faces}` (AI tools, under ComfyUI).
+  First duck: 9 min (cold model load, upsample stage on) and shattered. With remesh + no upsample: TRELLIS 2 28 s
+  (warm), the whole thing (drawing + TRELLIS + measure + picture) 73 s for a fire hydrant; storyboard
+  `zz_check_made3d`: a whole, bright, faceted rubber duck at 0.3 m as a cutaway and beside her. `made_3d` returns
+  it through `imported_def` so it gets the real height (hydrant 1.0 -> 0.75 m) and size words like any import.
+  Not run in production yet (same PC, same ComfyUI - the files are already there).
 - **Her name** (production "My name is Lila"; earlier videos "I'm Luna", "I'm Cat"): the writer is told
   `llm.name_rule(character)` - the Name box on the Characters page is her only name (the user: "pull her name from the
   character box"; they renamed "Catgirl" to her real name) - and `fix_self_names` rewrites "my name is X" /

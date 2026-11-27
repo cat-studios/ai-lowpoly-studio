@@ -727,6 +727,36 @@ def _save(d):
     (LIB / f"{d['kind']}.json").write_text(json.dumps(d, indent=1), encoding="utf-8")
 
 
+def made_3d(kind, looks, comfy_cfg, log=print):
+    """Settings -> AI tools -> "Make real 3D models on this PC" (model3d.py: Z-Image draws it, TRELLIS 2 makes it 3D):
+    a new prop becomes a low-poly GLB in the "Made 3D" pack and is used like an imported model - this time and every
+    later time (imported models come first). None = off, ComfyUI / TRELLIS 2 missing, or it failed: shapes instead."""
+    try:
+        import settings as S
+        on = (S.load_settings().get("model3d") or {}).get("on", False)
+    except Exception:
+        on = False
+    if not on or not comfy_cfg or _preview():
+        return None
+    import tempfile
+    import imported
+    import model3d
+    faces = int((S.load_settings().get("model3d") or {}).get("faces", model3d.FACES))
+    with tempfile.TemporaryDirectory() as tmp:
+        log(f"[3d] making a real 3D model of '{kind}' on this PC (a drawing, then TRELLIS 2 - a minute or two)")
+        glb = model3d.make(kind, looks, comfy_cfg, Path(tmp) / f"{kind}.glb", faces=faces, log=log)
+        rec = imported.add_made(kind, glb, looks, log) if glb else None
+    if not rec:
+        return None
+    d = imported_def(kind, looks, "", log)     # the same path as any imported model: its real height, tiny/giant
+    if d and (d.get("model") or {}).get("id") == rec["id"]:
+        return dict(d, made_3d=True)
+    for pack in imported.packs():
+        if pack["id"] == imported.MADE_PACK:
+            return dict(imported.match_model(pack, rec, kind, looks), made_3d=True)
+    return None
+
+
 def imported_def(kind, looks="", setting="", log=print):
     """A real imported model (assets/imported) for `kind`, checked BEFORE anything is generated. None if no match."""
     try:
@@ -811,6 +841,9 @@ def design(kind, looks, setting="", ollama=None, log=print, save=True, comfy_cfg
         d["preview"] = True
         return d
     tpl = template_for(kind, looks)
+    made = made_3d(kind, looks, comfy_cfg, log) if not (tpl and tpl[0] == "sign") else None
+    if made:                                   # a real 3D model made on this PC (model3d.py): it's in the library now
+        return made
     if ollama and not (tpl and tpl[0] == "sign"):      # a sign needs no AI shapes: its template is the whole design
         import llm
         user = (f"Object: {kind.replace('_', ' ')}\nWhat it looks like: {looks or kind.replace('_', ' ')}\n"
