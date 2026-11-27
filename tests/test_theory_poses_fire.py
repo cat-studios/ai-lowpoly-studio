@@ -75,6 +75,19 @@ class Fire(unittest.TestCase):
         self.assertEqual(got, [None, ["window"], ["window", "car"], None])
         self.assertIn("embers", r["shots"][1]["particles"])
 
+    def test_production_fire_ghost_script(self):
+        # zz_test_fire_ghost as first directed: windows -> a generic fire, "on fire!" celebrated, the lie-down broke
+        r = A.direct("[medium] Hi.\n[wide, scared] Wait... the windows are on fire!\n"
+                     "[fire: off] [medium] The fire just... stopped.\n"
+                     "[medium] So I lay down on the bed and finally slept.", "park", beat_words=4)
+        s = r["shots"]
+        self.assertEqual(s[1]["fire"], ["window"])
+        self.assertNotIn("celebrate", [x["action"] for x in s])
+        self.assertNotIn("embers", s[3].get("particles") or [])
+        lie = [x for x in s if "bed" in x["line"] or "slept" in x["line"] or "lay" in x["line"]]
+        self.assertTrue(all(x["action"] == "lie_down" and x.get("on") == "bed" for x in lie))
+        self.assertNotIn("confetti", str(lie))
+
     def test_fire_things(self):
         self.assertEqual(R.fire_height("campfire"), 0.8)
         self.assertIsNone(R.fire_height("fire_truck"))

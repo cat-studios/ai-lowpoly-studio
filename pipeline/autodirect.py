@@ -871,17 +871,25 @@ def low_poses(shots):
     """Lying down / kneeling: a close camera aimed at standing head height loses her - medium instead, and a lie
     down on a line that names a bed / sofa lies ON it (Blender finds the set's nearest one)."""
     # a pose holds for the whole script line: she lay down on its first beat and stood straight up at the next cut
+    # ("finally slept." celebrated with confetti in the middle of lying down; "I knelt" turned sad and stood up)
     for k, s in enumerate(shots):
         g = s.get("beat_group")
-        if s.get("action") in LOW_POSES and g is not None:
+        if s.get("action") in LOW_POSES and g is not None and (k == 0 or shots[k - 1].get("beat_group") != g
+                                                               or shots[k - 1].get("action") not in LOW_POSES):
+            line = [t for t in shots[k:] if t.get("beat_group") == g]
+            on = s.get("on") or next((m.group(1).lower() for t in line for m in [LIE_ON_WORDS.search(t.get("line") or "")]
+                                      if m), None) if s["action"] == "lie_down" else None
+            if on:
+                s["on"] = on
             hold = "kneel" if s["action"] == "kneel_place" else s["action"]
-            for t in shots[k + 1:]:
-                if t.get("beat_group") != g:
+            for t in line[1:]:
+                if t.get("cutaway") or t.get("action") in catalog.MOVE_ANIMS:
                     break
-                if t.get("action") in (None, "idle", "nod", "think", "shake_head") and not t.get("cutaway"):
-                    t["action"] = hold
-                    if "on" in s:
-                        t["on"] = s["on"]
+                t["action"] = hold
+                if on:
+                    t["on"] = on
+                if t.get("particles") and set(t["particles"]) <= FESTIVE_FX:
+                    t.pop("particles")
     for s in shots:
         if s.get("action") not in LOW_POSES:
             continue
@@ -914,7 +922,8 @@ def fire_of(text):
         if w in FIRE_NOT:
             return None                   # "my heart is on fire": a feeling, not flames
         if w and w not in FIRE_THINGS_NOT:
-            return w
+            # "the windows are on fire" -> window (the set's props are named in the singular)
+            return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith(("ss", "us", "is")) else w
     return "here" if FIRE_HERE.search(text or "") else None
 
 
@@ -1440,9 +1449,13 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
             action = action_of(text)                 # the words say what she does
         elif mood in ("neutral", "happy") and not starts_line and shots \
                 and shots[-1].get("beat_group") == line_groups[i] \
-                and shots[-1].get("expression") in ("angry", "surprised", "scared", "sad"):
-            # the rest of an emotional line ("Fine. I'll hiss back." ... "Hsssss!") keeps its feeling
+                and (shots[-1].get("expression") in ("angry", "surprised", "scared", "sad")
+                     or shots[-1].get("action") in ("angry", "surprised", "scared", "sad")):
+            # the rest of an emotional line ("Fine. I'll hiss back." ... "Hsssss!") keeps its feeling - also when
+            # "[scared]" set her action and left the face neutral ("Wait... the windows are" | "on fire!" celebrated)
             action, expr = shots[-1]["action"], shots[-1]["expression"]
+            if expr == "neutral" and action in catalog.EXPRESSIONS:
+                expr = action
             if action in catalog.MOVE_ANIMS:
                 action = "idle"
         if mood == "happy" and action == "wave":
@@ -1483,8 +1496,10 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
                 shot.update(camera=cb[0], move=cb[1])
         hook_cam = shot.get("camera") if i == 0 and opening == "hook" and shot.get("move") == "push_in" else None
         fire_d = d.pop("fire", None)
-        if not fire_d and fire_of(text):
-            fire_d = [fire_of(text)]
+        # read the whole script line once, on its first beat: beats cut "the windows are" | "on fire!" apart
+        whole = line_text.get(line_groups[i], raw) if line_groups[i] is not None else raw
+        if not fire_d and starts_line and fire_of(re.sub(r"\[[^\]]*\]", " ", whole)):
+            fire_d = [fire_of(re.sub(r"\[[^\]]*\]", " ", whole))]
         for f in fire_d or []:              # what burns carries on from shot to shot until "[fire: off]"
             words = f.split()
             if f in FIRE_OFF:
@@ -1540,7 +1555,9 @@ def direct(script, set_name="cafe", start=None, cast=None, scene_policy="reuse",
         if cur_set != set_name:
             shot["set"] = cur_set
         if "particles" not in shot:
-            fx = particles_for(text)
+            # embers come with real fire now (fire_pass): "The fire just... stopped." rained embers after [fire: off]
+            fx = [f for f in particles_for(text) or []
+                  if f != "embers" or re.search(r"\b(lava|embers?|volcano\w*)\b", text, re.I)]
             if fx:
                 shot["particles"] = fx
         # balloons + floating: she gets the balloons, lifts off, stays up, comes down
