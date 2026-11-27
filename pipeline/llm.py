@@ -117,9 +117,138 @@ def _chat_once(url, payload, timeout=300):
         return _req(url, "/api/chat", payload, timeout=timeout)
 
 
+OPENROUTER = "https://openrouter.ai/api/v1"
+OR_TIMEOUT = 120           # seconds an OpenRouter answer may take before this PC's Ollama does it instead
+OR_RETRY = 300             # after a failure (no credit, rate limit, down) OpenRouter is left alone this long
+OR_HEADERS = {"X-Title": "Low Poly Studio"}     # shown on openrouter.ai's activity page; nothing about the user
+
+
+import contextlib
+import contextvars
+
+_JOB = contextvars.ContextVar("ai_job", default="text")
+JOBS = ("text", "vision", "design")      # writing / picture checks / 3D prop design (Settings -> AI tools)
+
+
+@contextlib.contextmanager
+def job(kind):
+    """Calls inside count as this kind of AI job (propgen.design_call: "design") for the local / cloud choice."""
+    tok = _JOB.set(kind)
+    try:
+        yield
+    finally:
+        _JOB.reset(tok)
+
+
+class LocalOff(ConnectionError):
+    """Local AI is switched off in Settings (an OSError, so callers treat it like Ollama being offline)."""
+
+
+def ai_cfg():
+    try:
+        import settings as S
+        c = S.load_settings()
+    except Exception:
+        return {"local": True, "cloud": False}, {}
+    return c.get("ai") or {}, c.get("openrouter") or {}
+
+
+def local_on():
+    return (ai_cfg()[0]).get("local", True) is not False
+
+
+def cloud_model(kind, o):
+    """The OpenRouter model for a job: its own pick, else (3D design) the writing model."""
+    m = str(o.get(f"{kind}_model" if kind != "text" else "model") or "").strip()
+    return m or (str(o.get("model") or "").strip() if kind == "design" else "")
+
+
+def _openrouter_for(kind):
+    """(key, model) when cloud AI is on (Settings -> AI tools), it does this job, has a key and a model, and that
+    model hasn't just failed; else None (local AI does it, as before)."""
+    a, o = ai_cfg()
+    key = str(o.get("key") or "").strip()
+    model = cloud_model(kind, o)
+    if not (a.get("cloud") and key and o.get(kind) and model):
+        return None
+    if time.time() - _down_since("openrouter:" + model) < OR_RETRY:
+        return None
+    return key, model
+
+
+def _image_url(b64):
+    mime = "image/jpeg" if b64.startswith("/9j/") else "image/webp" if b64.startswith("UklGR") else "image/png"
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+
+
+def openrouter_payload(payload, model):
+    """An Ollama /api/chat payload -> OpenRouter's (OpenAI-style) chat request: pictures become data: URLs."""
+    msgs = []
+    for m in payload.get("messages") or []:
+        imgs = m.get("images") or []
+        content = [{"type": "text", "text": m.get("content", "")}] + [_image_url(b) for b in imgs] if imgs             else m.get("content", "")
+        msgs.append({"role": m.get("role", "user"), "content": content})
+    out = {"model": model, "messages": msgs, "stream": False,
+           "temperature": float((payload.get("options") or {}).get("temperature", 0.8))}
+    if payload.get("format") == "json":
+        out["response_format"] = {"type": "json_object"}
+    return out
+
+
+def _or_post(key, body, timeout=OR_TIMEOUT):
+    req = urllib.request.Request(OPENROUTER + "/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
+                                          **OR_HEADERS})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def openrouter_chat(key, model, payload):
+    """Ask OpenRouter; answers in Ollama's shape ({"message": {"content": ...}}) so every caller stays the same."""
+    body = openrouter_payload(payload, model)
+    try:
+        r = _or_post(key, body)
+    except urllib.error.HTTPError as exc:          # a model without JSON mode: ask again without it
+        if exc.code != 400 or "response_format" not in body:
+            raise
+        r = _or_post(key, {k: v for k, v in body.items() if k != "response_format"})
+    if r.get("error"):
+        raise ValueError(str((r["error"] or {}).get("message") or r["error"])[:200])
+    choice = (r.get("choices") or [{}])[0]
+    text = (choice.get("message") or {}).get("content") or ""
+    if not text.strip():
+        raise ValueError(f"empty answer ({choice.get('finish_reason') or 'no reason given'})")
+    return {"message": {"content": text}}
+
+
+def _or_why(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        why = {401: "the key isn't valid", 402: "out of credit (top up on openrouter.ai)",
+               403: "the key isn't allowed to use this model", 404: "no such model",
+               429: "rate limit reached"}.get(exc.code)
+        if why:
+            return why
+    return f"{exc.__class__.__name__}: {str(exc)[:80]}"
+
+
 def _chat(url, payload, has_images=False):
-    """POST /api/chat - on the big text server when it's set up for all writing (falls back to `url` if it can't
-    be reached or doesn't have the model: it is never asked to download one)."""
+    """POST /api/chat - on OpenRouter when Settings -> AI tools sends this kind of call there, else on the big text
+    server when it's set up for all writing; whatever fails falls back to `url` (this PC's Ollama, or the big server
+    for 3D design) with the caller's own model, so a video never stops because an online service didn't answer."""
+    kind = "vision" if has_images else _JOB.get()
+    orr = _openrouter_for(kind)
+    why = ""
+    if orr:
+        try:
+            return openrouter_chat(orr[0], orr[1], payload)
+        except (OSError, TimeoutError, ValueError) as exc:
+            _mark_down("openrouter:" + orr[1], time.time())
+            why = _or_why(exc)
+            print(f"[ai] cloud AI ({orr[1]}) failed - {why} - "
+                  + (f"using local AI for the next {OR_RETRY // 60} min" if local_on() else "local AI is off"))
+    if not local_on():
+        raise LocalOff(f"cloud AI failed ({why}) and local AI is switched off (Settings -> AI tools)" if why else
+                       "local AI is switched off and cloud AI isn't set up for this job (Settings -> AI tools)")
     rem = _remote_for(url, has_images)
     if rem:
         p = dict(payload, model=rem[1]) if rem[1] else payload

@@ -2685,7 +2685,22 @@ const S_TABS = {
     ]],
   ]],
   ai: ["🤖 AI tools", [
-    ["Ollama (script & title writing)", [
+    ["🧠 Which AI to use", [
+      ["ai.local", "🖥 Local AI - Ollama on this PC (and the big model server)", "switch", {}, "Free and private: nothing leaves your network. Off = never used, not even when the cloud fails. Press 💾 Save settings to apply."],
+      ["ai.cloud", "☁️ Cloud AI - OpenRouter (Gemini, Claude, GPT…)", "switch", {}, "Online models - usually smarter, paid per use from your OpenRouter credit. What it works on (scripts, check pictures) is sent to OpenRouter and the model's company. With both on, the cloud does the jobs ticked below and local AI takes over whenever it fails (no credit, a limit, offline). Press 💾 Save settings to apply."],
+      ["ai.summary", "", "aisummary"],
+    ]],
+    ["☁️ Cloud AI (OpenRouter)", [
+      ["openrouter.key", "OpenRouter API key", "password", {}, "openrouter.ai → sign in → Keys → Create key, then add credit under Credits. You can give the key a spending limit there. One key covers Gemini, Claude, GPT and the rest - no separate Google key needed."],
+      ["openrouter.check", "", "orcheck"],
+      ["openrouter.text", "Writing - scripts, titles, ideas, sets, cast, translations, captions", "bool"],
+      ["openrouter.model", "Model for writing", "ormodel", {}, "Price = dollars per million tokens in / out (a script is a few thousand). 🆓 = free (daily limits)."],
+      ["openrouter.vision", "Picture checks - props, sets, covers, the check after each render", "bool", {}, "The biggest win: the local picture model is small and often misjudges props."],
+      ["openrouter.vision_model", "Model for pictures", "ormodel", { vision: true }, "Only models that can see pictures (👁) are listed."],
+      ["openrouter.design", "3D prop & explainer design", "bool"],
+      ["openrouter.design_model", "Model for 3D design", "ormodel", { first: "Same as the writing model" }],
+    ]],
+    ["🖥 Local AI (Ollama)", [
       ["ollama.url", "Server URL", "text"],
       ["ollama.model", "Default model", "ollamapick", { from: "ollama.url" }, "The models your Ollama has (🔄 after changing the address)."],
       ["facts.check", "Check the facts in Quick facts & Myth or fact videos", "bool", {}, "Before rendering, each fact the video states is looked up on Wikipedia and checked by the local model. A wrong one shows as a warning on the video's ⚠️ check. Needs Ollama; skipped if it can't run."],
@@ -2760,6 +2775,7 @@ async function pageSettings() {
     // only the 🌙 switch turns auto-make on/off: a page opened earlier must not put back an old on/off
     try { const cur = await api("GET", "/api/idle"); st.idle = { ...(st.idle || {}), on: cur.on }; } catch {}
     META.settings = await api("PUT", "/api/settings", st);
+    document.dispatchEvent(new Event("settings-saved"));
   };
   $("#s-save").onclick = guard(async () => { await save(); toast("Settings saved"); });
   $("#s-restart").onclick = guard(async () => {
@@ -2849,6 +2865,11 @@ function drawSettingsTab(st) {
     if (type === "range") { input = `<input type="range" data-key="${key}" min="${o.min}" max="${o.max}" step="${o.step}" value="${v}">`; val = `<span class="val mono">${v}</span>`; }
     else if (type === "bool") input = `<label class="check"><input type="checkbox" data-key="${key}" ${v ? "checked" : ""}> on</label>`;
     else if (type === "switch") input = `<label class="switch"><input type="checkbox" data-key="${key}" data-now="1" ${v ? "checked" : ""}><span class="sw"></span><b class="sw-word">${v ? "ON" : "OFF"}</b></label>`;
+    else if (type === "aisummary") return `<div id="ai-summary" class="idle-live small">${aiSummary(st)}</div>`;
+    else if (type === "orcheck") return `<div class="row small" style="gap:8px;align-items:center;margin:-4px 0 8px"><span id="or-check" class="muted">…</span><button type="button" id="or-recheck" class="ghost small" title="Check the key again">🔄</button></div>`;
+    else if (type === "ormodel") input = `<div class="or-pick"><input type="search" class="or-q" placeholder="🔎 search, e.g. gemini, claude, free" style="margin-bottom:4px">
+        <select data-key="${key}" data-async="ormodel" ${o.vision ? 'data-vision="1"' : ""} data-first="${esc(o.first || "")}"><option value="${esc(v)}">${esc(v || o.first || "Pick a model")}</option></select>
+        <div class="or-info muted small" style="margin-top:4px"></div></div>`;
     else if (type === "idlelive") return `<div id="idle-live" class="idle-live small">${idleText(IDLE)}</div>`;
     else if (type === "select") input = `<select data-key="${key}">${options(opts.map(String), String(v), (typeof o.labels === "function" ? o.labels() : o.labels) || {})}</select>`;
     else if (type === "text") input = `<input type="text" data-key="${key}" value="${esc(v)}" placeholder="${esc(o.placeholder || "")}">`;
@@ -2881,7 +2902,10 @@ function drawSettingsTab(st) {
     if (el.type === "range" || el.type === "number" || ["render.fps", "comfy.texture_size"].includes(key)) v = Number(v);
     if (el.dataset.idx !== undefined) { const arr = [...getPath(st, key)]; arr[+el.dataset.idx] = v; v = arr; }
     setPath(st, key, v);
+    const sww = el.closest(".switch")?.querySelector(".sw-word");
+    if (sww) sww.textContent = v ? "ON" : "OFF";
     if (el.dataset.now && key === "idle.on") setIdle(v, el);       // the 🌙 switch: on/off right away, no Save
+    if (/^(ai|openrouter)\./.test(key) && $("#ai-summary")) $("#ai-summary").innerHTML = aiSummary(st);
     const val = el.closest(".setting")?.querySelector(".val");
     if (val) val.textContent = el.value;
   }));
@@ -2941,6 +2965,42 @@ function drawSettingsTab(st) {
     $(".om-refresh", wrap).onclick = guard(load);
     $(`[data-key="${pk.dataset.from}"]`, body)?.addEventListener("change", load);
   }
+  // ☁️ cloud AI: the key's state, and a searchable model list per job (web/cloud_web.py)
+  const orCheck = async () => {
+    const box = $("#or-check", body);
+    if (!box) return;
+    box.innerHTML = '<span class="muted">Checking the key…</span>';
+    const r = await api("GET", "/api/cloud/check").catch((e) => ({ ok: false, error: e.message }));
+    const money = (x) => typeof x === "number" ? "$" + x.toFixed(2) : "";
+    box.innerHTML = r.ok ? `<span class="ok">✓ Key works</span> <span class="muted">${esc(r.label || "")} · ${money(r.used)} used${r.limit != null ? ` of ${money(r.limit)} limit` : ""}${r.left != null && r.left <= 0.05 ? ' · <b class="err">out of credit</b>' : ""}</span>`
+      : `<span class="err">✗ ${esc(r.error)}</span>`;
+  };
+  if ($("#or-check", body)) { orCheck(); $("#or-recheck", body).onclick = guard(orCheck); document.addEventListener("settings-saved", orCheck, { once: true }); }
+  const orPicks = $$("[data-async=ormodel]", body);
+  if (orPicks.length) api("GET", "/api/cloud/models").catch((e) => ({ ok: false, error: e.message, models: [] })).then((r) => {
+    for (const sel of orPicks) {
+      const wrap = sel.closest(".or-pick"), info = $(".or-info", wrap), q = $(".or-q", wrap);
+      const list = (r.models || []).filter((m) => !sel.dataset.vision || m.vision);
+      const price = (m) => m.free ? "🆓 free" : m.in == null ? "" : `$${m.in} / $${m.out} per 1M`;
+      const label = (m) => `${m.id}  ·  ${price(m)}${m.vision ? "  · 👁" : ""}`;
+      const describe = () => {
+        const m = list.find((x) => x.id === sel.value);
+        info.innerHTML = !r.ok ? `<span class="err">✗ ${esc(r.error)}</span>` : m ? `${esc(m.name)} · ${price(m)}${m.vision ? " · 👁 sees pictures" : ""}${m.context ? ` · ${Math.round(m.context / 1000)}k context` : ""}`
+          : sel.value ? `<span class="err">⚠ ${esc(sel.value)} isn't on OpenRouter${sel.dataset.vision ? " (or can't see pictures)" : ""}</span>` : `<span class="muted">${list.length} models</span>`;
+      };
+      const fill = () => {
+        const cur = sel.value, words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+        const hit = list.filter((m) => words.every((w) => (m.id + " " + m.name + (m.free ? " free" : "") + (m.vision ? " vision" : "")).toLowerCase().includes(w)));
+        if (cur && !hit.some((m) => m.id === cur)) hit.unshift(list.find((m) => m.id === cur) || { id: cur, name: cur });
+        sel.innerHTML = `<option value="">${esc(sel.dataset.first || "Pick a model")}</option>`
+          + hit.slice(0, 300).map((m) => `<option value="${esc(m.id)}" ${m.id === cur ? "selected" : ""}>${esc(m.in === undefined ? "⚠ " + m.id : label(m))}</option>`).join("");
+        describe();
+      };
+      fill();
+      q.oninput = fill;
+      sel.addEventListener("change", describe);
+    }
+  });
   const ck = $("[data-async=ckpt]", body);
   if (ck) api("GET", "/api/comfy/status").then((r) => { if (r.ok) ck.innerHTML = `<option value="">First available</option>` + options(r.checkpoints, getPath(st, "comfy.checkpoint")); });
   if ($("#t-ollama")) {
@@ -4187,6 +4247,20 @@ async function openVideoEditor(id) {
       draw(m);
     },
   });
+}
+
+/* ---- 🧠 which AI does what (Settings -> AI tools; the routing itself is llm._chat) */
+function aiSummary(st) {
+  const a = st.ai || {}, o = st.openrouter || {};
+  const local = a.local !== false, cloud = !!a.cloud && !!o.key;
+  const jobs = [["text", "✍️ Writing", o.model], ["vision", "👁 Picture checks", o.vision_model], ["design", "🧊 3D design", o.design_model || o.model]];
+  if (!local && !a.cloud) return "⚠️ <b>Both are off</b> - no AI: scripts, titles, checks and designs are skipped or must be written by hand.";
+  if (a.cloud && !o.key) return "⚠️ Cloud AI is on but has no key yet - paste it below and Save." + (local ? " Until then local AI does everything." : "");
+  return jobs.map(([k, name, m]) => {
+    const c = cloud && o[k] && m;
+    const who = c ? `☁️ cloud (${esc(m)})${local ? ", local if it fails" : ""}` : local ? "🖥 local" : "⚠️ nothing (cloud not set for this, local off)";
+    return `${name}: ${who}`;
+  }).join("<br>") + '<br><span class="muted">Drawings and voices always run on this PC (ComfyUI, voices).</span>';
 }
 
 /* ---- 🌙 idle auto-make (web/server.py idle_info): the top bar's moon while it's on, the Settings switch */

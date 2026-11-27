@@ -611,6 +611,16 @@ Easiest: Characters page → import a `.vrm`. By hand:
   from a picture".
 - **ComfyUI** (ComfyUI Desktop uses http://127.0.0.1:8666; 8188 and other common ports are tried too) draws set
   textures and prop pictures with Z-Image Turbo, and composes music with ACE-Step 1.5.
+- **Cloud AI (OpenRouter)**, optional and paid per use: one key from openrouter.ai gives Gemini, Claude, GPT and
+  hundreds of other models (no separate Google key). Settings → AI tools → *Which AI to use* has two switches,
+  🖥 **Local AI** (Ollama on this PC and the big model server) and ☁️ **Cloud AI**, and a summary of which one does
+  each job. In *Cloud AI (OpenRouter)*: paste the key, then tick what the cloud does - **writing** (scripts, titles,
+  ideas, sets, cast, translations, captions), **picture checks** (props, sets, covers, the check after each render)
+  and **3D design** - each with its own model (search box; price per million tokens, 🆓 free, 👁 sees pictures).
+  With both switches on, local AI takes over whenever the cloud fails (no credit, a rate limit, offline) and the
+  cloud is left alone for 5 minutes. With only one on, only that one is used. What the cloud works on (script text,
+  check pictures) is sent to OpenRouter and the model's company. Drawings (ComfyUI) and voices always stay on this
+  PC. The status dot shows the key's state and the credit used; set a spending limit on the key at openrouter.ai.
 Everything still works without them (except videos in other languages and ComfyUI "Required" mode), just with
 simpler results.
 

@@ -26,7 +26,11 @@ def checks(root, jobs):
     o = cfg["ollama"]
     root = Path(root)
 
+    a, orc = cfg.get("ai") or {}, cfg.get("openrouter") or {}
+
     def local_ollama():
+        if a.get("local") is False:
+            return "ok", "switched off (Settings → AI tools)", ""
         names = [m["name"] for m in llm.list_models(o["url"])]
         miss = [m for m in (o["model"], o.get("vision_model")) if m and m not in names]
         if miss:
@@ -34,7 +38,26 @@ def checks(root, jobs):
                 "Pick an installed model in Settings → AI tools, or pull it with ollama pull."
         return "ok", f"running - {o['model']} + picture model {o.get('vision_model') or '-'}", ""
 
+    def cloud():
+        if not a.get("cloud"):
+            return "ok", "off (Settings → AI tools)", ""
+        import cloud_web
+        r = cloud_web.check(str(orc.get("key") or "").strip())
+        if not r["ok"]:
+            return "bad", r["error"], "Settings → AI tools → Cloud AI: paste your OpenRouter key and Save."
+        jobs = [n for k, n in (("text", "writing"), ("vision", "picture checks"), ("design", "3D design"))
+                if orc.get(k) and llm.cloud_model(k, orc)]
+        if not jobs:
+            return "warn", "on, but no job has a model picked", "Pick a model for writing (and pictures) in Settings → AI tools."
+        left = r.get("left")
+        if left is not None and left <= 0.05:
+            return "warn", "out of credit - local AI does the work", "Top up on openrouter.ai, or raise the key's limit."
+        used = f", ${r['used']:.2f} used" if isinstance(r.get("used"), (int, float)) else ""
+        return "ok", f"connected - {', '.join(jobs)}{used}", ""
+
     def big_server():
+        if a.get("local") is False:
+            return "ok", "local AI switched off", ""
         url = "" if o.get("big_server") is False else (o.get("design_url") or "").strip()
         if not url:
             return "ok", "off or not set up (everything runs on this PC)", ""
@@ -98,7 +121,7 @@ def checks(root, jobs):
         return ("warn" if n else "ok"), (f"{n} page error(s) today (in logs/server-*.log)" if n else "none today"), \
             ("Tell Claude - they're in the server log." if n else "")
 
-    items = [("Ollama (this PC)", local_ollama), ("Big model server", big_server), ("ComfyUI", comfyui),
+    items = [("Ollama (this PC)", local_ollama), ("Big model server", big_server), ("Cloud AI (OpenRouter)", cloud), ("ComfyUI", comfyui),
              ("Blender", blender), ("ffmpeg", ffmpeg), ("Cloned voice tools", voice), ("Disk space", disk),
              ("Job queue", queue), ("Ideas", ideas_db), ("Page errors", page_errors)]
     with cf.ThreadPoolExecutor(len(items)) as ex:

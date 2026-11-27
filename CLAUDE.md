@@ -137,6 +137,22 @@ Open items:
     🌙 Auto-make, and a 🌙 pill in the top bar (`#idle-pill`, only while on: auto / making / paused, polled every
     30 s, click = that tab). Settings' 💾 Save always sends the server's current `idle.on` (a page opened earlier
     can't flip it back).
+- **Local / cloud AI** (the user, 2026-11-27: "a way in the settings to enable local ai, and cloud ai"): Settings
+  `ai {local, cloud}` + `openrouter {key (secret), text, model, vision, vision_model, design, design_model}`.
+  `llm._chat` routes every call: job = "vision" when it has images, else `llm._JOB` (contextvar, `llm.job("design")`
+  around `propgen.design_call`), else "text". `_openrouter_for(job)` = cloud on + key + the job ticked + a model
+  (`cloud_model`: design "" = the writing model) and not marked down -> `openrouter_chat` (OpenAI-style
+  `openrouter_payload`: images -> data: URLs, `format: json` -> `response_format`, retried without it on a 400;
+  answers in Ollama's shape). A failure marks `openrouter:<model>` down `OR_RETRY` 300 s (shared file, like the big
+  server) and `_or_why` names it (402 = out of credit...). Then local (big server rules unchanged) unless
+  `ai.local` is off -> `LocalOff` (a ConnectionError, so callers treat it like Ollama offline). `design_call` skips
+  the big server when local is off. `web/cloud_web.py`: `GET /api/cloud/models` (public `/models`, `trim`: chat
+  models, no `:batch`, price per 1M, vision, free; cached 1 h), `GET /api/cloud/check` (`/key`: used / limit / left).
+  UI: Settings -> AI tools -> "🧠 Which AI to use" (two `switch` rows, saved with 💾; `aisummary` = `aiSummary(st)`,
+  which AI does each job), "☁️ Cloud AI (OpenRouter)" (key, `orcheck` line, per-job tick + `ormodel` picker = search
+  box + select, price/vision/context line), the old Ollama group = "🖥 Local AI (Ollama)". Status dot: "Cloud AI
+  (OpenRouter)" row; Ollama rows say "switched off". OpenRouter's Gemini is paid; Google's free tier needs a Google
+  AI Studio key (OpenRouter can use one as BYOK). Never run with a real key in dev (no key); `tests/test_cloud.py`.
 - **Random videos on the server** (`pipeline/randomvid.py`): the 🎲 cards (`CARDS` - `tests/test_randomvid.py`
   checks them against app.js `MW_STEPS_BASE`), never `conversation` (needs a co-star); in `batch.py` a `"random"`
   item writes for `new:<place>`, makes that set first (`/api/sets/generate` + `wait_job`), then directs there.
@@ -1106,6 +1122,7 @@ too. CLI `python pipeline/review.py episodes/<id>.json` (needs the build folder)
 | `web/actors.js`, `actors_web.py` | Assets → Actors tab UI (loaded after app.js; generic actors grouped first) and `/api/actors` (+ `guests`/`keep`, `POST /api/actors/<id>/model` = VRoid upload → `assets/actors/rigs/`, previews at `/actorimg/`). |
 | `web/ideas_web.py` | `/api/ideas` (list, fresh, fetch job, own ideas, star/hide, titles). |
 | `web/anims_web.py` | Assets → Animations: `/api/anims` (list, make job, delete → .trash), pictures at `/animimg/`. |
+| `web/cloud_web.py` | Cloud AI (OpenRouter) for Settings: `/api/cloud/models` (picker list, cached), `/api/cloud/check` (key + credit). The calls themselves: `llm._chat` → `openrouter_chat`. |
 | `web/status_web.py` | The status dot in the top bar: `GET /api/status` = parallel checks (Ollama, big server, ComfyUI, Blender, ffmpeg, cloned voice tools, disk, job queue, ideas DB, page errors), each ok/warn/bad with a fix. |
 | `web/make_icons.py` | Makes the PWA icons (voice-venv / Pillow). |
 | `web/imported_web.py` | `/api/imported` (upload, models list, delete). |

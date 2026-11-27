@@ -58,9 +58,16 @@ def design_call(fn, ollama, *args, **kw):
     machine on the network) with its design model, else the main Ollama. If the design server can't be reached,
     the main Ollama + main model take over (a render never stops because that machine is off). Only 3D object
     design goes to the design server - scripts, titles, sets and pictures stay on the main one."""
+    import llm
+    with llm.job("design"):                                  # cloud AI may do 3D design (Settings -> AI tools)
+        return _design_call(fn, ollama, *args, **kw)
+
+
+def _design_call(fn, ollama, *args, **kw):
+    import llm
     set_up = (ollama or {}).get("design_url") or ""          # a big server's address is filled in
     url = "" if (ollama or {}).get("big_server") is False else set_up
-    if url and not _DESIGN_DOWN:
+    if url and not _DESIGN_DOWN and llm.local_on():
         try:
             return fn(url, design_model(ollama), *args, **kw)
         except (OSError, TimeoutError) as exc:      # connection refused / unreachable / timed out / no such model

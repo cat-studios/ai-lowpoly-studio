@@ -1717,6 +1717,10 @@ class Handler(BaseHTTPRequestHandler):
             import imported_web
             return imported_web.handle(self, method, parts[1:], submit=submit, Job=Job, root=ROOT)
 
+        if head == "cloud":            # cloud AI (OpenRouter): model list + key check (web/cloud_web.py)
+            import cloud_web
+            return cloud_web.handle(self, method, parts[1:])
+
         if head == "status":           # the status dot / panel in the top bar (web/status_web.py)
             import status_web
             return status_web.handle(self, method, parts[1:], root=ROOT, jobs=JOBS)

@@ -76,6 +76,13 @@ DEFAULTS = {
                "design_url": "",                     # another Ollama just for that ("" = "url"; unreachable = "url")
                "big_server": True,                   # off = never use design_url (the address is kept)
                "design_scope": "3d"},                # "3d" = only 3D design goes there; "text" = all the AI's writing
+    # which AI runs: local = Ollama on this PC (+ the big server above), cloud = OpenRouter. Both on = the cloud does
+    # the jobs ticked below and local takes over when it fails; one on = only that one
+    "ai": {"local": True, "cloud": False},
+    # OpenRouter (openrouter.ai: online models - Gemini, Claude, GPT... - one key, paid per use from credits).
+    # Jobs: text = all the AI's writing, vision = the picture checks, design = 3D props ("" model = the writing one)
+    "openrouter": {"key": "", "text": True, "model": "", "vision": True, "vision_model": "",
+                   "design": True, "design_model": ""},
     "server": {"pin": ""},                 # optional PIN for phones on your network (empty = no PIN)
     "home": {"souvenirs": True},
     "instagram": {"token": "", "user_id": ""},   # Stats: your posts' numbers (Graph API, read only)
@@ -196,7 +203,7 @@ def public_settings(data=None):
 
 
 SECRETS = [("postiz", "api_key"), ("ideas", "youtube_key"), ("ideas", "nasa_key"), ("instagram", "token"),
-           ("youtube", "client_secret"), ("youtube", "refresh_token")]   # never sent to the browser
+           ("youtube", "client_secret"), ("youtube", "refresh_token"), ("openrouter", "key")]   # never sent to the browser
 
 
 def save_settings(data):
