@@ -63,6 +63,28 @@ class Tidy(unittest.TestCase):
         self.assertNotIn("do:facepalm", text)
         self.assertGreater(bad, 8)
 
+    def test_plan_words_and_bare_place(self):
+        out, _ = llm.tidy_writer_lines(["[+punchline enter] Punchline: Plants are sun-powered sugar factories!",
+                                        "@ quiet park bench This happens to those who think too much."], CHAR)
+        self.assertEqual(out[0], "Plants are sun-powered sugar factories!")
+        self.assertEqual(out[1], "[@ quiet park bench] This happens to those who think too much.")
+
+    def test_draft_scoring(self):
+        beats = ["clouds are water droplets", "the droplets weigh a lot", "air holds them up"]
+        good = ["A cloud is made of water droplets!", "Those droplets weigh a lot together.", "Warm air holds them up."]
+        bad = ["Hello friends!", "Hello friends!", "My tail is fluffy."]
+        self.assertGreater(llm.score_script(good, 0, "How heavy is a cloud?", beats, 3),
+                           llm.score_script(bad, 0, "How heavy is a cloud?", beats, 3))
+
+    def test_review_fixes_only_named_lines(self):
+        from unittest import mock
+        lines = ["[surprised] Clouds weigh tons!", "My tail is fluffy.", "Air holds them up."]
+        with mock.patch.object(llm, "chat_json", return_value={"fixes": [{"n": 2, "why": "off topic",
+                                                                         "line": "The drops add up to tons."}]}):
+            out, n = llm.review_script("u", "m", "How heavy is a cloud?", lines)
+        self.assertEqual(n, 1)
+        self.assertEqual(out, ["[surprised] Clouds weigh tons!", "The drops add up to tons.", "Air holds them up."])
+
     def test_clean_script_untouched(self):
         lines = ["Wait... clouds weigh more than elephants?", "[surprised] A cloud holds tiny drops of water."]
         self.assertEqual(llm.tidy_writer_lines(lines, CHAR), (lines, 0))

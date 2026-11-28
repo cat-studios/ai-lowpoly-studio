@@ -478,6 +478,19 @@ Open items:
   `animgen.rename(old, new)` (files move, the old word goes to `aliases`; `animlib.aliases()`; `ensure` and
   `run_episode.resolve_animations` map old words - scripts and older videos keep working; a taken word is refused).
 
+- **The writer in steps** (the user: better writing with local models / the brother's server only):
+  `llm.generate_script(steps=True)` = `research(title)` (the model names the Wikipedia article that explains the real
+  subject - `_article_text` exact title; refused when its first line says film/album/company..., `NOT_A_SUBJECT_PAGE`,
+  or it shares no word with the title; else `factcheck.article` search; cached `build/research/`) -> `plan_script`
+  (JSON answer + one beat per line + punchline, from the facts) -> two `_draft`s (temperature t and t-0.25, each
+  cleaned + `tidy_writer_lines`) scored in code (`score_script`: slips, length, title words, beats followed, repeats)
+  -> `review_script` (only the lines a check names as wrong get a new line; `polish_script` rewrote every line and the
+  small model made good lines worse) -> tidy. `steps=False` = the old one draft + polish. Comparison on 6 titles with
+  the local 8B (first run): the title-word Wikipedia search found the film "Moving Violations" for the Sun and
+  biogas for plants - hence the model-named article; after that: plants/deja vu clearly better, fur slightly, cloud /
+  goldfish about the same, the Sun still nonsense (no facts + 8B). 11-22 s a script (was 7-340 s). Plan words copied as
+  labels ("Punchline:", `+punchline enter`) and a bare "@ place" are tidied (`NOT_SPEAKERS`, `_bracket_ok`).
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours

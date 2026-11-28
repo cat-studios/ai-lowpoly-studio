@@ -798,7 +798,9 @@ LABEL_CAST = re.compile(rf"(?i)\+({ORDINALS}_)?{LABEL_WORDS}(_(\d+|one|two|three
 SAID_IN_BRACKETS = re.compile(r"^[A-Z][\w' ]{0,24}[!?]$")
 NOT_SPEAKERS = {"narrator", "character", "main character", "host", "me", "i", "she", "you", "speaker", "voice",
                 "voiceover", "voice over", "catgirl", "line", "scene", "shot", "note", "wait", "fact", "fun fact",
-                "bonus", "ps", "update", "warning", "title", "script", "hook", "ending", "intro", "outro"}
+                "bonus", "ps", "update", "warning", "title", "script", "hook", "ending", "intro", "outro",
+                # the plan's own words, copied as labels ("Punchline: Plants are..." became a person, 2026-11-28)
+                "punchline", "beat", "step", "plan", "answer", "setup", "twist", "conclusion", "summary"}
 
 
 # Hooks: each script is asked for one of these openings (picked at random), so the first line doesn't always
@@ -954,6 +956,8 @@ def _bracket_ok(tok, vocab):
     if not t:
         return None
     if t.startswith("+"):
+        if re.split(r"[\s_]", low[1:], maxsplit=1)[0] in NOT_SPEAKERS:
+            return None                    # "+punchline enter": a label of the plan, not someone arriving
         # "+lamp_crash_in": the verb glued onto the name
         g = re.match(r"^\+([a-z0-9_]+?)_(crash_in|enter|exit|appear|vanish|fall|fly_by|bounce|spin|shake|hold)$", low)
         return f"+{g.group(1)} {g.group(2)}" if g else t
@@ -1000,8 +1004,15 @@ def tidy_writer_lines(lines, character=None):
                 break
             heads += [x for x in m.group(1).split(",")]
             line = line[m.end():]
+        sm = re.match(r"^@\s*([A-Za-z][\w ]{2,40}?)\s+(?=[A-Z])", line)   # "@ quiet park bench This happens...": a place
+        if sm:                                                            # change without its brackets
+            heads.append("@ " + sm.group(1).strip())
+            line = line[sm.end():]
         label = ""
         lm = re.match(r"^(\+?[A-Za-z][\w ]{0,30}):\s+", line)
+        if lm and lm.group(1).lstrip("+").strip().lower() in NOT_SPEAKERS:   # "Punchline: ..." / "+punchline: ..."
+            line = line[lm.end():]
+            lm = None
         if lm:
             label, line = lm.group(1), line[lm.end():]
             pm = re.match(r"^\+([a-z0-9_]+)(?:\s+([a-z_]+))?$", label.strip(), re.I)
@@ -1038,19 +1049,226 @@ def tidy_writer_lines(lines, character=None):
     return out, bad
 
 
+# ---- the writer, in steps (2026-11-28, the user: "better writing with only local models or my brother's server").
+# A small model writes much better when it isn't asked to do everything at once: real facts are looked up first
+# (Wikipedia), the story is planned (one short note per line), two drafts are written from the plan and scored in
+# code, and only the lines a checking pass finds weak are rewritten.
+Q_STOP = set("""what why how when where who which whose is are was were be been being do does did done can could would
+will should shall if happen happens happened happening the a an of to in on at for from with by about into your you
+yours my me i it its it's this that these those there their they them be really ever every all any some so very most
+more much many make makes made like than then just still even also only one would've without""".split())
+RESEARCH_DIR = Path(__file__).resolve().parent.parent / "build" / "research"
+
+
+# an article about a work, not the thing: "What if the Sun stopped moving?" found the film "Moving Violations" and the
+# script became parking fines (2026-11-28 comparison)
+NOT_A_SUBJECT_PAGE = re.compile(r"\b(?:is|was) an? (?:\d{4} )?(?:[\w-]+ ){0,3}(?:film|movie|album|song|single|novel|"
+                                r"band|video game|television series|tv series|episode|musical|play|book|comic|manga|"
+                                r"anime|rapper|singer|actor|actress|company|brand)\b", re.I)
+
+
+def _article_text(name):
+    """(url, intro + text) of one exact Wikipedia article, or (None, "")."""
+    import urllib.parse
+    import factcheck
+    pages = factcheck._wiki({"prop": "extracts", "explaintext": 1, "exlimit": 1, "redirects": 1,
+                             "titles": name}).get("query", {}).get("pages") or [{}]
+    pg = pages[0]
+    if pg.get("missing") or not pg.get("extract"):
+        return None, ""
+    return "https://en.wikipedia.org/wiki/" + urllib.parse.quote(pg["title"].replace(" ", "_")), pg["extract"]
+
+
+def research(title, log=print, url=None, model=None):
+    """(url, text): true background facts for the title from Wikipedia (an intro + the paragraphs about the title's
+    words, ~1,500 characters), cached per title in build/research/. (None, "") offline or when nothing fits.
+    The model names the article that explains the real subject ("Sun", "Plant nutrition", "Deja vu") - a search on
+    the title's words found films and biogas plants; a film / album / company page is never used."""
+    import hashlib
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]+", str(title or "")) if w.lower() not in Q_STOP]
+    if not words:
+        return None, ""
+    key = hashlib.sha1(" ".join(words).lower().encode("utf-8")).hexdigest()[:14]
+    cache = RESEARCH_DIR / f"{key}.json"
+    try:
+        got = json.loads(cache.read_text(encoding="utf-8"))
+        return got.get("url"), got.get("text", "")
+    except Exception:
+        pass
+    try:
+        import factcheck
+        names = []
+        if url and model:
+            try:
+                r = chat_json(url, model, "You know Wikipedia well. Name the English Wikipedia articles that explain "
+                              "the real-world science or facts behind a video title - the subject itself, never a "
+                              "film, book, song or company. Reply with JSON only: {\"articles\": [\"best\", \"second\"]}",
+                              f"Title: {title}", 0.2)
+                names = [str(x).strip() for x in (r.get("articles") or [])[:2] if str(x).strip()] \
+                    if isinstance(r, dict) else []
+            except Exception:
+                names = []
+        tw = factcheck._keywords(str(title))
+        url_, text = None, ""
+        for name in names:
+            u, t = _article_text(name)
+            first = t.split("\n", 1)[0][:300]
+            if u and not NOT_A_SUBJECT_PAGE.search(first) and (tw & factcheck._keywords(name + " " + first)):
+                url_, text = u, factcheck.relevant(t, str(title), 1500)
+                break
+        if not url_:
+            u, t = factcheck.article(" ".join(words), str(title))
+            if u and not NOT_A_SUBJECT_PAGE.search(t.split("\n", 1)[0][:300]):
+                url_, text = u, t
+        url = url_
+    except Exception as exc:
+        log(f"  [writer] no facts looked up ({exc.__class__.__name__})")
+        return None, ""
+    text = re.sub(r"\s+\n", "\n", text or "")[:1500]
+    try:
+        RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"title": title, "url": url, "text": text}), encoding="utf-8")
+    except OSError:
+        pass
+    if url:
+        log(f"  [writer] facts from {url}")
+    return url, text
+
+
+def plan_script(url, model, title, character, lines, tone, extra="", facts="", temperature=0.5):
+    """The story before the words: {"answer", "beats": [one note per line], "punchline"} or None."""
+    n = int(lines)
+    system = ("You plan the story of a short vertical video (a Reel) where one animated character talks to the "
+              "camera. Before anything is written, decide WHAT happens, line by line.\n"
+              f"Return exactly {n} beats - short notes (max 12 words each), one per line of the video, in order:\n"
+              "- beat 1 is the hook (a surprising claim or a bold question about the title)\n"
+              "- every next beat follows from the one before (cause -> effect, or the next step of the answer) and "
+              "stays on the title's topic - nothing random, no new people or places unless the notes ask for them\n"
+              "- the last beat is the punchline, and it echoes the hook\n"
+              "The answer to the title must be true; use the background facts when they're given (for a 'what if', "
+              "say the most interesting real consequence, then play it out). Reply with JSON only: "
+              '{"answer": "one sentence", "beats": ["...", "..."], "punchline": "..."}')
+    user = (f"Title: {title}\nCharacter: {character.get('name') or 'the character'}. "
+            f"{str(character.get('about') or '')[:300]}\nTone: {tone}\n"
+            + (f"Notes for this kind of video: {extra[:900]}\n" if extra else "")
+            + (f"Background facts (true, from Wikipedia):\n{facts}\n" if facts else ""))
+    try:
+        r = chat_json(url, model, system, user, temperature)
+    except Exception:
+        return None
+    beats = [re.sub(r"^\s*\d+[.)]\s*", "", str(x)).strip() for x in (r.get("beats") or []) if str(x).strip()] \
+        if isinstance(r, dict) else []
+    if len(beats) < max(3, n - 2):
+        return None
+    return {"answer": str(r.get("answer") or "")[:200], "beats": beats[:n + 1], "punchline": str(r.get("punchline") or "")[:160]}
+
+
+def _stems(text):
+    return {w[:5] for w in re.findall(r"[a-z]{3,}", str(text or "").lower()) if w not in Q_STOP}
+
+
+def score_script(lines, bad, title, beats=(), want=6):
+    """A draft's score in code (higher = better): few slips, the right length, on the title's topic, the plan
+    followed, no line said twice."""
+    spoken = [_LINE_HEAD.match(l).group(2) if _LINE_HEAD.match(l) else l for l in lines]
+    sc = -3.0 * bad - 2.0 * abs(len(lines) - int(want))
+    tw = _stems(title)
+    sc += 1.5 * min(4, sum(1 for t in spoken if _stems(t) & tw))
+    sc += sum(1 for t, bt in zip(spoken, beats or []) if _stems(t) & _stems(bt))
+    norm = [re.sub(r"\W+", " ", t.lower()).strip() for t in spoken]
+    sc -= 3.0 * (len(norm) - len(set(norm)))
+    sc -= sum(1.0 for t in spoken if len(t.split()) > 16)
+    return sc
+
+
+def review_script(url, model, title, lines, tone="funny", facts="", beats=(), temperature=0.3):
+    """The checking pass: only the lines that are wrong (a false fact, off the topic, not following from the line
+    before, unclear, broken English, a joke used twice) get a better line; good lines stay exactly as they are.
+    (polish_script rewrote every line, and the small model made good lines worse as often as better.)"""
+    if not lines:
+        return lines, 0
+    heads, texts = [], []
+    for ln in lines:
+        m = _LINE_HEAD.match(ln)
+        heads.append(m.group(1) if m else "")
+        texts.append((m.group(2) if m else ln).strip())
+    system = ("You check the script of a short, family-friendly animated Reel where a character answers a curious "
+              "question. Find ONLY the lines that are clearly wrong: a false or made-up fact, a line that is off the "
+              "title's topic, a line that doesn't follow from the one before, an unclear sentence, broken English, "
+              "the same joke twice, a line that contradicts an earlier one, a first line that is not a hook, or a "
+              "last line that doesn't land on the topic (it should be the punchline and echo the first line - not a "
+              "random new question). For each, write a better line that fits "
+              "between its neighbours (max 14 words, same speaker, first person). Leave every good line alone - "
+              "most lines are fine. Reply with JSON only: "
+              '{"fixes": [{"n": 3, "why": "...", "line": "..."}]} (an empty list when the script is good).')
+    user = (f"Title: {title}\nTone: {tone}\n"
+            + (f"True background facts:\n{facts[:1200]}\n" if facts else "")
+            + ("The plan it follows:\n" + "\n".join(f"{i + 1}. {b}" for i, b in enumerate(beats)) + "\n" if beats else "")
+            + "Lines:\n" + "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts)))
+    try:
+        r = chat_json(url, model, system, user, temperature)
+    except Exception:
+        return lines, 0
+    fixes = r.get("fixes") if isinstance(r, dict) else None
+    out, n_fixed = list(lines), 0
+    for f in (fixes or [])[:5]:
+        if not isinstance(f, dict):
+            continue
+        try:
+            i = int(f.get("n")) - 1
+        except (TypeError, ValueError):
+            continue
+        nw = re.sub(r"^\s*\d+[.)]\s*", "", str(f.get("line") or "").strip().strip('"'))
+        m = _LINE_HEAD.match(nw)
+        if m and m.group(1).strip():
+            nw = m.group(2).strip()
+        if not (0 <= i < len(lines)) or not nw or len(nw.split()) > 18 or "[" in nw:
+            continue
+        lost = set(re.findall(r"\+[a-z0-9_]+", texts[i])) - set(re.findall(r"\+[a-z0-9_]+", nw))
+        if lost:
+            continue
+        out[i] = heads[i] + nw
+        n_fixed += 1
+    return out, n_fixed
+
+
+def _draft(url, model, system, user, temperature, lines, others, character):
+    """One draft: the model's answer -> cleaned lines (labels, co-star names) -> tidied. (lines, slips)."""
+    text = chat(url, model, system, user, temperature)
+    alias = {a.lower(): o["name"] for o in others for a in (o.get("aliases") or []) + [o["name"]]}
+    out = []
+    main_names = [str(character.get("name") or ""), str(character.get("id") or "")]
+    for line in _clean_lines(text, keep=list(alias), main=[n for n in main_names if n]):
+        # "[cameras: macro, happy]", "[action: shrug]": the prompt's list labels copied into the brackets
+        line = re.sub(r"(?<=[\[,])\s*(?:cameras?|actions?|expressions?|moods?|emotions?)\s*:\s*", " ", line, flags=re.I)
+        m = re.match(r"^(\[[^\]]*\]\s*)?([^:\[\]]{1,31}):\s+", line)     # "Ethan: ..." -> the co-star's own name
+        if m and m.group(2).strip().lower() in alias:
+            line = (m.group(1) or "") + alias[m.group(2).strip().lower()] + ": " + line[m.end():]
+        out.append(line)
+    out = out[: int(lines) + 2 + len(others) * 2]
+    return tidy_writer_lines(out, character)
+
+
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
                     others=None, polish=True, scenes="auto", explain=False, brainrot=None, hook_style=None,
-                    _retry=False):
+                    steps=True, log=print):
     """others: the other main characters in the video, [{"name", "about"}] - they get some lines too.
     scenes: "stay" (one place), "move" (the story travels: 1-3 [@ place] changes) or "auto" (only when it moves).
     brainrot: the words to use (pick_brainrot_words) - the brain rot style is added to the writer's extra notes.
-    hook_style: a HOOK_STYLES id (the caller records it on the episode); None = one at random."""
+    hook_style: a HOOK_STYLES id (the caller records it on the episode); None = one at random.
+    steps: facts -> plan -> two drafts (best kept) -> fix the weak lines (False = one draft + polish, the old way)."""
     if hook_style not in HOOK_STYLES:
         hook_style = pick_hook_style()
     if brainrot:
         extra = (extra + " " + brainrot_rule(brainrot)).strip()
     others = [o for o in (others or []) if isinstance(o, dict) and o.get("name")]
     system = writer_system(title, tone, extra, scenes, explain, others, hook_style)
+    facts, plan = "", None
+    if steps:
+        _, facts = research(title, log, url, model)
+        plan = plan_script(url, model, title, character, lines, tone, extra, facts)
+        if plan:
+            log(f"  [writer] plan: {plan['answer'][:90]}")
     user = (
         f"Video title: {title}\n"
         f"Character: {character.get('name', 'the character')}. {character.get('about', '')}\n"
@@ -1067,36 +1285,38 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
            "move": "The story travels: move to 1 to 3 other places along the way, each marked with [@ place].\n"}
           .get(scenes, "Only use [@ place] if the story really goes somewhere else.\n")
         + (f"Extra notes: {extra}\n" if extra else "")
+        + (f"True background facts you can use (say them simply):\n{facts[:1200]}\n" if facts else "")
+        + ("THE PLAN - write exactly one line for each step, in this order:\n"
+           + "".join(f"{i + 1}. {b}\n" for i, b in enumerate(plan["beats"])) if plan else "")
         + "Write the script now."
     )
-    text = chat(url, model, system, user, temperature)
-    alias = {a.lower(): o["name"] for o in others for a in (o.get("aliases") or []) + [o["name"]]}
-    out = []
-    main_names = [str(character.get("name") or ""), str(character.get("id") or "")]
-    for line in _clean_lines(text, keep=list(alias), main=[n for n in main_names if n]):
-        # "[cameras: macro, happy]", "[action: shrug]": the prompt's list labels copied into the brackets (the
-        # director would try to animate "cameras: macro")
-        line = re.sub(r"(?<=[\[,])\s*(?:cameras?|actions?|expressions?|moods?|emotions?)\s*:\s*", " ", line, flags=re.I)
-        m = re.match(r"^(\[[^\]]*\]\s*)?([^:\[\]]{1,31}):\s+", line)     # "Ethan: ..." -> the co-star's own name
-        if m and m.group(2).strip().lower() in alias:
-            line = (m.group(1) or "") + alias[m.group(2).strip().lower()] + ": " + line[m.end():]
-        out.append(line)
-    out = out[: int(lines) + 2 + len(others) * 2]
-    if not out:
-        raise RuntimeError("The model returned no usable lines - try again or pick another model.")
-    if polish:
-        out = polish_script(url, model, title, out, tone)
-    out, bad = tidy_writer_lines(out, character)
-    if (bad > max(2, len(out) // 3) or len(out) < max(3, int(lines) - 3)) and not _retry:
-        # a mess (many lines fixed or dropped): write it once more, a little calmer, and keep the tidier one
-        print(f"  [writer] {bad} line(s) needed fixing, {len(out)} left - writing it again")
+    beats = plan["beats"] if plan else []
+    drafts = []
+    temps = (temperature, max(0.5, temperature - 0.25)) if steps else (temperature,)
+    for t in temps:
         try:
-            again = generate_script(url, model, title, character, set_info, lines, tone, extra, max(0.5, temperature - 0.2),
-                                    others, polish, scenes, explain, None, hook_style, _retry=True)
-            if again and len(again) >= len(out):
-                return again
+            got, bad = _draft(url, model, system, user, t, lines, others, character)
         except Exception as exc:
-            print(f"  [writer] second try failed ({exc}) - keeping the first")
+            if not drafts and t == temps[-1]:
+                raise
+            log(f"  [writer] a draft failed ({exc.__class__.__name__})")
+            continue
+        if got:
+            drafts.append((score_script(got, bad, title, beats, lines), got, bad))
+    if not drafts:
+        raise RuntimeError("The model returned no usable lines - try again or pick another model.")
+    drafts.sort(key=lambda d: -d[0])
+    best_score, out, bad = drafts[0]
+    if len(drafts) > 1:
+        log(f"  [writer] 2 drafts scored {drafts[0][0]:.0f} / {drafts[1][0]:.0f} - kept the better one")
+    if steps:
+        out, n_fixed = review_script(url, model, title, out, tone, facts, beats)
+        if n_fixed:
+            log(f"  [writer] the check rewrote {n_fixed} weak line(s)")
+        out, _ = tidy_writer_lines(out, character)
+    elif polish:
+        out = polish_script(url, model, title, out, tone)
+        out, _ = tidy_writer_lines(out, character)
     return fix_self_names(out, character)
 
 
