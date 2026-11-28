@@ -27,6 +27,7 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mdl_convert  # noqa: E402
+import fbx_ascii  # noqa: E402
 import progress  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -316,12 +317,18 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
     # MDL files are converted to OBJ first (pipeline/mdl_convert.py), then measured like any other model
     converted = {}                                   # original .mdl path -> (obj path or None, note)
     for p in found:
-        if MODEL_FORMATS[p.suffix.lower()] != "mdl":
+        fmt = MODEL_FORMATS[p.suffix.lower()]
+        text_fbx = fmt == "fbx" and fbx_ascii.is_ascii_fbx(p)     # Blender reads binary FBX only
+        if fmt != "mdl" and not text_fbx:
             continue
         progress.report(0.22, f"Converting {p.name}")
         try:
-            res = mdl_convert.convert(p, dest / "_converted" / slug(p.stem), search_root=dest)
-            converted[str(p)] = (Path(res["obj"]), f"{res['note']}; {res['textures']} texture(s)")
+            if text_fbx:
+                res = fbx_ascii.convert(p, dest / "_converted" / slug(p.stem))
+                converted[str(p)] = (Path(res["obj"]), res["note"])
+            else:
+                res = mdl_convert.convert(p, dest / "_converted" / slug(p.stem), search_root=dest)
+                converted[str(p)] = (Path(res["obj"]), f"{res['note']}; {res['textures']} texture(s)")
         except Exception as exc:                    # a damaged or unsupported file must not stop the pack
             converted[str(p)] = (None, f"could not convert: {str(exc)[:160] or exc.__class__.__name__}")
             log(f"[import] {p.name}: {converted[str(p)][1]}")
@@ -329,7 +336,7 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
     measurable = []
     for p in found:
         fmt = MODEL_FORMATS[p.suffix.lower()]
-        if fmt == "mdl":
+        if str(p) in converted:
             if converted[str(p)][0] is not None:
                 measurable.append((converted[str(p)][0], "obj"))
         else:
@@ -349,16 +356,17 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
                "folder": "/".join(rel.parts[:-1]), "size_mb": round(p.stat().st_size / 1048576, 2),
                "tags": sorted(words(p.stem) | words("/".join(rel.parts[:-1]))),
                "height": None, "width": None, "depth": None, "hash": hashes.get(str(p))}
-        if fmt == "mdl":
+        if str(p) in converted:
             obj, note = converted[str(p)]
-            rec["flavour"] = mdl_flavour(p)
+            if fmt == "mdl":
+                rec["flavour"] = mdl_flavour(p)
             if obj is None:
                 rec.update(status="failed", note=note)
                 models.append(rec)
                 continue
-            # the model Blender loads is the converted OBJ; the original .mdl stays in the pack
+            # the model Blender loads is the converted OBJ; the original (.mdl / text .fbx) stays in the pack
             rec.update(source_file=rec["file"], file=str(obj.relative_to(ROOT)).replace("\\", "/"), format="obj",
-                       note=f"{rec['flavour']} - {note}")
+                       note=f"{rec['flavour']} - {note}" if fmt == "mdl" else note)
             m = measured.get(str(obj), {})
         else:
             m = measured.get(str(p), {})
@@ -381,6 +389,54 @@ def import_zip(zip_path, pack_name=None, license_text=None, log=print, source_na
         log(f"[import] categories: AI skipped ({exc.__class__.__name__}) - sorted by name only")
     progress.report(1.0, "Done")
     return pack
+
+
+def convert_text_fbx(log=print):
+    """Models imported before the text-FBX converter (2026-11-28: 293 in the user's "assorted" pack, "ASCII FBX
+    files are not supported"): converted to OBJ (pipeline/fbx_ascii.py) next to the pack's other conversions,
+    measured and pictured in Blender, and their records made usable. The original .fbx stays where it was.
+    Returns (fixed, still failed)."""
+    idx = load_index()
+    todo = [(pk, m) for pk in idx["packs"] for m in pk["models"]
+            if m.get("status") != "ok" and str(m.get("file", "")).lower().endswith(".fbx")
+            and fbx_ascii.is_ascii_fbx(ROOT / m["file"])]
+    log(f"[convert] {len(todo)} text FBX model(s) to convert")
+    done = []
+    for i, (pk, m) in enumerate(todo):
+        if i % 10 == 0:
+            progress.report(0.05 + 0.45 * i / max(1, len(todo)), f"Converting {i + 1}/{len(todo)}")
+        src = ROOT / m["file"]
+        try:
+            res = fbx_ascii.convert(src, PACKS / pk["id"] / "_converted" / slug(src.stem) / m["id"][-6:])
+            done.append((m, Path(res["obj"]), res["note"]))
+        except Exception as exc:
+            m["note"] = f"could not convert the text FBX: {str(exc)[:160] or exc.__class__.__name__}"
+            log(f"[convert] {src.name}: {m['note']}")
+    if done:
+        progress.report(0.5, f"Measuring {len(done)} model(s) in Blender")
+        measured = _probe([(obj, "obj") for _, obj, _ in done], log)
+        for m, obj, note in done:
+            got = measured.get(str(obj), {})
+            if got.get("ok"):
+                m.update(status="ok", source_file=m["file"], file=str(obj.relative_to(ROOT)).replace("\\", "/"),
+                         format="obj", note=note, height=got["height"], width=got["width"], depth=got["depth"])
+            else:
+                m["note"] = f"converted, but Blender opened nothing: {got.get('error') or 'empty'}"
+        save_index(idx)
+        fixed = [m for m, _, _ in done if m.get("status") == "ok"]
+        make_previews(fixed, log)
+        save_index(idx)                                   # with the pictures
+    fixed = [m for m, _, _ in done if m.get("status") == "ok"]
+    left = len(todo) - len(fixed)
+    log(f"[convert] {len(fixed)} model(s) ready to use" + (f", {left} still can't be used" if left else ""))
+    if fixed:
+        try:
+            import settings as S
+            ai_categorize(S.load_settings().get("ollama"), log)
+        except Exception as exc:
+            log(f"[convert] categories: AI skipped ({exc.__class__.__name__}) - sorted by name only")
+    progress.report(1.0, "Done")
+    return len(fixed), left
 
 
 MADE_PACK = "made_3d"          # models the studio made itself (model3d.py: a drawing -> TRELLIS 2 -> GLB)
@@ -1144,6 +1200,7 @@ if __name__ == "__main__":
     sub.add_parser("dedupe", help="move byte-identical copies of models to the trash")
     p_cat = sub.add_parser("categorize", help="the AI sorts models the name list doesn't place")
     p_cat.add_argument("--redo", action="store_true", help="ask again for ones it already sorted")
+    sub.add_parser("convert", help="convert text (ASCII) FBX models that failed to import into OBJ and use them")
     p_del = sub.add_parser("delete")
     p_del.add_argument("pack_id")
     a = ap.parse_args()
@@ -1167,6 +1224,9 @@ if __name__ == "__main__":
     elif a.cmd == "previews":
         previews_all()
         print("PREVIEWS=done", flush=True)
+    elif a.cmd == "convert":
+        fixed, left = convert_text_fbx()
+        print(f"CONVERTED={fixed} LEFT={left}", flush=True)
     elif a.cmd == "delete":
         delete_pack(a.pack_id)
         print(f"DELETED={a.pack_id}", flush=True)

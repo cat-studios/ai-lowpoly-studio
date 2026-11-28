@@ -77,6 +77,10 @@ def handle(h, method, parts, *, submit, Job, root):
             cmd.append("--redo")
         return h.send_json(submit(Job("import", "Sort models into categories", cmd)).to_dict())
 
+    if method == "POST" and arg == "convert":     # text (ASCII) FBX models that failed -> OBJ, measured, pictured
+        cmd = [sys.executable, "-u", str(root / "pipeline" / "imported.py"), "convert"]
+        return h.send_json(submit(Job("import", "Convert text FBX models", cmd)).to_dict())
+
     if method == "POST" and arg == "delete":      # several models at once: {"ids": [...]}
         ids = [str(i) for i in (h.body_json().get("ids") or []) if re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", str(i))]
         if not ids:

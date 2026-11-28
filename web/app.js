@@ -3577,7 +3577,8 @@ const IMP = { cat: "all", q: "", select: false, picked: new Set() };
 function impWhy(note) {
   const n = String(note || "");
   if (/ASCII FBX/i.test(n)) return ["Saved as a text (ASCII) FBX - Blender only reads binary FBX",
-    "The model itself is fine. Re-download the pack in OBJ, GLB or binary FBX (most asset sites offer several formats) and import that, or remove these."];
+    "The model itself is fine: 🔧 Convert them turns them into OBJ models the studio can use (colours kept, a few minutes for a few hundred)."];
+  if (/could not convert the text FBX|converted, but/i.test(n)) return ["A text FBX that couldn't be converted", "Safe to remove."];
   if (/needs conversion|mdl/i.test(n)) return ["An old game model (MDL) that couldn't be converted", "Remove it - the converter can't read this one."];
   if (/could not be measured/i.test(n)) return ["Blender opened nothing in this file", "Usually an empty or broken file - safe to remove."];
   return [n.split(/[\n:]/)[0].slice(0, 90) || "Blender couldn't open it", "Safe to remove if you don't know the file."];
@@ -3623,7 +3624,8 @@ async function assetsImported(box) {
       <span class="muted small">- they're never picked for a video, so they do no harm; they just fill the list.</span>
       ${Object.entries(why).map(([w, x]) => `<p class="small" style="margin:8px 0 0"><b>${x.n} ×</b> ${esc(w)} <span class="muted">(${esc([...x.packs].join(", "))})</span><br>
         <span class="muted">${esc(x.fix)}</span></p>`).join("")}
-      <div class="btns" style="margin-top:8px"><button data-imp-cat="__failed">Show them</button>
+      <div class="btns" style="margin-top:8px">${failed.some((m) => /ASCII FBX/i.test(m.note || "")) ? `<button class="primary" id="imp-convert">🔧 Convert the ${failed.filter((m) => /ASCII FBX/i.test(m.note || "")).length} text FBX models</button>` : ""}
+        <button data-imp-cat="__failed">Show them</button>
         <button class="danger" id="imp-rm-failed">🗑 Move all ${failed.length} to the trash</button></div></div>` : "";
   box.innerHTML = `
     <div class="asset-toolbar">
@@ -3688,6 +3690,11 @@ async function assetsImported(box) {
   qBox.oninput = () => { IMP.q = qBox.value; clearTimeout(IMP.t); IMP.t = setTimeout(async () => {
     await redraw(); const nq = $("#imp-q"); nq.focus(); nq.setSelectionRange(nq.value.length, nq.value.length); }, 250); };
   $$("[data-imp-cat]").forEach((b) => b.onclick = () => { IMP.cat = b.dataset.impCat; redraw(); });
+  if ($("#imp-convert")) $("#imp-convert").onclick = guard(async () => {
+    const job = await api("POST", "/api/imported/convert", {});
+    toast("Converting - the progress is in the jobs panel (top right)");
+    watchJob(job, null, (j) => { toast(j.status === "done" ? "Converted ✓ - the models are ready to use" : "Conversion failed - see the log", j.status !== "done"); redraw(); });
+  });
   const rmFailed = $("#imp-rm-failed");
   if (rmFailed) rmFailed.onclick = guard(async () => {
     if (!await uiConfirm(`Move the ${failed.length} models that can't be used to the trash? Their files go to assets/imported/packs/.trash (nothing is deleted for good).`)) return;

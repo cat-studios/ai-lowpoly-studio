@@ -434,8 +434,13 @@ Open items:
   293 failed, ALL ASCII (text) FBX from the "assorted" pack (Blender's importer reads binary FBX only; 287 exist in
   no other format there). The matcher already skips them. Assets -> Imported: `impWhy(note)` in plain words on each
   card, a "⚠ Can't be used · N" chip, a panel grouped by reason with what to do (re-download as OBJ/GLB) and
-  "🗑 Move all N to the trash" (`POST /api/imported/delete`). No ASCII FBX converter yet (could be written like
-  mdl_convert: vertices, PolygonVertexIndex, material colours, Lcl transforms).
+  "🗑 Move all N to the trash" (`POST /api/imported/delete`). Text FBX converter (the user's pick): `pipeline/fbx_ascii.py` - a token parser of the
+  FBX text tree, Models' T * PreRotation * R * S down the hierarchy (+ Geometric*), PolygonVertexIndex n-gons,
+  LayerElementMaterial ByPolygon/AllSame -> `usemtl` + MTL `Kd` from DiffuseColor; UpAxis 2 -> Y-up; FBX 6.x meshes
+  inside Model blocks too. Used by `import_zip` (like MDL: `_converted/`, `source_file` = the .fbx) and
+  `imported.convert_text_fbx` (`imported.py convert`, `POST /api/imported/convert`, "🔧 Convert the N text FBX
+  models" in the failed panel) for models imported before it. Dev: 7 of the user's files (alien in 6 parts, chair,
+  TV...) converted, measured and pictured, `CONVERTED=7 LEFT=0`.
 - **Animation GIF previews** (the user): `animgen.preview_gif(a)` = one medium-camera render with her real model
   (216x384 @ 12 fps, the animation twice when it loops) -> `assets/anims/<name>.gif` (180x320, 96 colours, bayer);
   made after every `make`, and for the rest by `animgen.py gifs [--redo]` = `POST /api/anims/gifs` (job). Cards show
