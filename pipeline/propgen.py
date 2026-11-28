@@ -725,7 +725,15 @@ def add_sprite(d, comfy_cfg, log=print, force=False):
 
 def _save(d):
     LIB.mkdir(parents=True, exist_ok=True)
-    (LIB / f"{d['kind']}.json").write_text(json.dumps(d, indent=1), encoding="utf-8")
+    f = LIB / f"{d['kind']}.json"
+    if not d.get("renamed") and f.exists():         # a redesign / rebuild keeps the name you gave it (Assets ✏️)
+        try:
+            old = json.loads(f.read_text(encoding="utf-8-sig"))
+            if old.get("renamed"):
+                d = dict(d, name=old.get("name") or d.get("name"), renamed=True)
+        except Exception:
+            pass
+    f.write_text(json.dumps(d, indent=1), encoding="utf-8")
 
 
 def made_3d(kind, looks, comfy_cfg, log=print):

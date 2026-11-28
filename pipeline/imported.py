@@ -81,20 +81,256 @@ def _clean_member(name):
 
 
 # ----------------------------------------------------------------------------- index
+# 2026-11-28: the list of 3,462 models was lost. A delete on the Assets page (the server) and the "Make 60 props real
+# 3D" job (its own process) saved at the same moment through the SAME temp file -> broken JSON; the job then read the
+# broken list as EMPTY and saved one with only its own new model. Now:
+#  - a broken list is never read as empty: the last good backup is used, else it stops with an error;
+#  - saves take a lock (a lock file, works across processes), write their own temp file, keep the previous good list
+#    as index.backup.json plus one snapshot a day (index.snapshots/, 14 kept);
+#  - a save MERGES: what this process loaded is remembered, and if someone else saved since, only this process's
+#    own changes (packs / models added, removed or edited) go on top of theirs - nothing of theirs is undone.
+BACKUP = LIB / "index.backup.json"
+SNAPS = LIB / "index.snapshots"
+LOCK = LIB / "index.lock"
+_BASES = {}                 # id(loaded index) -> the JSON text it was loaded from (the merge's base)
+
+
+class IndexBroken(RuntimeError):
+    """The model list can't be read and there's no good backup - never treated as an empty list."""
+
+
+def _read(path):
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+
+
 def load_index():
     if INDEX.exists():
         try:
-            return json.loads(INDEX.read_text(encoding="utf-8-sig"))
-        except Exception:
+            idx = _read(INDEX)
+        except Exception as exc:
+            try:
+                idx = _read(BACKUP)
+                print(f"[imported] the model list was unreadable ({exc.__class__.__name__}) - using its last backup",
+                      flush=True)
+            except Exception:
+                raise IndexBroken(f"assets/imported/index.json can't be read ({exc}) and there's no good backup - "
+                                  "nothing was changed; restore it before importing or deleting models")
+    else:
+        idx = {"packs": []}
+    if not isinstance(idx, dict) or not isinstance(idx.get("packs"), list):
+        raise IndexBroken("assets/imported/index.json isn't a model list")
+    _BASES[id(idx)] = json.dumps(idx, sort_keys=True)
+    return idx
+
+
+class _Lock:
+    """A lock file shared by every process (the server and its jobs); a lock older than STALE s is broken."""
+    STALE = 120
+
+    def __enter__(self):
+        LIB.mkdir(parents=True, exist_ok=True)
+        t0 = time.time()
+        while True:
+            try:
+                fd = os.open(str(LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+                return self
+            except FileExistsError:
+                try:
+                    if time.time() - LOCK.stat().st_mtime > self.STALE:
+                        LOCK.unlink()
+                        continue
+                except OSError:
+                    pass
+                if time.time() - t0 > 60:
+                    raise TimeoutError("the model list is locked by another job for over a minute")
+                time.sleep(0.05)
+
+    def __exit__(self, *a):
+        try:
+            LOCK.unlink()
+        except OSError:
             pass
-    return {"packs": []}
+
+
+def _by_id(items):
+    return {x.get("id"): x for x in items if isinstance(x, dict)}
+
+
+def merge(base, ours, theirs):
+    """Three-way merge of model lists: our changes since `base` applied onto `theirs` (pack and model granularity)."""
+    bp, op, tp = _by_id(base.get("packs", [])), _by_id(ours.get("packs", [])), _by_id(theirs.get("packs", []))
+    out = []
+    for pid, tpack in tp.items():
+        if pid in bp and pid not in op:
+            continue                                     # we removed this pack
+        if pid not in op:
+            out.append(tpack)                            # theirs, untouched by us
+            continue
+        opack, bpack = op[pid], bp.get(pid, {})
+        pack = dict(tpack)
+        for k, v in opack.items():                       # pack fields we changed
+            if k != "models" and bpack.get(k) != v:
+                pack[k] = v
+        bm, om, tm = _by_id(bpack.get("models", [])), _by_id(opack.get("models", [])), _by_id(tpack.get("models", []))
+        models = []
+        for mid, m in tm.items():
+            if mid in bm and mid not in om:
+                continue                                 # we removed it
+            if mid in om and om[mid] != bm.get(mid):
+                models.append(om[mid])                   # we changed (or added) it
+            else:
+                models.append(m)
+        models += [m for mid, m in om.items() if mid not in tm and mid not in bm]   # we added it
+        pack["models"] = models
+        out.append(pack)
+    out += [p for pid, p in op.items() if pid not in tp and pid not in bp]           # packs we added
+    return dict(theirs, packs=out)
 
 
 def save_index(idx):
     LIB.mkdir(parents=True, exist_ok=True)
-    tmp = INDEX.with_suffix(".tmp")
-    tmp.write_text(json.dumps(idx, indent=1), encoding="utf-8")
-    tmp.replace(INDEX)
+    base_text = _BASES.get(id(idx))
+    with _Lock():
+        current = None
+        if INDEX.exists():
+            try:
+                current = _read(INDEX)
+            except Exception:
+                current = None
+        result = idx
+        if current is not None and base_text is not None and json.dumps(current, sort_keys=True) != base_text:
+            result = merge(json.loads(base_text), idx, current)        # someone else saved since we loaded
+        if current is not None:                                         # the last good list, always kept
+            shutil.copyfile(INDEX, BACKUP)
+            SNAPS.mkdir(exist_ok=True)
+            snap = SNAPS / f"index-{time.strftime('%Y-%m-%d')}.json"
+            if not snap.exists():
+                shutil.copyfile(INDEX, snap)
+                for old in sorted(SNAPS.glob("index-*.json"))[:-14]:
+                    old.unlink()
+        tmp = INDEX.with_name(f".index.{os.getpid()}.{int(time.time() * 1000)}.tmp")
+        tmp.write_text(json.dumps(result, indent=1), encoding="utf-8")
+        tmp.replace(INDEX)
+    if result is not idx:                                               # the caller keeps working with the merged list
+        idx.clear()
+        idx.update(result)
+    _BASES[id(idx)] = json.dumps(idx, sort_keys=True)
+
+
+def rebuild_index(sources=(), log=print, measure=True):
+    """The model list rebuilt from the pack folders (2026-11-28: it was lost - see save_index). Every model file gets
+    the SAME id as when it was imported (pack + file name + a hash of its path), so pictures, Made 3D links and old
+    videos line up again. Details are borrowed by id from `sources` (older copies of the list) and the current list;
+    the rest is measured again in Blender. Converted MDL / text-FBX models point at their OBJ again.
+    Returns (packs, models, measured)."""
+    known, meta = {}, {}
+    # every copy of the list there is: the given ones, the current list, its backup, the daily snapshots (newest
+    # first) and any index.*.json kept beside it (index.broken-..., index.recovery-...)
+    extra = sorted(SNAPS.glob("index-*.json"), reverse=True) if SNAPS.exists() else []
+    extra += sorted((p for p in LIB.glob("index.*.json") if p != BACKUP), key=lambda p: p.stat().st_mtime, reverse=True)
+    for src in list(sources) + [INDEX, BACKUP] + extra:
+        try:
+            old = _read(src)
+        except Exception:
+            continue
+        for p in old.get("packs", []):
+            meta.setdefault(p["id"], {k: v for k, v in p.items() if k != "models"})
+            for m in p.get("models", []):
+                known.setdefault(m.get("id"), m)
+    log(f"[rebuild] {len(known)} model record(s) to borrow details from")
+    packs_out, todo = [], []
+    for d in sorted(x for x in PACKS.iterdir() if x.is_dir() and not x.name.startswith(".")):
+        pid = d.name
+        files = [p for p in d.rglob("*") if p.is_file() and p.suffix.lower() in MODEL_FORMATS
+                 and not any(part in ("_converted", "_duplicates", "previews") or part.startswith(".")
+                             for part in p.relative_to(d).parts[:-1])]
+        models = []
+        for p in sorted(files):
+            rel = p.relative_to(d)
+            fmt = MODEL_FORMATS[p.suffix.lower()]
+            stem = p.stem if pid == MADE_PACK else slug(p.stem)
+            mid = f"{pid}_{stem}_{hashlib.md5(str(rel).encode('utf-8')).hexdigest()[:6]}"
+            rec = dict(known.get(mid) or {})
+            rec.update(id=mid, file=str(p.relative_to(ROOT)).replace("\\", "/"), format=fmt,
+                       folder="/".join(rel.parts[:-1]), size_mb=round(p.stat().st_size / 1048576, 2))
+            rec.setdefault("name", p.stem.replace("_", " "))
+            rec.setdefault("tags", sorted(words(p.stem) | words("/".join(rel.parts[:-1]))))
+            if pid == MADE_PACK:
+                rec["made"] = True
+            # converted copies: an MDL's OBJ, or a text FBX's OBJ (at import, or later by convert_text_fbx)
+            conv = None
+            if fmt == "mdl" or (fmt == "fbx" and fbx_ascii.is_ascii_fbx(p)):
+                base = d / "_converted" / slug(p.stem)
+                for cand in [base / mid[-6:] / f"{p.stem}.obj", base / f"{p.stem}.obj"] + sorted(base.rglob("*.obj")):
+                    if cand.exists():
+                        conv = cand
+                        break
+                if conv is None:
+                    rec.update(status="failed", note="Error: ASCII FBX files are not supported" if fmt == "fbx"
+                               else "could not convert")
+                    models.append(rec)
+                    continue
+                rec.update(source_file=rec["file"], file=str(conv.relative_to(ROOT)).replace("\\", "/"), format="obj")
+            if rec.get("status") == "ok" and rec.get("height"):
+                pass                                          # measured before: keep it
+            else:
+                rec["status"] = "pending"
+                todo.append(rec)
+            if (PREVIEWS / f"{mid}.png").exists():
+                rec["preview"] = f"/impimg/{mid}.png"
+            models.append(rec)
+        if not models:
+            continue
+        pm = meta.get(pid) or {"name": pid.replace("_zip", "").replace("_", " ").title(),
+                               "license": "unknown (the list was rebuilt - check the pack's own licence)",
+                               "source": "", "added": d.stat().st_mtime, "skipped": 0}
+        packs_out.append(dict(pm, id=pid, models=models))
+    log(f"[rebuild] {len(packs_out)} pack(s), {sum(len(p['models']) for p in packs_out)} model(s); "
+        f"{len(todo)} to measure in Blender")
+    measured = 0
+    if measure and todo:
+        for i in range(0, len(todo), 150):                    # in chunks: progress, and one bad file can't stop all
+            chunk = todo[i:i + 150]
+            progress.report(0.1 + 0.75 * i / len(todo), f"Measuring models {i + 1}-{i + len(chunk)} of {len(todo)}")
+            got = _probe([(ROOT / r["file"], r["format"]) for r in chunk], log)
+            for r in chunk:
+                m = got.get(str(ROOT / r["file"]), {})
+                if m.get("ok"):
+                    r.update(status="ok", height=m["height"], width=m["width"], depth=m["depth"])
+                    measured += 1
+                else:
+                    r.update(status="failed", note=m.get("error") or "could not be measured")
+    for p in packs_out:
+        for r in p["models"]:
+            if r.get("status") == "pending":
+                r["status"] = "failed"
+                r.setdefault("note", "not measured yet")
+            if not r.get("hash"):
+                try:
+                    r["hash"] = file_hash(ROOT / (r.get("source_file") or r["file"]))
+                except OSError:
+                    pass
+    idx = {"packs": packs_out}
+    with _Lock():
+        if INDEX.exists():
+            shutil.copyfile(INDEX, LIB / f"index.before-rebuild-{time.strftime('%Y%m%d-%H%M%S')}.json")
+        tmp = INDEX.with_name(f".index.{os.getpid()}.rebuild.tmp")
+        tmp.write_text(json.dumps(idx, indent=1), encoding="utf-8")
+        tmp.replace(INDEX)
+    progress.report(0.88, "Pictures for models that have none")
+    make_previews([r for p in packs_out for r in p["models"] if r.get("status") == "ok"], log)
+    idx2 = load_index()
+    pics = {r["id"]: r.get("preview") for p in packs_out for r in p["models"] if r.get("preview")}
+    for p in idx2["packs"]:
+        for r in p["models"]:
+            if pics.get(r["id"]):
+                r["preview"] = pics[r["id"]]
+    save_index(idx2)
+    log(f"[rebuild] done: {len(packs_out)} packs, {sum(len(p['models']) for p in packs_out)} models, "
+        f"{measured} measured again")
+    return len(packs_out), sum(len(p["models"]) for p in packs_out), measured
 
 
 def packs():
@@ -1201,6 +1437,9 @@ if __name__ == "__main__":
     p_cat = sub.add_parser("categorize", help="the AI sorts models the name list doesn't place")
     p_cat.add_argument("--redo", action="store_true", help="ask again for ones it already sorted")
     sub.add_parser("convert", help="convert text (ASCII) FBX models that failed to import into OBJ and use them")
+    p_reb = sub.add_parser("rebuild", help="rebuild the model list from the pack folders (same ids)")
+    p_reb.add_argument("--from", dest="sources", nargs="*", default=[], help="older copies of index.json to borrow from")
+    p_reb.add_argument("--no-measure", action="store_true")
     p_del = sub.add_parser("delete")
     p_del.add_argument("pack_id")
     a = ap.parse_args()
@@ -1224,6 +1463,15 @@ if __name__ == "__main__":
     elif a.cmd == "previews":
         previews_all()
         print("PREVIEWS=done", flush=True)
+    elif a.cmd == "rebuild":
+        n_p, n_m, n_meas = rebuild_index(a.sources, measure=not a.no_measure)
+        print(f"REBUILT packs={n_p} models={n_m} measured={n_meas}", flush=True)
+        try:
+            import settings as S
+            ai_categorize(S.load_settings().get("ollama"), print)
+        except Exception as exc:
+            print(f"[rebuild] categories: AI skipped ({exc.__class__.__name__})")
+        progress.report(1.0, "Done")
     elif a.cmd == "convert":
         fixed, left = convert_text_fbx()
         print(f"CONVERTED={fixed} LEFT={left}", flush=True)

@@ -888,6 +888,9 @@ class Handler(BaseHTTPRequestHandler):
                 b, d = self.body_json(), lib[sub]
                 if isinstance(b.get("looks"), str):
                     d["looks"] = b["looks"].strip()[:200]
+                if isinstance(b.get("name"), str) and b["name"].strip():
+                    d["name"] = b["name"].strip()[:60]          # shown name only: its id (kind) keeps sets working
+                    d["renamed"] = True
                 for k, lo, hi in (("height", 0.05, 12.0), ("width", 0.03, 15.0)):
                     if b.get(k) not in (None, ""):
                         d[k] = round(max(lo, min(hi, float(b[k]))), 2)

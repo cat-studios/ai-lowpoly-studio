@@ -77,6 +77,10 @@ def handle(h, method, parts, *, submit, Job, root):
             cmd.append("--redo")
         return h.send_json(submit(Job("import", "Sort models into categories", cmd)).to_dict())
 
+    if method == "POST" and arg == "rebuild":     # the model list rebuilt from the pack folders (same ids)
+        cmd = [sys.executable, "-u", str(root / "pipeline" / "imported.py"), "rebuild"]
+        return h.send_json(submit(Job("import", "Rebuild the imported model list", cmd)).to_dict())
+
     if method == "POST" and arg == "convert":     # text (ASCII) FBX models that failed -> OBJ, measured, pictured
         cmd = [sys.executable, "-u", str(root / "pipeline" / "imported.py"), "convert"]
         return h.send_json(submit(Job("import", "Convert text FBX models", cmd)).to_dict())

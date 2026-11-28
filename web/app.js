@@ -3328,6 +3328,8 @@ function editProp(p) {
     body: `<div class="prop-edit">
       <div class="prop-big checker">${propPic(p) ? `<img src="${esc(propPic(p))}" alt="">` : `<div class="asset-noimg"><span>${p.form === "3d" ? "🧊" : "🖼"}</span><small>${p.form === "3d" ? "A 3D model built from shapes - its picture appears after its next look check." : "Not drawn yet - press 🎨 Redraw."}</small></div>`}</div>
       <div class="prop-form">
+        <label class="modal-field">Name <span class="muted">(how it's shown here - sets that use it keep working)</span>
+          <input type="text" data-f="name" maxlength="60" value="${esc(titleCase(p.name))}"></label>
         <label class="modal-field">Description <span class="muted">(what it looks like - used when it's drawn)</span>
           <textarea rows="3" data-f="looks">${esc(p.looks)}</textarea></label>
         <div class="row">
@@ -3354,7 +3356,7 @@ function editProp(p) {
       { label: "Cancel", value: null },
       { label: "💾 Save", primary: true, onClick: async (m) => {
           const val = (k) => $(`[data-f=${k}]`, m).value;
-          await api("PUT", `/api/assets/props/${p.kind}`, { looks: val("looks"), height: val("height"), width: val("width"), on: val("on") });
+          await api("PUT", `/api/assets/props/${p.kind}`, { name: val("name"), looks: val("looks"), height: val("height"), width: val("width"), on: val("on") });
           toast(`Saved ${titleCase(p.name)}`);
           pageAssets();
         } },
@@ -3665,10 +3667,13 @@ async function assetsImported(box) {
       <div class="asset-grid">${shown.filter((m) => m.category === c).map(impModelCard).join("")}</div>`).join("")
       || '<p class="muted" style="margin-top:12px">No models match.</p>'}
     <details class="panel" style="margin-top:18px"><summary><b>Packs</b> <span class="muted small">(${data.packs.length} - where the models came from)</span></summary>
+      <p class="small" style="margin:8px 0">Models missing from this page although their pack is on disk?
+        <button id="imp-rebuild">🛠 Rebuild the list from the pack folders</button>
+        <span class="muted">- every model gets its old id back (pictures and videos keep working); sizes are measured again in Blender (a while for thousands).</span></p>
       ${data.packs.map((p) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
         <span style="flex:1">${esc(p.name)} <span class="muted small">· ${p.count} models · from ${esc(p.source || "")} · ${ago(p.added)}</span></span>
         <span class="pill ok">${esc(p.license || "")}</span><button class="danger" data-imp-pack="${esc(p.id)}">Remove pack</button></div>`).join("")}
-    </details>` : '<p class="muted" style="margin-top:12px">No imported packs yet.</p>'}`;
+    </details>` : '<p class="muted" style="margin-top:12px">No imported packs yet. Packs on disk but not listed? <button id="imp-rebuild">🛠 Rebuild the list from the pack folders</button></p>'}`;
 
   const redraw = () => assetsImported(box);
   $("#ip-go").onclick = () => $("#ip-file").click();
@@ -3684,6 +3689,12 @@ async function assetsImported(box) {
       toast("Pack imported ✓");
       await pageAssets("imported");
     });
+  });
+  if ($("#imp-rebuild")) $("#imp-rebuild").onclick = guard(async () => {
+    if (!await uiConfirm("Rebuild the model list from the pack folders? The current list is saved beside it first. Names and categories are kept where any copy of the list still has them; the rest are measured and sorted again.", { title: "Rebuild the list", ok: "🛠 Rebuild" })) return;
+    const job = await api("POST", "/api/imported/rebuild", {});
+    toast("Rebuilding - the progress is in the jobs panel (top right)");
+    watchJob(job, null, (j) => { toast(j.status === "done" ? "List rebuilt ✓" : "Rebuild failed - see the log", j.status !== "done"); redraw(); });
   });
   if (!models.length) return;
   const qBox = $("#imp-q");

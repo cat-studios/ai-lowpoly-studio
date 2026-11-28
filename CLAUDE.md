@@ -454,6 +454,22 @@ Open items:
   3D model of large flat-shaded triangular facets, one solid colour per part, no textures or small details. Dev:
   a faceted snail and hydrant; the snail became a GLB in 51 s.
 
+- **The imported model list was lost (2026-11-28, production)**: a delete on Assets -> Imported (server) and the "Make
+  60 props real 3D" job (`add_made`, its own process) saved `assets/imported/index.json` at the same moment through the
+  same `index.tmp` -> broken JSON; the job's next `load_index` read it as EMPTY and saved a list with only its new model
+  (3,462 models gone from the list; every file stayed on disk). Fixed in `imported.py`:
+  - `load_index`: a broken list -> `index.backup.json`, else `IndexBroken` (never an empty list); remembers what it read.
+  - `save_index`: a lock file (`_Lock`, all processes, stale after 120 s), its own temp name, the previous good list ->
+    `index.backup.json` + one snapshot a day (`index.snapshots/`, 14 kept), and a three-way `merge` (base = what this
+    process loaded) when someone else saved meanwhile: only this process's own additions/removals/edits go on top.
+  - `rebuild_index(sources)`: the list from the pack folders with the SAME ids (pack + slug(stem) + md5 of the Windows
+    relative path; Made 3D: stem), converted MDL / text-FBX OBJs found again, details borrowed by id from every copy
+    (current, backup, snapshots, `index.*.json` - production got `index.recovery-dev-copy.json`), the rest measured
+    in Blender (150 per `_probe`), pictures reused / drawn, then `ai_categorize`. CLI `imported.py rebuild [--from ...]`,
+    `POST /api/imported/rebuild`, Assets -> Imported -> Packs -> "🛠 Rebuild the list". Dev test: list cut to 3 models
+    -> rebuilt 596/596 with identical ids and pictures; a pack's sizes measured again = identical.
+  - `tests/test_index_safety.py`: two writers keep both changes, a broken list is never empty, snapshots.
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours
