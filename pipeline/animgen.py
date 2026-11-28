@@ -210,6 +210,31 @@ def set_verified(name, on):
     return animlib.save(a)
 
 
+def rename(old, new):
+    """Rename an animation = the word scripts use (the user, 2026-11-28). Its files move to the new name and the old
+    word is kept in "aliases", so scripts and videos made before still play it (animlib.aliases)."""
+    import catalog
+    old, new = animlib.slug(old), animlib.slug(new)
+    lib = animlib.library()
+    if old not in lib:
+        raise KeyError(old)
+    if not new or new == old:
+        raise ValueError("give it a new name (one or two words)")
+    if new in lib or new in catalog.ANIMS or new in animlib.aliases() or new in animlib.NOT_ACTIONS:
+        raise ValueError(f"'{new}' is already used by another animation")
+    if old in animlib.BUILTIN:
+        raise ValueError("the built-in examples can't be renamed")
+    a = dict(lib[old], name=new)
+    a["aliases"] = sorted(set(a.get("aliases") or []) | {old})
+    animlib.save(a)
+    for ext in (".png", ".gif"):
+        f = animlib.LIB / f"{old}{ext}"
+        if f.exists():
+            f.replace(animlib.LIB / f"{new}{ext}")
+    (animlib.LIB / f"{old}.json").unlink()            # its content now lives in <new>.json (same data, new name)
+    return a
+
+
 def vision_check(strip, name, description, ollama, log=print):
     """(score 1-10 or None, problem): the vision model rates the strip (close-up x2, medium x2, in time order).
     A score, not yes/no: the small vision model turned down every try that wasn't textbook-perfect."""
@@ -273,6 +298,7 @@ def make(name, description="", ollama=None, log=print, tries=2, check=True):
 def ensure(word, line="", log=print):
     """For a script: the animation's name if it exists or could be made, else None (not a body action / no AI)."""
     name = animlib.slug(word)
+    name = animlib.aliases().get(name, name)      # a renamed animation's old word
     if not name or name in animlib.NOT_ACTIONS:
         return None
     import catalog

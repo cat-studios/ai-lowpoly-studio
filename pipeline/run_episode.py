@@ -881,6 +881,15 @@ def resolve_animations(ep, log=print):
     word that isn't a body action ("messy") keeps the shot's own action. Arms-out animations don't stay in close
     shots (they'd be cropped)."""
     import animlib
+    renamed = animlib.aliases()  # an animation renamed on the Assets page: old videos / scripts use its old word
+    for s in ep["shots"]:
+        if s.get("action") in renamed:
+            s["action"] = renamed[s["action"]]
+        if s.get("want") in renamed:
+            s["want"] = renamed[s["want"]]
+        for a in s.get("actions") or []:
+            if isinstance(a, dict) and a.get("anim") in renamed:
+                a["anim"] = renamed[a["anim"]]
     for s in ep["shots"]:        # an older video's "nya" / "fast" pose (made from a non-action word): her plain idle
         if s.get("action") in animlib.NOT_ACTIONS:
             s["action"] = "idle"

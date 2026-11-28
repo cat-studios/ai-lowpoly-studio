@@ -748,6 +748,7 @@ def list_sets():
                     "preview": f"/setimg/{img.name}?v={int(img.stat().st_mtime)}" if img.exists() else None,
                     "props": len(rec.get("props", [])), "textures": list((rec.get("textures") or {}).keys()),
                     "where": "inside" if indoor else "outside", "light": light, "style": rec.get("style") or "classic",
+                    "ambience": rec.get("ambience") or "",
                     "updated": rec.get("created") or (js.stat().st_mtime if js.exists() else 0)})
     out.sort(key=lambda s: -s["updated"])
     return out
@@ -1276,6 +1277,28 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("no such set")
                 cmd = [sys.executable, "-u", str(PIPE / "set_export.py"), arg]
                 return self.send_json(submit(Job("set", f"3D view: {arg}", cmd)).to_dict())
+            if method == "PUT" and not sub:                 # ✏️ name, description, light, ambience (the Sets page)
+                if arg in catalog.SETS:
+                    raise ValueError("the built-in Legacy sets are made in code - their details can't be edited")
+                f = SETS_DIR / f"{arg}.json"
+                if not f.exists():
+                    return self.fail("no such set", 404)
+                rec, b = json.loads(f.read_text(encoding="utf-8-sig")), self.body_json() or {}
+                if isinstance(b.get("name"), str) and b["name"].strip():
+                    rec["name"] = b["name"].strip()[:60]
+                if isinstance(b.get("description"), str):
+                    rec["description"] = b["description"].strip()[:400]
+                if b.get("light") in ("day", "sunset", "night"):
+                    rec["light"] = b["light"]
+                if isinstance(b.get("ambience"), str):
+                    amb = b["ambience"].strip()
+                    if amb and amb not in sfxlib.all_slots():
+                        raise ValueError("unknown ambience sound")
+                    rec["ambience"] = amb
+                S.write_json(f, rec)
+                logs.event(f"SET EDITED: {arg} -> {rec.get('name')}")
+                return self.send_json({"ok": True, "set": {k: rec.get(k) for k in ("id", "name", "description",
+                                                                                    "light", "ambience")}})
             if sub == "layout" and method == "GET":         # the map editor: where each prop stands
                 return self.send_json(set_layout(arg))
             if sub == "layout" and method == "PUT":

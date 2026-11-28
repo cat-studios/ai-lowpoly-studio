@@ -144,7 +144,7 @@ def validate(a, name=""):
     length = float(a.get("length") or out[-1]["t"] or 1.0)
     return {"name": slug(a.get("name") or name), "description": str(a.get("description") or "")[:200],
             "length": round(max(0.2, min(30.0, length)), 3), "loop": bool(a.get("loop")),
-            "keys": out, "shake": shakes, **({k: a[k] for k in ("by", "checked", "created", "problem", "needs_room", "request", "score", "verified") if k in a})}
+            "keys": out, "shake": shakes, **({k: a[k] for k in ("by", "checked", "created", "problem", "needs_room", "request", "score", "verified", "aliases") if k in a})}
 
 
 def library():
@@ -159,6 +159,11 @@ def library():
         except Exception as exc:              # a broken file never breaks a render
             print(f"[anims] {p.name} skipped: {exc}")
     return out
+
+
+def aliases():
+    """Old name -> current name of every renamed animation (Assets -> Animations -> ✏️): old scripts still work."""
+    return {old: n for n, a in library().items() for old in (a.get("aliases") or []) if old != n}
 
 
 def save(a):

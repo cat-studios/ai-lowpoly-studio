@@ -470,6 +470,14 @@ Open items:
     -> rebuilt 596/596 with identical ids and pictures; a pack's sizes measured again = identical.
   - `tests/test_index_safety.py`: two writers keep both changes, a broken list is never empty, snapshots.
 
+- **Editing and renaming** (the user, 2026-11-28): Sets -> ✏️ Edit (`editSet`, `PUT /api/sets/<id> {name, description,
+  light, ambience}`, `settings.write_json`; not the code-built Legacy sets) - the description is what `match_set` /
+  `auto_set` and the writer read. Made props: a Name field (`PUT /api/assets/props/<kind> {name}` -> `name` +
+  `renamed`; `propgen._save` keeps a renamed name through redesigns/rebuilds); matching stays by `kind` (the id), so
+  a rename is a label only. Imported models' names DO steer matching (✏️ there since 2026-11-25). Animations: ✏️ =
+  `animgen.rename(old, new)` (files move, the old word goes to `aliases`; `animlib.aliases()`; `ensure` and
+  `run_episode.resolve_animations` map old words - scripts and older videos keep working; a taken word is refused).
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours

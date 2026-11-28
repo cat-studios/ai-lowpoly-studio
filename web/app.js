@@ -1717,7 +1717,8 @@ async function pageSets() {
         <div class="muted small">${s.builtin ? "" : ({ base: "🏛 ", palette: "🎨 ", judged: "⚖️ " }[s.style] || "")}${LIGHT_ICON[s.light] || ""} ${esc(s.where)}${s.props ? ` · ${s.props} props` : ""}${s.textures.length ? " · 🖼 textured" : ""}</div>
         <div class="muted small" title="Places she can walk to">📍 ${esc(s.marks.join(", "))}</div>
         <div class="btns"><button data-use="${esc(s.id)}">Use</button><button data-prev="${esc(s.id)}">↻ Preview</button>
-          ${s.builtin ? "" : `<button data-regen="${esc(s.id)}" title="Build this set again with other settings">🔄 Regenerate</button>
+          ${s.builtin ? "" : `<button data-sedit="${esc(s.id)}" title="Name, description, light, sound">✏️ Edit</button>
+          <button data-regen="${esc(s.id)}" title="Build this set again with other settings">🔄 Regenerate</button>
           <button data-layout="${esc(s.id)}" title="Move the props around on a top-down map">🗺 Layout</button>
           <button data-view="${esc(s.id)}" title="Look around the scene in 3D">👁 3D view</button>`}
           <button data-del="${esc(s.id)}" title="Remove this set">🗑</button></div>
@@ -1742,6 +1743,7 @@ async function pageSets() {
     }));
   });
   $$("[data-use]").forEach((b) => b.onclick = () => { CS.ep.set = b.dataset.use; CS.ep.start = "front"; location.hash = "#create"; });
+  $$("[data-sedit]").forEach((b) => b.onclick = () => editSet(sets.find((s) => s.id === b.dataset.sedit)));
   $$("[data-pdel]").forEach((b) => b.onclick = guard(async () => {
     if (!(await uiConfirm(`Remove “${b.dataset.pdel.replace(/_/g, " ")}” from the prop library? It goes to assets/props/.trash.`, { title: "Delete prop", ok: "🗑 Delete", danger: true }))) return;
     await api("DELETE", `/api/props/${b.dataset.pdel}`); await pageSets(); $("#props-lib").open = true;
@@ -1754,6 +1756,32 @@ async function pageSets() {
     if (!(await uiConfirm("Episodes that use this set won't render until it's restored. Its files go to sets/.trash.", { title: "Remove this set?", ok: "🗑 Remove", danger: true }))) return;
     await api("DELETE", `/api/sets/${b.dataset.del}`); await refreshMeta(); pageSets();
   }));
+}
+
+// ✏️ a set's details (the user, 2026-11-28): its name, the description the AI reads when it picks a set for a title
+// or writes a script there, its light and its background sound. Props and layout: 🗺 Layout / 🔄 Regenerate.
+function editSet(s) {
+  if (!s) return;
+  const loops = Object.keys(META.sfx || {}).filter((k) => META.sfx[k].kind !== "oneshot");
+  return openModal({ title: `✏️ ${s.name}`, body: `
+    <label class="modal-field">Name<input type="text" data-f="name" maxlength="60" value="${esc(s.name)}"></label>
+    <label class="modal-field">Description <span class="muted">(what the place is - the AI reads it to pick this set for a video and to write about it)</span>
+      <textarea rows="4" data-f="description" maxlength="400">${esc(s.description || "")}</textarea></label>
+    <div class="row">
+      <label class="modal-field">Light<select data-f="light">${options(["day", "sunset", "night"], s.light, { day: "☀ Day", sunset: "🌅 Sunset", night: "🌙 Night" })}</select></label>
+      <label class="modal-field">Background sound<select data-f="ambience"><option value="" ${s.ambience ? "" : "selected"}>none</option>
+        ${loops.map((k) => `<option value="${esc(k)}" ${k === s.ambience ? "selected" : ""}>${esc(META.sfx[k].label || k)}</option>`).join("")}</select></label>
+    </div>
+    <p class="muted small">ID <code>${esc(s.id)}</code> stays the same, so videos that use this set keep working. A new light shows after ↻ Preview.</p>`,
+    buttons: [{ label: "Cancel", value: null },
+      { label: "💾 Save", primary: true, onClick: async (m) => {
+        const v = (k) => $(`[data-f=${k}]`, m).value;
+        if (!v("name").trim()) { toast("Give it a name", true); return false; }
+        await api("PUT", `/api/sets/${encodeURIComponent(s.id)}`, { name: v("name"), description: v("description"), light: v("light"), ambience: v("ambience") });
+        toast("Saved ✓");
+        await refreshMeta();
+        pageSets();
+      } }] });
 }
 
 /* ------------------------------------------------------------------ AUDIO (music + sound effects) */
@@ -3140,6 +3168,7 @@ function assetsAnims(box, anims) {
     return `<div class="asset-card" style="cursor:default">
       <div class="asset-thumb checker" style="aspect-ratio:${a.gif ? "9/16" : "9/4"};max-height:320px">${pic ? `<img src="${esc(pic)}" alt="${esc(a.name)}" loading="lazy" style="max-width:100%;max-height:100%;image-rendering:pixelated" ${a.gif && a.picture ? `title="Hover the 🔍 for the AI's check picture"` : ""}>` : `<div class="asset-noimg"><span>🕺</span><small>no picture</small></div>`}</div>
       <div class="asset-actions">${a.gif && a.picture ? `<a class="button small" href="${esc(a.picture)}" target="_blank" title="The 4 moments the AI judged">🔍</a>` : ""}
+        ${a.builtin ? "" : `<button data-an-ren="${esc(a.name)}" title="Rename - the word scripts use (the old word keeps working)">✏️</button>`}
         <button data-an-ver="${esc(a.name)}" data-on="${a.verified ? 1 : 0}" title="${a.verified ? "Undo: let the AI's score decide again" : "It looks right to you: use it whatever the AI scored"}">${a.verified ? "↩" : "✅"}</button>
         <button data-an-del="${esc(a.name)}" title="Delete">🗑</button></div>
       <div class="asset-info"><div class="asset-name">${esc(a.name.replace(/_/g, " "))}</div>
@@ -3188,6 +3217,15 @@ function assetsAnims(box, anims) {
       await pageAssets("anims");
     });
   });
+  $$("[data-an-ren]").forEach((b) => b.onclick = guard(async () => {
+    const old = b.dataset.anRen;
+    const name = await uiPrompt("Rename animation", { label: `A new name for “${old.replace(/_/g, " ")}” - the word scripts use, like [${old}]. Old scripts and videos that say ${old} keep working.`,
+      value: old.replace(/_/g, " "), ok: "✏️ Rename" });
+    if (!name || !name.trim()) return;
+    const r = await api("PUT", `/api/anims/${encodeURIComponent(old)}`, { rename: name.trim() });
+    toast(`Renamed to [${r.name}] ✓`);
+    await pageAssets("anims");
+  }));
   $$("[data-an-ver]").forEach((b) => b.onclick = guard(async () => {
     const on = b.dataset.on !== "1";
     await api("PUT", `/api/anims/${encodeURIComponent(b.dataset.anVer)}`, { verified: on });

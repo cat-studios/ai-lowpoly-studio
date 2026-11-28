@@ -46,6 +46,14 @@ def handle(h, method, parts, *, submit, Job, root):
               (["--redo"] if (h.body_json() or {}).get("redo") else [])
         return h.send_json(submit(Job("anim", "Animation GIF previews", cmd)).to_dict())
 
+    if method == "PUT" and arg and (h.body_json() or {}).get("rename"):   # ✏️ a new word for it (old one still works)
+        import animgen
+        try:
+            a = animgen.rename(arg, str(h.body_json()["rename"]))
+        except KeyError:
+            return h.fail("no such animation", 404)
+        return h.send_json({"ok": True, "name": a["name"], "aliases": a.get("aliases", [])})
+
     if method == "PUT" and arg:                # ✅ Verified: your say over the AI's score
         import animgen
         try:
