@@ -974,10 +974,26 @@ def _prop_check_on():
 CHECK_V = 2
 
 
+def set_verified(d, on):
+    """Your own say over the AI's look score (Assets -> ✅ Verified, the user 2026-11-28): a verified prop counts as
+    passed - never re-checked, never turned into a sprite by a score, never dropped from a cutaway. Undo = the score
+    decides again (an older check is redone on its next use)."""
+    if on:
+        d.update(verified=True, checked=True, check_v=CHECK_V)
+        if d.get("form") != "sprite" and d.get("parts"):
+            d["complex"] = False
+    else:
+        d.pop("verified", None)
+        d["checked"] = (d.get("look_score") or PROP_PASS) >= PROP_PASS if d.get("look_score") is not None else None
+    return d
+
+
 def look_checked(d, kind, looks, setting, ollama, log=print):
     """Check an AI design's look; if it fails, the AI redesigns it once from the critique; if that fails too, it
     becomes a drawn sprite (complex = True -> add_sprite). The best-scoring shape design is kept as the fallback."""
     import llm
+    if d.get("verified"):
+        return d                                   # you looked at it and said it's right
     best = d
     for attempt in (1, 2):
         score, problem = look_score(d, ollama, log)

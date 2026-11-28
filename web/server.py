@@ -569,6 +569,7 @@ def prop_info(kind, d, used=None):
             "sprite": f"/propimg/{kind}.png?v={int(img.stat().st_mtime)}" if sprite else None,
             "preview3d": f"/propimg/{kind}.3d.png?v={int(img3.stat().st_mtime)}" if img3.exists() else None,
             "made": made_pic(d), "can_make_real": propgen.can_make_real(d),
+            "verified": bool(d.get("verified")), "look_score": d.get("look_score"), "checked": d.get("checked"),
             "used_in": used if used is not None else []}
 
 
@@ -895,6 +896,8 @@ class Handler(BaseHTTPRequestHandler):
                     d["size_checked"] = True
                 if b.get("form") == "3d" and d.get("parts"):      # back to its 3D shapes (Assets: Use the 3D model)
                     d["complex"], d["form"] = False, "3d"
+                if "verified" in b:                               # ✅ your say over the AI's look score
+                    propgen.set_verified(d, bool(b["verified"]))
                 propgen._save(d)
                 return self.send_json({"ok": True, "prop": prop_info(sub, d)})
             if method == "POST" and rest[1:] == ["make3d"]:       # 🧊 Make it real 3D (TRELLIS 2, model3d.py)

@@ -25,10 +25,14 @@ FILES = {"unet": "trellis_2_int8_convrot.safetensors", "clip_vision": "dino_v3_L
 # a 3D-looking render, never a flat drawing: "low poly game asset, flat colors" drew the snail as a flat outlined
 # sticker, TRELLIS guessed its depth and painted the black outlines on as dark smudges (production, 2026-11-27);
 # the duck drawn as a soft-shaded 3D toy came out clean
-DRAW_PROMPT = ("a 3D render of a single {name}, {looks}, a cute toy figurine made of smooth matte plastic, chunky "
-               "simple shapes, bright solid colors, soft even studio lighting, three-quarter front view from slightly "
-               "above, the whole object fully visible and centered with space around it, plain white background, "
-               "no black outlines, not a flat drawing, no shadow, no floor, nothing else in the picture, no text")
+# a LOW-POLY 3D render (the user, 2026-11-28: "more low poly ... that is why some models look weird"): big flat
+# facets and solid colours give TRELLIS clear shapes and clean colour areas, and the result already fits the
+# studio's look before it's simplified. (A flat outlined drawing made smudged models; a smooth toy came out blobby.)
+DRAW_PROMPT = ("a low poly 3D model of a single {name}, {looks}, made of a few large flat-shaded triangular facets, "
+               "chunky simplified geometric shapes, sharp edges between faces, each part one solid bright color, no "
+               "textures, no small details, game asset style, soft even lighting, three-quarter front view from "
+               "slightly above, the whole object fully visible and centered with space around it, plain white "
+               "background, no outlines, not a drawing, no shadow, no floor, nothing else in the picture, no text")
 FACES = 3000          # low-poly: the mesh is simplified to about this many faces (the studio's props are a few hundred)
 TIMEOUT = 900
 REMESH = 160         # voxel grid of the clean-up remesh (256 ~ 100k faces): enough for a few thousand faces

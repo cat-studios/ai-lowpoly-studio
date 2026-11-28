@@ -430,6 +430,25 @@ Open items:
   line when ambience + sound effects summed loud. Now `measure_lufs` (audio-only ebur128 pass) -> one fixed
   `volume` gain to -14 LUFS + `alimiter` 0.84; pigeon rebuilt: -14.5 LUFS, peak -1.3 dB, no silence.
 
+- **Imported models that can't be used** (the user: "why have some failed... should I remove them?"): production had
+  293 failed, ALL ASCII (text) FBX from the "assorted" pack (Blender's importer reads binary FBX only; 287 exist in
+  no other format there). The matcher already skips them. Assets -> Imported: `impWhy(note)` in plain words on each
+  card, a "⚠ Can't be used · N" chip, a panel grouped by reason with what to do (re-download as OBJ/GLB) and
+  "🗑 Move all N to the trash" (`POST /api/imported/delete`). No ASCII FBX converter yet (could be written like
+  mdl_convert: vertices, PolygonVertexIndex, material colours, Lcl transforms).
+- **Animation GIF previews** (the user): `animgen.preview_gif(a)` = one medium-camera render with her real model
+  (216x384 @ 12 fps, the animation twice when it loops) -> `assets/anims/<name>.gif` (180x320, 96 colours, bayer);
+  made after every `make`, and for the rest by `animgen.py gifs [--redo]` = `POST /api/anims/gifs` (job). Cards show
+  the GIF (🔍 = the AI's 4-moment check strip); a panel offers "Make the N GIFs". Dev: salute, 36 s, 34 frames, 96 KB.
+- **✅ Verified** (the user: "override the AI automatic scoring"): animations `animgen.set_verified(name, on)` (PUT
+  `/api/anims/<name> {verified}`; `verified` kept by `animlib.validate`) = checked True whatever the score, undo = the
+  score decides; made props `propgen.set_verified(d, on)` (PUT `/api/assets/props/<kind> {verified}`) = checked,
+  current `check_v`, back to 3D unless you made it a sprite, and `look_checked` returns it untouched. Cards show
+  "✅ verified (AI: n/10)" and a ✅ / ↩ button; prop cards also show the look score.
+- **Low-poly drawings for image-to-3D** (the user: models looked weird): `model3d.DRAW_PROMPT` asks for a low-poly
+  3D model of large flat-shaded triangular facets, one solid colour per part, no textures or small details. Dev:
+  a faceted snail and hydrant; the snail became a GLB in 51 s.
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours

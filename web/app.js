@@ -3131,19 +3131,29 @@ JOB_ICON.anim = "🕺";
 function assetsAnims(box, anims) {
   const own = anims.filter((a) => !a.builtin);
   const card = (a) => {
-    const st = a.checked ? `<span class="chip good">✓ ${a.score ? a.score + "/10" : "checked"}</span>`
-      : a.checked === false ? `<span class="chip warn" title="${esc(a.problem || "")}">⚠ ${a.score ? a.score + "/10" : "not confirmed"}</span>`
+    const st = a.verified ? `<span class="chip good" title="You checked it yourself - used whatever the AI's score says">✅ verified by you${a.score ? ` (AI: ${a.score}/10)` : ""}</span>`
+      : a.checked ? `<span class="chip good">✓ ${a.score ? a.score + "/10" : "checked"}</span>`
+      : a.checked === false ? `<span class="chip warn" title="${esc(a.problem || "")}">⚠ ${a.score ? a.score + "/10" : "not confirmed"} - not used</span>`
       : `<span class="chip dim">unchecked</span>`;
+    // the moving GIF when there is one (the user, 2026-11-28), else the 4-moment check strip
+    const pic = a.gif || a.picture;
     return `<div class="asset-card" style="cursor:default">
-      <div class="asset-thumb checker" style="aspect-ratio:9/4">${a.picture ? `<img src="${esc(a.picture)}" alt="${esc(a.name)}" loading="lazy" style="max-width:100%;max-height:100%">` : `<div class="asset-noimg"><span>🕺</span><small>no picture</small></div>`}</div>
-      <div class="asset-actions"><button data-an-del="${esc(a.name)}" title="Delete">🗑</button></div>
+      <div class="asset-thumb checker" style="aspect-ratio:${a.gif ? "9/16" : "9/4"};max-height:320px">${pic ? `<img src="${esc(pic)}" alt="${esc(a.name)}" loading="lazy" style="max-width:100%;max-height:100%;image-rendering:pixelated" ${a.gif && a.picture ? `title="Hover the 🔍 for the AI's check picture"` : ""}>` : `<div class="asset-noimg"><span>🕺</span><small>no picture</small></div>`}</div>
+      <div class="asset-actions">${a.gif && a.picture ? `<a class="button small" href="${esc(a.picture)}" target="_blank" title="The 4 moments the AI judged">🔍</a>` : ""}
+        <button data-an-ver="${esc(a.name)}" data-on="${a.verified ? 1 : 0}" title="${a.verified ? "Undo: let the AI's score decide again" : "It looks right to you: use it whatever the AI scored"}">${a.verified ? "↩" : "✅"}</button>
+        <button data-an-del="${esc(a.name)}" title="Delete">🗑</button></div>
       <div class="asset-info"><div class="asset-name">${esc(a.name.replace(/_/g, " "))}</div>
         <div class="asset-meta">${a.made_up ? '<span class="chip warn" title="Made from a word that isn\'t an action - never used">🧹 made up</span>' : ""}${st}<span class="chip">${a.length}s${a.loop ? " · loops" : ""}</span>${a.by === "ai" ? '<span class="chip">AI</span>' : ""}</div>
         <div class="muted small">${esc(a.description)}</div>
         ${a.checked === false && a.problem ? `<div class="muted small">Checker: ${esc(a.problem)}</div>` : ""}</div></div>`;
   };
   const madeUp = own.filter((a) => a.made_up);
+  const noGif = own.filter((a) => !a.gif && !a.made_up);
   box.innerHTML = `
+    ${noGif.length ? `<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span style="flex:1">${noGif.length} animation${noGif.length > 1 ? "s have" : " has"} no moving preview yet (new ones get one when they're made).</span>
+      <button id="an-gifs">🎞 Make ${noGif.length > 1 ? `the ${noGif.length} GIFs` : "its GIF"}</button></div>
+      <div class="inline-job" id="an-gif-job"></div>` : ""}
     ${madeUp.length ? `<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <span style="flex:1">${madeUp.length} animation${madeUp.length > 1 ? "s were" : " was"} made from words that aren't actions (${madeUp.map((a) => esc(a.name)).join(", ")}). They're never used any more.</span>
       <button id="an-tidy">🧹 Move ${madeUp.length > 1 ? "them" : "it"} to the trash</button></div>` : ""}
@@ -3170,6 +3180,20 @@ function assetsAnims(box, anims) {
       await pageAssets("anims");
     });
   });
+  if ($("#an-gifs")) $("#an-gifs").onclick = guard(async () => {
+    const job = await api("POST", "/api/anims/gifs", {});
+    toast("Making the GIFs - a short render each");
+    watchJob(job, $("#an-gif-job"), async (j) => {
+      toast(j.status === "done" ? "GIF previews ready ✓" : "Some GIFs failed - see the log", j.status !== "done");
+      await pageAssets("anims");
+    });
+  });
+  $$("[data-an-ver]").forEach((b) => b.onclick = guard(async () => {
+    const on = b.dataset.on !== "1";
+    await api("PUT", `/api/anims/${encodeURIComponent(b.dataset.anVer)}`, { verified: on });
+    toast(on ? "Verified ✓ - videos will use it" : "Back to the AI's score");
+    await pageAssets("anims");
+  }));
   if ($("#an-tidy")) $("#an-tidy").onclick = guard(async () => {
     const r = await api("POST", "/api/anims/tidy", {});
     toast(`${r.moved.length} moved to the animations trash folder`);
@@ -3209,10 +3233,13 @@ function propCard(p) {
         ${p.height ? `<span class="chip">↕ ${(+p.height).toFixed(p.height < 1 ? 2 : 1)} m</span>` : ""}
         <span class="chip">${ON_ICON[p.on] || p.on}</span>
         ${p.made ? `<span class="chip good" title="Made by TRELLIS 2 - in Assets → Imported → Made 3D">🧊 real 3D</span>` : ""}
+        ${p.verified ? `<span class="chip good" title="You checked it yourself - the AI's score doesn't count">✅ verified${p.look_score ? ` (AI: ${p.look_score}/10)` : ""}</span>`
+          : p.look_score ? `<span class="chip ${p.checked === false ? "warn" : ""}" title="The picture model's look score">${p.checked === false ? "⚠" : "✓"} ${p.look_score}/10</span>` : ""}
         ${used ? `<span class="chip good">in ${used} set${used > 1 ? "s" : ""}</span>` : `<span class="chip dim">not in a set</span>`}
       </div>
     </div>
     <div class="asset-actions">
+      <button data-pa="ver" data-on="${p.verified ? 1 : 0}" title="${p.verified ? "Undo: let the AI's look score decide again" : "It looks right to you: count it as passed whatever the AI scored"}">${p.verified ? "↩" : "✅"}</button>
       <button data-pa="edit" title="View & edit">✏️</button>
       ${p.form === "sprite" ? '<button data-pa="redraw" title="Draw it again">🎨</button>' : ""}
       ${p.can_make_real ? '<button data-pa="real" title="Make it a real 3D model (TRELLIS 2)">🧊</button>' : ""}
@@ -3253,6 +3280,12 @@ function assetsProps(box, props, form) {
       card.onclick = (e) => { if (!e.target.closest("button")) editProp(p); };
       card.onkeydown = (e) => { if (e.key === "Enter") editProp(p); };
       $("[data-pa=edit]", card).onclick = () => editProp(p);
+      $("[data-pa=ver]", card).onclick = guard(async () => {
+        const on = !p.verified;
+        await api("PUT", `/api/assets/props/${encodeURIComponent(p.kind)}`, { verified: on });
+        toast(on ? "Verified ✓ - it counts as looking right" : "Back to the AI's score");
+        pageAssets(form === "sprite" ? "sprites" : "props");
+      });
       if ($("[data-pa=redraw]", card)) $("[data-pa=redraw]", card).onclick = () => redrawProp(p);
       if ($("[data-pa=real]", card)) $("[data-pa=real]", card).onclick = guard(() => makeReal(p));
       $("[data-pa=del]", card).onclick = guard(() => deleteProp(p));
@@ -3540,6 +3573,16 @@ const IMP_STATUS = { ok: ["ok", "ready"], needs_conversion: ["err", "needs conve
 // Deleted models' files move to assets/imported/packs/.trash (nothing is deleted for good).
 const IMP = { cat: "all", q: "", select: false, picked: new Set() };
 
+// why a model can't be used, in plain words (the user, 2026-11-28: "why have some failed... should I remove them?")
+function impWhy(note) {
+  const n = String(note || "");
+  if (/ASCII FBX/i.test(n)) return ["Saved as a text (ASCII) FBX - Blender only reads binary FBX",
+    "The model itself is fine. Re-download the pack in OBJ, GLB or binary FBX (most asset sites offer several formats) and import that, or remove these."];
+  if (/needs conversion|mdl/i.test(n)) return ["An old game model (MDL) that couldn't be converted", "Remove it - the converter can't read this one."];
+  if (/could not be measured/i.test(n)) return ["Blender opened nothing in this file", "Usually an empty or broken file - safe to remove."];
+  return [n.split(/[\n:]/)[0].slice(0, 90) || "Blender couldn't open it", "Safe to remove if you don't know the file."];
+}
+
 function impModelCard(m) {
   const [cls, label] = IMP_STATUS[m.status] || ["err", m.status];
   const hh = m.real_height || m.height;
@@ -3553,6 +3596,7 @@ function impModelCard(m) {
     <div class="asset-info"><div class="asset-name">${esc(m.name)}</div>
       <div class="asset-meta"><span class="chip">${esc(IMP_FORMAT[m.format] || m.format)}</span>${h ? `<span class="chip">${h}</span>` : ""}
         <span class="pill ${cls}" title="${esc(m.note || "")}">${label}</span></div>
+      ${m.status !== "ok" ? `<div class="muted small" title="${esc(m.note || "")}">⚠ ${esc(impWhy(m.note)[0])}</div>` : ""}
       ${m.description ? `<div class="muted small" title="was: ${esc(m.original_name || "")}">${esc(m.description)}</div>` : ""}
       <div class="muted small">${esc(m.pack)}</div></div></div>`;
 }
@@ -3563,12 +3607,24 @@ async function assetsImported(box) {
   const cats = {};
   models.forEach((m) => { cats[m.category] = (cats[m.category] || 0) + 1; });
   const catNames = Object.keys(cats).sort((a, b) => cats[b] - cats[a]);
-  if (IMP.cat !== "all" && !cats[IMP.cat]) IMP.cat = "all";
+  const failed = models.filter((m) => m.status !== "ok");
+  if (IMP.cat === "__failed" && !failed.length) IMP.cat = "all";
+  if (IMP.cat !== "all" && IMP.cat !== "__failed" && !cats[IMP.cat]) IMP.cat = "all";
   const q = IMP.q.trim().toLowerCase();
-  const shown = models.filter((m) => (IMP.cat === "all" || m.category === IMP.cat)
+  const shown = models.filter((m) => (IMP.cat === "all" || (IMP.cat === "__failed" ? m.status !== "ok" : m.category === IMP.cat))
     && (!q || `${m.name} ${m.pack} ${m.category}`.toLowerCase().includes(q)));
   for (const id of [...IMP.picked]) if (!models.some((m) => m.id === id)) IMP.picked.delete(id);
   const groups = catNames.filter((c) => shown.some((m) => m.category === c));
+  // the failed ones, by reason: what it means and what to do
+  const why = {};
+  failed.forEach((m) => { const w = impWhy(m.note); (why[w[0]] = why[w[0]] || { fix: w[1], n: 0, packs: new Set() }).n++; why[w[0]].packs.add(m.pack); });
+  const failedPanel = failed.length ? `<div class="panel" style="margin-top:12px;border-color:#7a5a2a">
+      <b>⚠ ${failed.length} model${failed.length === 1 ? "" : "s"} can't be used</b>
+      <span class="muted small">- they're never picked for a video, so they do no harm; they just fill the list.</span>
+      ${Object.entries(why).map(([w, x]) => `<p class="small" style="margin:8px 0 0"><b>${x.n} ×</b> ${esc(w)} <span class="muted">(${esc([...x.packs].join(", "))})</span><br>
+        <span class="muted">${esc(x.fix)}</span></p>`).join("")}
+      <div class="btns" style="margin-top:8px"><button data-imp-cat="__failed">Show them</button>
+        <button class="danger" id="imp-rm-failed">🗑 Move all ${failed.length} to the trash</button></div></div>` : "";
   box.innerHTML = `
     <div class="asset-toolbar">
       <p class="muted small" style="margin:0;flex:1">Real models from packs you downloaded, sorted by what they are. When a scene or script needs a prop, the studio checks these <b>first</b> -
@@ -3599,8 +3655,10 @@ async function assetsImported(box) {
       <div class="chips-row" style="margin-top:10px">
         <button class="chip-btn ${IMP.cat === "all" ? "on" : ""}" data-imp-cat="all">All · ${models.length}</button>
         ${catNames.map((c) => `<button class="chip-btn ${IMP.cat === c ? "on" : ""}" data-imp-cat="${esc(c)}">${esc(c)} · ${cats[c]}</button>`).join("")}
+        ${failed.length ? `<button class="chip-btn ${IMP.cat === "__failed" ? "on" : ""}" data-imp-cat="__failed">⚠ Can't be used · ${failed.length}</button>` : ""}
       </div>
     </div>
+    ${failedPanel}
     ${groups.map((c) => `<h3 style="margin:18px 0 8px">${esc(c)} <span class="muted small">${shown.filter((m) => m.category === c).length}</span></h3>
       <div class="asset-grid">${shown.filter((m) => m.category === c).map(impModelCard).join("")}</div>`).join("")
       || '<p class="muted" style="margin-top:12px">No models match.</p>'}
@@ -3630,6 +3688,14 @@ async function assetsImported(box) {
   qBox.oninput = () => { IMP.q = qBox.value; clearTimeout(IMP.t); IMP.t = setTimeout(async () => {
     await redraw(); const nq = $("#imp-q"); nq.focus(); nq.setSelectionRange(nq.value.length, nq.value.length); }, 250); };
   $$("[data-imp-cat]").forEach((b) => b.onclick = () => { IMP.cat = b.dataset.impCat; redraw(); });
+  const rmFailed = $("#imp-rm-failed");
+  if (rmFailed) rmFailed.onclick = guard(async () => {
+    if (!await uiConfirm(`Move the ${failed.length} models that can't be used to the trash? Their files go to assets/imported/packs/.trash (nothing is deleted for good).`)) return;
+    const r = await api("POST", "/api/imported/delete", { ids: failed.map((m) => m.id) });
+    toast(`Moved ${r.deleted ?? failed.length} to the trash ✓`);
+    IMP.cat = "all";
+    redraw();
+  });
   $("#imp-cat").onclick = guard(async () => {
     const job = await api("POST", "/api/imported/categorize", {});
     toast("Sorting models into categories…");

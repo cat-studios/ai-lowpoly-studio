@@ -138,6 +138,78 @@ def check_render(a, log=print):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+GIF_SIZE = (180, 320)      # the Assets card's animated preview (the user, 2026-11-28: "a gif of the animation")
+GIF_FPS = 12
+
+
+def preview_gif(a, log=print):
+    """A looping GIF of one animation (medium camera, her real model, the animation played twice) ->
+    assets/anims/<name>.gif. Returns the path or None."""
+    import run_episode as R
+    import settings as S
+    cfg = S.load_settings()
+    tmp = Path(tempfile.mkdtemp(prefix="animgif_"))
+    try:
+        cand = tmp / "candidate.json"
+        cand.write_text(json.dumps(a), encoding="utf-8")
+        ep = {"title": "", "set": "cafe", "start": "center", "music": "", "ambience": "", "shots": [], "cast": {},
+              "co_stars": [], "_language": "en", "audio_lead": 0.0, "fps": GIF_FPS, "render_res": [216, 384]}
+        ep["character"] = R.resolve_character(ep, cfg)
+        dur = round(float(a.get("length") or 1.5) * (2 if a.get("loop") else 1) + 0.4, 2)
+        ep["shots"] = [{"action": a["name"], "camera": "medium", "move": "static", "expression": "neutral",
+                        "duration": dur, "line": "", "talk": 0.0, "lead": 0.0}]
+        (tmp / "ep.json").write_text(json.dumps(ep, default=str), encoding="utf-8")
+        frames = tmp / "frames"
+        frames.mkdir()
+        r = subprocess.run([BLENDER, "-b", "--factory-startup", "--python", str(ROOT / "pipeline" / "blender_build.py"),
+                            "--", str(tmp / "ep.json"), str(frames), str(tmp / "scene.blend")],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           env=dict(os.environ, ANIMLIB_EXTRA=str(cand)))
+        if r.returncode != 0 or not any(frames.glob("f_*.png")):
+            log(f"[anims] no GIF for '{a['name']}': the render failed")
+            return None
+        out = animlib.LIB / f"{a['name']}.gif"
+        w, h = GIF_SIZE
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(GIF_FPS), "-i", str(frames / "f_%04d.png"),
+                        "-filter_complex", f"scale={w}:{h}:flags=neighbor,split[a][b];[a]palettegen=max_colors=96[p];"
+                                           f"[b][p]paletteuse=dither=bayer:bayer_scale=3",
+                        "-loop", "0", str(out)], check=True)
+        log(f"[anims] GIF preview -> {out.name}")
+        return out
+    except Exception as exc:
+        log(f"[anims] no GIF for '{a.get('name')}': {exc}")
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def make_gifs(redo=False, log=print):
+    """GIF previews for every animation in the library that has none (or all of them with redo)."""
+    from progress import report
+    lib = animlib.library()
+    todo = [a for n, a in sorted(lib.items()) if redo or not (animlib.LIB / f"{n}.gif").exists()]
+    log(f"[anims] {len(todo)} GIF preview(s) to make")
+    for i, a in enumerate(todo):
+        report(0.02 + 0.96 * i / max(1, len(todo)), f"GIF {i + 1}/{len(todo)}: {a['name']}")
+        preview_gif(a, log)
+    report(1.0, "Done")
+
+
+def set_verified(name, on):
+    """Your own say over the AI's score (Assets -> Animations -> ✅ Verified): a verified animation is used whatever
+    its score; un-verifying puts back what the score said."""
+    lib = animlib.library()
+    if name not in lib:
+        raise KeyError(name)
+    a = dict(lib[name])
+    if on:
+        a.update(verified=True, checked=True)
+    else:
+        a.pop("verified", None)
+        a["checked"] = (a.get("score") or 0) >= PASS if a.get("score") is not None else None
+    return animlib.save(a)
+
+
 def vision_check(strip, name, description, ollama, log=print):
     """(score 1-10 or None, problem): the vision model rates the strip (close-up x2, medium x2, in time order).
     A score, not yes/no: the small vision model turned down every try that wasn't textbook-perfect."""
@@ -193,6 +265,8 @@ def make(name, description="", ollama=None, log=print, tries=2, check=True):
         animlib.LIB.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(best_strip, animlib.LIB / f"{name}.png")
     log(f"[anims] made '{name}' in {time.time() - t0:.0f}s" + ("" if best.get("checked") else " (not confirmed)"))
+    if check:
+        preview_gif(saved, log)                    # the Assets card's moving preview
     return dict(saved, checked=best.get("checked"), problem=best.get("problem", ""))
 
 
@@ -238,5 +312,7 @@ if __name__ == "__main__":
         report(0.1, f"Making the animation '{sys.argv[2]}'")
         out = make(sys.argv[2], " ".join(sys.argv[3:]))
         print(f"ANIM={out['name']} checked={out.get('checked')}", flush=True)
+    elif len(sys.argv) >= 2 and sys.argv[1] == "gifs":          # python animgen.py gifs [--redo]
+        make_gifs(redo="--redo" in sys.argv)
     else:
         print(__doc__)

@@ -144,7 +144,7 @@ def validate(a, name=""):
     length = float(a.get("length") or out[-1]["t"] or 1.0)
     return {"name": slug(a.get("name") or name), "description": str(a.get("description") or "")[:200],
             "length": round(max(0.2, min(30.0, length)), 3), "loop": bool(a.get("loop")),
-            "keys": out, "shake": shakes, **({k: a[k] for k in ("by", "checked", "created", "problem", "needs_room", "request", "score") if k in a})}
+            "keys": out, "shake": shakes, **({k: a[k] for k in ("by", "checked", "created", "problem", "needs_room", "request", "score", "verified") if k in a})}
 
 
 def library():

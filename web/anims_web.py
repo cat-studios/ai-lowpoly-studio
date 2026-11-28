@@ -16,7 +16,7 @@ def _to_trash(animlib, name):
     trash = animlib.LIB / ".trash"
     trash.mkdir(parents=True, exist_ok=True)
     moved = 0
-    for ext in (".json", ".png"):
+    for ext in (".json", ".png", ".gif"):
         f = animlib.LIB / f"{name}{ext}"
         if f.exists():
             f.replace(trash / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}{ext}")
@@ -36,9 +36,23 @@ def handle(h, method, parts, *, submit, Job, root):
                         "checked": a.get("checked"), "score": a.get("score"), "problem": a.get("problem", ""),
                         "length": a.get("length"), "loop": a.get("loop"), "builtin": name in animlib.BUILTIN,
                         "made_up": name in animlib.NOT_ACTIONS,     # made from a non-action word: never used
-
+                        "verified": bool(a.get("verified")),
+                        "gif": f"/animimg/{name}.gif?v={int(gif.stat().st_mtime)}" if (gif := animlib.LIB / f"{name}.gif").exists() else None,
                         "picture": f"/animimg/{name}.png?v={int(pic.stat().st_mtime)}" if pic.exists() else None})
         return h.send_json(out)
+
+    if method == "POST" and arg == "gifs":     # 🎞 make the missing GIF previews (a Blender render each, ~10-20 s)
+        cmd = [sys.executable, "-u", str(root / "pipeline" / "animgen.py"), "gifs"] + \
+              (["--redo"] if (h.body_json() or {}).get("redo") else [])
+        return h.send_json(submit(Job("anim", "Animation GIF previews", cmd)).to_dict())
+
+    if method == "PUT" and arg:                # ✅ Verified: your say over the AI's score
+        import animgen
+        try:
+            a = animgen.set_verified(animlib.slug(arg), bool((h.body_json() or {}).get("verified")))
+        except KeyError:
+            return h.fail("no such animation", 404)
+        return h.send_json({"ok": True, "verified": bool(a.get("verified")), "checked": a.get("checked")})
 
     if method == "POST" and arg == "make":
         b = h.body_json()
@@ -67,6 +81,6 @@ def handle(h, method, parts, *, submit, Job, root):
 
 def picture(h, name, root):
     """GET /animimg/<name>.png - an animation's check picture."""
-    if not re.fullmatch(r"[\w-]+\.png", name):
+    if not re.fullmatch(r"[\w-]+\.(png|gif)", name):
         return h.fail("not found", 404)
     return h.send_file(root / "assets" / "anims" / name)
