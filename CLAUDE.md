@@ -400,6 +400,36 @@ Open items:
 - **No console windows on the desktop**: `server.NO_WINDOW` for jobs; the app's Restart gives the new server a
   hidden console (it had none: DETACHED_PROCESS).
 
+- **Review of the overnight auto-make videos (2026-11-28, 18 videos + 3 more)**: scripts were nonsense - all from the
+  small local model (cloud AI was switched off, the big server off) and a prompt listing ~15 features (cameras,
+  walks, floating, ghosts, overlays, sounds, lighting...) that the model sprinkled everywhere ("zero gravity" in 10
+  of 18). Fixed:
+  - `llm.writer_system(title, tone, extra, scenes, explain, others, hook_style)`: the story rules first (every line
+    about the title, cause -> effect, true facts or her guess, nothing random, no third-person narration), brackets
+    optional (expressions + actions only; the director picks cameras), and each tool only when the title / kind /
+    notes call for it (`_about`: `FLOAT_WORDS`, `GHOST_WORDS`, `TIME_WORDS_W`, `OVERLAY_WORDS`, "cutaway").
+  - `llm.tidy_writer_lines(lines, character)` after the polish pass: only known bracket words (`_bracket_ok`: camera
+    typos by difflib - closet/hight; `+x_crash_in` split; `[do:point]` = the anim; `[cutaway: the thing]` = a copied
+    placeholder, dropped), directions out of the spoken words (`SPOKEN_DIRECTIONS`: +name verb -> brackets, do:x,
+    crash_in, mid-line [..]), stray quotes, "the X says/claims" tails (`SAY_TAIL`), lines narrating her ("Lavender
+    zooms...") and empty lines (their +cast goes to the next line); "+scientist bow:" = brought in + speaks. A script
+    with more than a third of its lines fixed or too few left is written once more (`_retry`, cooler temperature).
+  - Titles keep their idea (`batch.on_topic`: a shared word stem, 3+ letters; else `idea_title` = the angle when it's
+    a question, else "What is <topic>?") - "Exoplanet Atmosphere" had become "What happens when your fur gets wet?".
+  - Brain rot: still slang and speed, but ONE followable story; the words only in the spoken text.
+  - Live (dev, local model): on-topic scripts, no junk brackets; facts still weak (a cloud "outweighs mountains").
+- **Big server: automatic model** (the user: his brother swaps models): `llm.big_server_model(big, wanted)` = the
+  named model if the server still has it, else the one loaded (`/api/ps`), else its newest; None (down / no models)
+  -> this PC. Used by `_remote_for` and `propgen._design_call`. Settings: "✨ Automatic" is the empty choice. His
+  server had `qwen3.8:27b` loaded but didn't answer a 3-word prompt in 200 s on 2026-11-28 (busy?).
+- **Overlay kinds on/off** (the user: the "BOSS: ME" tag "really doesn't fit"): `captions.hud_kinds {meter, count,
+  tag (off), label, bubble}` (Settings rows under Game overlays; `run_episode.hud_shots` filters), the writer prompt
+  and gadget_story no longer use `[tag:]`; video editor Text tab: "On-screen extras in this video" ticks (only the
+  kinds the video uses + sound words) -> `ep.captions.hud_kinds` / `stickers`; 🎬 Save & re-render reuses frames.
+- **Silent videos** (pigeon: sound only for 3 s; 3 of 24): one-pass `loudnorm` (moving gain) died after the first
+  line when ambience + sound effects summed loud. Now `measure_lufs` (audio-only ebur128 pass) -> one fixed
+  `volume` gain to -14 LUFS + `alimiter` 0.84; pigeon rebuilt: -14.5 LUFS, peak -1.3 dB, no silence.
+
 ## Summary of the 2026-11-26 work (newest first; each has its own section or bullet further down)
 - **Actors and people**: VRoid upload for actors (`POST /api/actors/<id>/model` → `assets/actors/rigs/`, no
   procedural tail on actor rigs); speaking people are always Actors - role match, else a generic actor in new colours

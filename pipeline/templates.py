@@ -170,9 +170,8 @@ TEMPLATES = {
                    "each sillier and bigger than the last. When an invention appears, bring it in with +name (one "
                    "word or words_joined) and show its name sign: [label: <NAME>-O-MATIC] or [label: <NAME> 3000] - "
                    "names you invent, never a real brand. Keep score with a counter that climbs: "
-                   "[count: <what you count> 0] early, much bigger numbers later. A corner tag says who's in charge: "
-                   "[tag: BOSS: ME]. The LAST line is a twist that flips the whole idea (the helper becomes the boss, "
-                   "the pet owns the house) - flip the tag too ([tag: BOSS: <the invention>])."),
+                   "[count: <what you count> 0] early, much bigger numbers later. The LAST line is a twist that flips "
+                   "the whole idea (the helper becomes the boss, the pet owns the house)."),
         "tone": "funny",
         "lines": (7, 9),
         "direct": {"beat_words": 4, "walk_every": 0, "move_every": 3, "wipe_every": 4},

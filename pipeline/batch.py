@@ -8,6 +8,7 @@ is marked used when its episode is saved. One idea failing doesn't stop the othe
 """
 import json
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -43,7 +44,38 @@ def title_for(idea, o, model, char):
     tpl = templates.get(idea.get("template"))
     theme = idea["topic"] + (f" - {idea['angle']}" if idea.get("angle") else "")
     got = llm.generate_titles(o["url"], model, char, theme, 4, starts=tpl["title_starts"], hint=tpl["title_hint"])
-    return got[0] if got else idea["topic"][:1].upper() + idea["topic"][1:] + "?"
+    # a title must keep the idea's subject: "Exoplanet Atmosphere - a giant hydrogen bubble" became "What happens
+    # when your fur gets wet?" (2026-11-28) - the first title sharing a word with the idea, else the idea itself
+    for t in got or []:
+        if on_topic(t, theme):
+            return t
+    if got:
+        print(f"  (no title kept the idea's subject: {got[:2]} - using the idea's own words)")
+    return idea_title(idea, tpl)
+
+
+STOP = set("what when where which would could should about their there these those with from into your youre have "
+           "this that does how why who the and for are was were will just like feels feel looks look happens happen "
+           "catgirl imagines inside giant you are was its his her our can did get got out too all one two new big "
+           "day way any now has had not but may own off".split())
+
+
+def _stems(text):
+    return {w[:5] for w in re.findall(r"[a-z]{3,}", str(text or "").lower()) if w not in STOP}
+
+
+def on_topic(title, theme):
+    """A title keeps the idea's subject when they share a real word (5-letter stems: bubble ~ bubbles)."""
+    return bool(_stems(title) & _stems(theme))
+
+
+def idea_title(idea, tpl):
+    """A plain title from the idea itself: its angle when that's already a question, else "What is <topic>?"."""
+    topic = str(idea.get("topic") or "this").strip().rstrip("?.!")
+    angle = str(idea.get("angle") or "").strip()
+    if angle.endswith("?") and len(angle) <= 90:
+        return angle
+    return f"What is {topic}?"
 
 
 def main(spec_path):

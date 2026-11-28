@@ -67,17 +67,18 @@ def _design_call(fn, ollama, *args, **kw):
     import llm
     set_up = (ollama or {}).get("design_url") or ""          # a big server's address is filled in
     url = "" if (ollama or {}).get("big_server") is False else set_up
-    if url and not _DESIGN_DOWN and llm.local_on():
+    # whatever model the big server has right now (it changes): the one named in Settings if it's still there
+    big_model = llm.big_server_model(url, (ollama or {}).get("design_model")) if url and not _DESIGN_DOWN \
+        and llm.local_on() else None
+    if url and not _DESIGN_DOWN and llm.local_on() and not big_model:
+        _DESIGN_DOWN.append("no answer / no models")
+        print(f"[props] big model server {url} not answering or has no models - using the main Ollama")
+    if big_model:
         try:
-            return fn(url, design_model(ollama), *args, **kw)
-        except (OSError, TimeoutError) as exc:      # connection refused / unreachable / timed out / no such model
+            return fn(url, big_model, *args, **kw)
+        except (OSError, TimeoutError) as exc:      # connection refused / unreachable / timed out
             _DESIGN_DOWN.append(str(exc))
-            import urllib.error
-            if isinstance(exc, urllib.error.HTTPError) and exc.code == 404:
-                print(f"[props] the big model server {url} answered but has no model \"{design_model(ollama)}\" - "
-                      "check the name in Settings -> AI tools - using the main Ollama")
-            else:
-                print(f"[props] big model server {url} not reachable ({exc.__class__.__name__}) - using the main Ollama")
+            print(f"[props] big model server {url} failed ({exc.__class__.__name__}) - using the main Ollama")
     # design_model is a model on THIS server only when no big server is set up; with one set up (switched off or down),
     # it names the big server's model, which this PC doesn't have - use the main model instead
     model = (ollama or {}).get("design_model") if not set_up else None

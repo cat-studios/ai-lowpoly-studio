@@ -2607,7 +2607,12 @@ const S_TABS = {
       ["captions.mode", "Caption style", "select", { options: ["words", "line", "off"] }, "words = a few words at a time mid-screen (how many: the Create page's caption style), line = the whole line."],
       ["captions.font", "Font", "font", {}, "Any font installed in Windows."],
       ["captions.effect", "Entrance effect", "select", { options: () => META.effects }],
-      ["captions.hud", "Game overlays (meters, counters, tags, name signs, bubbles)", "bool", {}, "What the script asks for with [meter: stress 80], [count: cookies 12], [tag: BOSS: ME], [label: SNACK-O-MATIC], [bubble: in...] - drawn in the same pixel style as the captions."],
+      ["captions.hud", "Game overlays (meters, counters, name signs, bubbles)", "bool", {}, "What the script asks for with [meter: stress 80], [count: cookies 12], [label: SNACK-O-MATIC], [bubble: in...] - drawn in the same pixel style as the captions. Each kind can be switched off below, and per video in ✏️ Edit → Text."],
+      ["captions.hud_kinds.meter", "  ↳ Meters (a bar with a %)", "bool"],
+      ["captions.hud_kinds.count", "  ↳ Counters (a number that ticks up)", "bool"],
+      ["captions.hud_kinds.label", "  ↳ Name signs (an orange sign when something new appears)", "bool"],
+      ["captions.hud_kinds.bubble", "  ↳ Speech bubbles", "bool"],
+      ["captions.hud_kinds.tag", "  ↳ Corner tag (\"BOSS: ME\")", "bool", {}, "Off by default - it didn't fit the videos."],
       ["captions.stickers", "Sound words as comic stickers", "bool", {}, "Every sound effect shows its word on screen (BOOM!, WHOOSH!, NYA!), tilted, in its own colour, near the action."],
       ["captions.hook_pop", "Hook word pops up big", "bool", {}, "In the first line (the hook), its key word shows twice the size with a bounce as she says it - the first seconds decide if people keep watching."],
       ["captions.color", "Text colour", "color"],
@@ -2718,7 +2723,7 @@ const S_TABS = {
       ["facts.contact", "Fact check: contact for Wikipedia (optional)", "text", { placeholder: "e.g. an email or website - empty = none" }, "Wikipedia asks tools to say who to contact and is more patient with those that do. Only sent to Wikipedia, and only if you fill it in."],
       ["ollama.big_server", "Use the big model server", "bool", {},"Off = everything runs on this PC. The address below is kept, so you can switch it back on."],
       ["ollama.design_url", "Big model server", "text", { placeholder: "empty = the server above" },"Another Ollama with bigger models (e.g. a stronger computer on your network). If it can't be reached, the server above is used."],
-      ["ollama.design_model", "Model on the big server", "ollamapick", { from: "ollama.design_url", big: true, first: "Same as the default model" }, "The models that server already has (🔄 after changing the address). Nothing is ever downloaded there."],
+      ["ollama.design_model", "Model on the big server", "ollamapick", { from: "ollama.design_url", big: true, first: "✨ Automatic - whatever it has right now" }, "Automatic = the model loaded on that server right now (else its newest), so it follows when the models there change. A picked model is used only while the server still has it. If the server doesn't answer, this PC's AI does the work. Nothing is ever downloaded there."],
       ["ollama.design_scope", "Use the big server for", "select", { options: ["3d", "text"], labels: { "3d": "Only building 3D props & explainer models", text: "All the AI's writing too (scripts, titles, sets, cast, translations, captions)" } }, "Picture checks, drawings and voices always run on this PC."],
       ["ollama.temperature", "Creativity", "range", { min: 0.1, max: 1.5, step: 0.05 }, "Higher = wilder ideas."],
       ["sets.style", "How new sets are made", "select", { options: () => Object.keys(META.catalog.set_styles || {}), labels: () => META.catalog.set_styles || {} }, "The default for new places in videos and on the Sets page (you can pick another each time). Random videos pick one of the first three by chance; series always use hand-built bases."],
@@ -4082,7 +4087,8 @@ async function openVideoEditor(id) {
     if (obj === "branding" && k === "watermark_corner") return VE_CORNERS;
     return null;
   };
-  const fieldRows = (obj, defs, cur) => Object.keys(defs).map((k) => {
+  const fieldRows = (obj, defs, cur) => Object.keys(defs).filter((k) => !(defs[k] && typeof defs[k] === "object"
+      && !Array.isArray(defs[k]))).map((k) => {     // nested groups (captions.hud_kinds) have their own controls
     const has = k in cur, base = defs[k], val = has ? cur[k] : base, dis = has ? "" : "disabled";
     const choices = choicesFor(obj, k);
     let ctl;
@@ -4153,8 +4159,23 @@ async function openVideoEditor(id) {
   const drawText = () => `<label>Video language<select data-act="lang">${pairOpts([["", `Settings default (${langName(META.settings.language)})`],
       ...Object.entries(cat().languages || {})], ep.language || "")}</select></label>
     ${(ep.language || META.settings.language || "en") !== "en" ? `<div class="btns"><button data-act="trans">🌐 Check translation</button></div>` : ""}
+    ${drawExtras()}
     <p class="muted small" style="margin-top:0">Subtitles and the title card. Tick to change for this video.</p>
     <div style="${VE_GRID}">${fieldRows("captions", D.captions, ep.captions || {})}</div>`;
+  // on-screen extras in THIS video (the user, 2026-11-28: switch off the ones that don't make sense, then re-render)
+  const EXTRAS = [["meter", "📊 Meters"], ["count", "🔢 Counters"], ["label", "🪧 Name signs"], ["bubble", "💬 Speech bubbles"],
+    ["tag", "🏷 Corner tag (BOSS: ME)"]];
+  const drawExtras = () => {
+    const used = new Set(ep.shots.flatMap((s) => (s.hud || []).map((h) => h.kind)));
+    const kinds = { ...(D.captions.hud_kinds || {}), ...((ep.captions || {}).hud_kinds || {}) };
+    const stick = (ep.captions || {}).stickers ?? D.captions.stickers;
+    const rows = EXTRAS.filter(([k]) => used.has(k)).map(([k, l]) =>
+      `<label class="check"><input type="checkbox" data-act="extra" data-k="${k}" ${kinds[k] !== false ? "checked" : ""}> ${l}</label>`);
+    rows.push(`<label class="check"><input type="checkbox" data-act="extra" data-k="stickers" ${stick ? "checked" : ""}> 💥 Sound words (BOOM!, POP!)</label>`);
+    return `<div class="panel" style="margin:10px 0"><b>On-screen extras in this video</b>
+      <p class="muted small" style="margin:4px 0 6px">Untick what doesn't make sense, then 🎬 Save &amp; re-render - the 3D frames are reused, so it's quick.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 16px">${rows.join("")}</div></div>`;
+  };
   const drawBrand = () => `<p class="muted small" style="margin-top:0">Watermark in a corner of every frame, and the end card (leave the text empty for none).</p>
     <div style="${VE_GRID}">${fieldRows("branding", D.branding, ep.branding || {})}</div>`;
   const drawSound = () => {
@@ -4281,6 +4302,12 @@ async function openVideoEditor(id) {
         if (act === "ovr") { toggleOvr(el.dataset.obj, el.dataset.k, el.checked); return draw(m); }
         if (act === "val") { if (!el.disabled) setObj(el.dataset.obj, el.dataset.k, readVal(el)); return; }
         if (act === "lang") { if (el.value) ep.language = el.value; else delete ep.language; return draw(m); }
+        if (act === "extra") {               // on-screen extras for this video only (captions.hud_kinds / stickers)
+          ep.captions = ep.captions || {};
+          if (el.dataset.k === "stickers") ep.captions.stickers = el.checked;
+          else ep.captions.hud_kinds = { ...(D.captions.hud_kinds || {}), ...(ep.captions.hud_kinds || {}), [el.dataset.k]: el.checked };
+          return;
+        }
         if (act === "look-preset") {          // the saved copy of the look would hide the preset completely
           if (el.value) ep.look_preset = el.value; else delete ep.look_preset;
           delete ep.look; return draw(m); }

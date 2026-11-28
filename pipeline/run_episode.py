@@ -556,6 +556,17 @@ def highlight_marks(words, phrases):
     return marks
 
 
+HUD_KINDS = {"meter": True, "count": True, "tag": False, "label": True, "bubble": True}
+
+
+def hud_shots(shots, cap):
+    """The shots with only the overlay kinds that are switched on (captions.hud_kinds: Settings, or the video's own
+    captions from the editor's Text tab). Old videos with the "BOSS: ME" corner tag lose it on their next render."""
+    on = {**HUD_KINDS, **{k: bool(v) for k, v in (cap.get("hud_kinds") or {}).items()}}
+    return [dict(s, hud=[h for h in s.get("hud") or [] if on.get(h.get("kind"), True)]) if s.get("hud") else s
+            for s in shots]
+
+
 def write_captions(path, ep, shots, timing, res, cap, brand, stickers=()):
     """stickers: [(WORD, seconds)] comic sound words (overlays.sound_stickers); the shots' "hud" overlays too."""
     fps = timing["fps"]
@@ -670,7 +681,8 @@ def write_captions(path, ep, shots, timing, res, cap, brand, stickers=()):
             t += dur
     if cap.get("hud", True) or stickers:            # game overlays: meters, counters, tags, signs, bubbles, stickers
         stop = total - float(brand.get("end_seconds", 2.0)) if brand.get("end_text") else total
-        lines += overlays.events(shots if cap.get("hud", True) else [{} for _ in shots], timing, res, total, stop,
+        lines += overlays.events(hud_shots(shots, cap) if cap.get("hud", True) else [{} for _ in shots], timing, res,
+                                 total, stop,
                                  stickers if cap.get("stickers", True) else (), AUDIO_LEAD,
                                  seed=sum(map(ord, str(ep.get("title") or ""))))
     if brand.get("watermark"):
@@ -1165,6 +1177,23 @@ def resolve_cast(ep, cfg, log=print):
         for e in s.get("events") or []:
             if (cast.get(e.get("who")) or {}).get("type") == "person" and e.get("do") in ("crash_in", "fall", "fly_by"):
                 e["do"], e["run"] = "enter", True
+
+
+def measure_lufs(cmd, audio_chains, mix, ffmpeg, cwd):
+    """The integrated loudness (LUFS) of the final sound mix, measured with ebur128 in an audio-only pass over the
+    same inputs. None when it can't be measured (the render then uses no gain)."""
+    try:
+        args = list(cmd) + ["-filter_complex", ";".join(list(audio_chains) + [f"{mix},ebur128[m]"]), "-map", "[m]",
+                            "-f", "null", "-"]
+        args = [ffmpeg if i == 0 else a for i, a in enumerate(args)]
+        args = [a for a in args if a not in ("-loglevel", "error")] if "-loglevel" in args else args
+        r = subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=300)
+        m = re.findall(r"I:\s+(-?[\d.]+) LUFS", r.stderr)
+        return float(m[-1]) if m and float(m[-1]) > -70 else None
+    except Exception as exc:
+        print(f"  (loudness not measured: {exc})")
+        return None
 
 
 def encode_with_progress(cmd, cwd, seconds, lo, hi):
@@ -1936,8 +1965,15 @@ def main():
         # the whole mix to -14 LUFS (voice alone was -14, so the video came out ~-16 with music and quiet ends);
         # before the fades (so it can't lift them back up), and back to 44.1 kHz (loudnorm works at 192 kHz: the AAC
         # came out at 96 kHz)
-        fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,"
-                  f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100,apad=whole_dur={dur:.3f}{afades}[a]")
+        # loudness in two passes: one-pass loudnorm (moving gain) went silent for good after the first line in 3 of
+        # 24 videos (2026-11-28: ambience + sound effects on a loud moment - the pigeon video had sound only for 3 s).
+        # Now: measure the finished mix (audio only, a few seconds), then ONE fixed gain + a peak limiter.
+        mix = f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest"
+        lufs = measure_lufs(cmd, [p for p in fc if re.match(r"\[\d+:a\]", p)], mix, ffmpeg, build)
+        gain = max(-20.0, min(20.0, -14.0 - lufs)) if lufs is not None else 0.0
+        print(f"  loudness: the mix is {lufs if lufs is None else round(lufs, 1)} LUFS -> {gain:+.1f} dB to reach -14")
+        fc.append(f"{mix},volume={gain:.2f}dB,alimiter=limit=0.84:level=0:attack=5:release=60,"
+                  f"aresample=44100,apad=whole_dur={dur:.3f}{afades}[a]")
     else:
         cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono"]
         fc.append(f"[{n_in}:a]anull[a]")

@@ -52,6 +52,9 @@ DEFAULTS = {
         "effect": "pop",                 # none, pop (scale in), bounce, fade
         "hud": True,                     # [meter:] [count:] [tag:] [label:] [bubble:] game overlays (overlays.py)
         "stickers": True,                # every sound effect shows its word as a comic sticker ("BOOM!")
+        # each kind on its own (Settings -> Text & branding, and per video in the editor's Text tab); the corner tag
+        # ("BOSS: ME") is off: the user, 2026-11-28 - "it really doesn't fit"
+        "hud_kinds": {"meter": True, "count": True, "tag": False, "label": True, "bubble": True},
         "hook_pop": True,                # the first line's key word pops up big as it's said (the hook)
     },
     "branding": {

@@ -80,32 +80,48 @@ def _remote_for(url, has_images):
         return None
     if time.time() - _down_since(big) < REMOTE_RETRY:
         return None
-    model = (o.get("design_model") or "").strip() or None
-    if not _remote_alive(big, model):
+    model = big_server_model(big, o.get("design_model"))
+    if not model:
         _mark_down(big, time.time())
-        print(f"[ai] big text server {big} isn't answering (or has no {model}) - using this PC's Ollama "
+        print(f"[ai] big text server {big} isn't answering (or has no model) - using this PC's Ollama "
               f"for the next {REMOTE_RETRY // 60} min")
         return None
     return big, model
 
 
-_REMOTE_OK = {}            # big text server -> when it last answered a quick check
+_BIG_MODEL = {}            # big server -> (when asked, the model it uses)
 REMOTE_CHECK = 60
 
 
-def _remote_alive(big, model):
-    """A 4-second look before using the big server: when it was off, every call waited the full 5-minute
-    chat timeout first (a script needs several calls - a video hung for 15 minutes)."""
-    if time.time() - _REMOTE_OK.get(big, 0) < REMOTE_CHECK:
-        return True
+def big_server_model(big, wanted=None):
+    """The model to use on the big server, whatever it has right now (the user, 2026-11-28: "he swaps models a
+    lot"): the model named in Settings only if the server still has it, else the one loaded in its memory
+    (/api/ps - it answers fastest), else its newest. None = not answering / no models (-> this PC's Ollama).
+    A 4-second look, kept REMOTE_CHECK seconds: when the server was off, every call used to wait 5 minutes first."""
+    wanted = str(wanted or "").strip()
+    hit = _BIG_MODEL.get(big)
+    if hit and time.time() - hit[0] < REMOTE_CHECK and (not wanted or hit[1] == wanted or hit[2]):
+        return hit[1]
     try:
-        names = {m.get("name") for m in _req(big, "/api/tags", timeout=4).get("models", [])}
+        tags = _req(big, "/api/tags", timeout=4).get("models", [])
     except Exception:
-        return False
-    if model and model not in names:
-        return False
-    _REMOTE_OK[big] = time.time()
-    return True
+        return None
+    names = [m.get("name") for m in tags if m.get("name")]
+    if not names:
+        return None
+    if wanted and wanted in names:
+        model, auto = wanted, False
+    else:
+        try:
+            loaded = [m.get("name") for m in _req(big, "/api/ps", timeout=4).get("models", []) if m.get("name")]
+        except Exception:
+            loaded = []
+        newest = max(tags, key=lambda m: str(m.get("modified_at") or ""), default={}).get("name") or names[0]
+        model, auto = next((n for n in loaded if n in names), newest), True
+        if wanted:
+            print(f"[ai] the big server has no {wanted} any more - using what it has: {model}")
+    _BIG_MODEL[big] = (time.time(), model, auto)
+    return model
 
 
 def _chat_once(url, payload, timeout=300):
@@ -817,14 +833,214 @@ def pick_brainrot_words(bank, n=3, rng=random):
 
 def brainrot_rule(words):
     """The writer's brain rot style: short chaotic lines, a story that jumps about, and the chosen words."""
-    return ("BRAIN ROT STYLE: very short, chaotic lines (3-8 words), the story jumps and escalates absurdly, a random "
-            "tangent every few lines, and a nonsense callback at the end. Use each of these words at least once, where "
-            "it fits naturally (never force one into a sentence that doesn't need it): "
+    # 2026-11-28: "jumps... a random tangent every few lines" gave scripts nobody could follow ("[fanum tax:
+    # Lavender 20] OHIO! The sun just ate it all!") - the energy stays, the story has to hold together
+    return ("BRAIN ROT STYLE: very short, high-energy lines (3-8 words), escalating fast and getting more absurd - "
+            "but it is still ONE story about the title that a viewer can follow from start to end, ending on a "
+            "punchline that calls back to the start. Sprinkle in these slang words, each at most once, inside the "
+            "spoken words only (never in the [brackets]) and only where they fit: "
             + ", ".join(words) + ". Still family-friendly.")
 
 
+
+# The writer's instructions (2026-11-28 review of 18 overnight videos: the old prompt listed ~15 features - cameras,
+# walks, floating, ghosts, overlays, sounds, lighting... - and the small local model used them all, everywhere:
+# "zero gravity" in 10 of 18 scripts, a ghost mom in a jellyfish riddle, made-up bracket words that became poses,
+# and stories that never answered their title). Now the story rules come first and each feature is only explained
+# when the title, the kind of video or the notes call for it (`_about`).
+FLOAT_WORDS = r"float|floating|fly|flying|balloon|gravity|weightless|space|astronaut|levitat|hover|zero.?g"
+GHOST_WORDS = r"ghost|haunt|spirit|memor|past self|past me|future self|eerie|spooky|creepy|shadow|phantom|afterlife"
+TIME_WORDS_W = r"night|day|morning|evening|sunset|sunrise|dawn|dusk|midnight|hours?|all day|time"
+OVERLAY_WORDS = r"meter|count|score|level|percent|tag|label|bubble|sticker|gadget|invent"
+
+
+def _about(rx, *texts):
+    return bool(re.search(rf"\b({rx})", " ".join(str(t or "") for t in texts), re.I))
+
+
+def writer_system(title, tone="funny", extra="", scenes="auto", explain=False, others=None, hook_style=None):
+    """The script writer's system prompt: the story rules, then only the tools this video needs."""
+    acts = ", ".join(k for k in catalog.ANIMS if k not in ("sit", "fall", "float", "turn", "walk_to", "run_to",
+                                                            "sneak_to", "float_up", "land", "idle")
+                     and not k.startswith("x_"))[:900]
+    exprs = ", ".join(catalog.EXPRESSIONS)
+    parts = [
+        "You write scripts for short vertical videos (Instagram Reels) starring ONE animated character who talks "
+        "to the camera. Each line is one shot.",
+        "THE STORY COMES FIRST:\n"
+        "- Every single line is about the title. The video answers the title's question (or plays out its 'what "
+        "if') step by step: the hook, then lines where each one follows from the line before - cause and effect, "
+        "concrete details a curious viewer enjoys - and a punchline at the end.\n"
+        "- Facts you state must be true and simple. If you're not sure, say it as her guess or imagination.\n"
+        "- Nothing random: no sudden floating, flying, zero gravity, ghosts, visitors, explosions or new places "
+        "unless the title is about them. One idea, followed all the way through.\n"
+        "- First person, natural spoken English, max 14 words a line, family-friendly (no swearing).\n"
+        "- She never describes herself in the third person or narrates what she does (\"Lavender runs over...\") - "
+        "she just talks.",
+        "The FIRST line is the hook - at most 8 words, a surprising claim, a bold question or a 'wait, what?' "
+        "moment about the title. Never open with a greeting, her name or \"Today we...\". " + hook_rule(hook_style),
+        ENDING_RULE,
+        "FORMAT: output ONLY the script lines, one per line. No numbering, no names, no titles, no commentary, no "
+        "stage directions in parentheses. A catchphrase or sound like \"nya\" at most twice in the whole script.",
+        "Most lines need NO brackets: the camera and her moves are chosen for you. When it really helps, start a "
+        "line with ONE pair of square brackets holding only words from these lists:\n"
+        f"expressions: {exprs}\nactions: {acts}\n"
+        "An action not in the list can be written [do:verb] (one word, a clear body action: [do:salute]). "
+        "Never write camera words, never invent other bracket words, never put directions in the middle or at the "
+        "end of a line.",
+        "Example line: [surprised] Wait... the toast is still cold?!\n"
+        "Example line: Fine. I'll do it myself!",
+    ]
+    t = f"{title} {extra}"
+    if others or re.search(r"\+\w|\bMom\b|someone|friend|visitor|guest", t):
+        parts.append(
+            "Another person or a thing that really shows up: bring it on with [+name verb] at the start of that line "
+            "(one lowercase word or words_joined_by_underscores: +mail_van; verbs for things: "
+            + ", ".join(catalog.CAST_VERBS) + "; for people: enter, exit, appear, vanish). People speak for "
+            "themselves with their own lines (Mom: You forgot your lunch!); things never speak. Only bring someone "
+            "in when the story needs them.")
+    else:
+        parts.append("Usually she is alone. Only if the story truly needs someone or something to show up, start "
+                     "that line with [+name enter] (one lowercase word); a person then says their own line as "
+                     "Name: words.")
+    if _about(TIME_WORDS_W, t):
+        parts.append("The light can change on a line with day, sunset, night or dawn in its brackets - only when "
+                     "time really passes in the story.")
+    if scenes != "stay":
+        parts.append("If the story really moves somewhere else, start that line with [@ place] (a short "
+                     "description: [@ a busy train station]); it lasts until the next one. Never for the starting place.")
+    if _about(FLOAT_WORDS, t):
+        parts.append("Floating: [+balloons hold] gives her balloons, [float_up] lifts her off the ground (she stays "
+                     "up), [land] brings her back down.")
+    if _about(GHOST_WORDS, t, tone):
+        parts.append("Someone can appear as a pale see-through ghost (a spirit, a memory, her past self) with ghost "
+                     "after the verb - [+past_self appear ghost] - or as a dark silhouette with shadow.")
+    if _about(OVERLAY_WORDS, t):
+        parts.append("On-screen overlays, only for something the video keeps track of: [meter: <name> <0-100>] a "
+                     "bar (write it again later with a new number), [count: <name> <number>], "
+                     "[label: <NAME>] a name sign, [bubble: <1-3 words>].")
+    if re.search(r"cutaway", t, re.I):
+        parts.append("A [cutaway: thing] shows exactly the thing that line names (the volcano, the crumb) - never a "
+                     "comparison or a joke picture.")
+    if explain:
+        parts.append(
+            "Explaining how something works? Bring a model of it on beside her with [show: thing] (one word), "
+            "[show: thing open] when you talk about its inside, [show: thing part] for a close look at one part, "
+            "[show: off] when done. Name each part and say what it does in plain words - the model's parts move on "
+            "those words.")
+    return "\n".join(x for x in parts if x)
+
+
+
+# ---- the writer's slips, cleaned before anyone sees them (2026-11-28 review of 18 overnight scripts):
+# "[closet, excited]", "[hight, float_up]" (typos), "[sweat_drip]", "[noodle_eat]", "[fanum tax: Lavender 20]",
+# "[cleanup: zoom_in]" (made-up bracket words - the animation maker turned them into poses), "+captain crash_in hot!
+# The driver yelled", "do:facepalm!", "Sneak to [front]," (directions in the spoken words), 'Huss," my hair...'
+# (stray quotes), "...the smug pigeon claims." (narration), "Lavender zooms over to the nurse's station!" (her, in
+# the third person), "[day, +lamp_crash_in]" with no words at all.
+KEYED = {"cutaway", "cut", "show", "meter", "count", "tag", "label", "bubble", "sticker", "fire", "do"}
+PLACEHOLDER = re.compile(r"^<?\s*(?:the |a |an )?(?:thing|things|entry|answer|object|item|it|<.*>|\.\.\.)\s*>?$")
+SAY_TAIL = re.compile(r",?\s*(?:the|a|an|his|her)\s+[\w' ]{0,24}?\s+(?:claims?|says?|said|yells?|yelled|shouts?|"
+                      r"shouted|whispers?|whispered|asks?|asked|replies|replied)\s*[.!]?\s*$", re.I)
+SPOKEN_DIRECTIONS = re.compile(
+    r"\+[a-z][a-z0-9_]*(?:\s+(?:enter|exit|appear|vanish|crash_in|fall|fly_by|bounce|spin|shake|hold|run_in|"
+    r"walk_in|float_up|[a-z]+_(?:in|out|by|to)))?|\b(?:do:\w+|crash_in|fly_by|from_left|from_right|from_back|"
+    r"walk_to|run_to|sneak_to|float_up)\b|\b(?:walk|run|sneak)\s+to\s+\[[^\]]*\]|\[[^\]]*\]", re.I)
+
+
+def _bracket_ok(tok, vocab):
+    t = tok.strip()
+    low = t.lower()
+    if not t:
+        return None
+    if t.startswith("+"):
+        # "+lamp_crash_in": the verb glued onto the name
+        g = re.match(r"^\+([a-z0-9_]+?)_(crash_in|enter|exit|appear|vanish|fall|fly_by|bounce|spin|shake|hold)$", low)
+        return f"+{g.group(1)} {g.group(2)}" if g else t
+    if t.startswith("@"):
+        return t
+    k = re.match(r"^([a-z_]+)\s*:\s*(.*)$", low)
+    if k:
+        if k.group(1) in ("cutaway", "cut") and PLACEHOLDER.match(k.group(2).strip()):
+            return None                    # "[cutaway: the thing]" - the template's placeholder, copied as is
+        if k.group(1) == "do" and k.group(2).strip().replace(" ", "_") in vocab:
+            return vocab[k.group(2).strip().replace(" ", "_")]    # "[do:point]" = the action she already has
+        return t if k.group(1) in KEYED else None
+    w = re.sub(r"\s+", "_", low)
+    if w in vocab:
+        return vocab[w]
+    import difflib
+    near = difflib.get_close_matches(w, list(catalog.CAMERAS), n=1, cutoff=0.75)   # closet, hight, closed
+    return near[0] if near else None
+
+
+def tidy_writer_lines(lines, character=None):
+    """The AI writer's lines, tidied: only known words in the brackets (typos of camera names mapped), directions
+    taken out of the spoken words (+name verb into the brackets), stray quotes, "the X says" tails, empty lines and
+    lines that narrate her in the third person dropped. Returns (lines, how many lines needed fixing or went)."""
+    try:
+        import autodirect as AD
+        extra = {**AD.CAM_WORDS, **AD.MOVE_WORDS, **AD.MOOD_WORDS, **AD.ANIM_WORDS}
+    except Exception:
+        extra = {}
+    vocab = {k: k for k in list(catalog.CAMERAS) + list(catalog.ANIMS) + list(catalog.EXPRESSIONS) + list(catalog.LIGHTS)
+             + list(catalog.PARTICLES) + list(catalog.MOVES) + list(catalog.CAST_VERBS)}
+    vocab.update({k: v for k, v in {**catalog.LIGHT_ALIASES, **catalog.PARTICLE_ALIASES, **extra}.items()
+                  if isinstance(v, str)})
+    name = str((character or {}).get("name") or "").strip()
+    third = re.compile(rf"^(?:{re.escape(name)}|the catgirl|our catgirl|she)\s+[a-z]+s\b", re.I) if name else \
+        re.compile(r"^(?:the catgirl|our catgirl)\s+[a-z]+s\b", re.I)
+    out, bad, carry = [], 0, []
+    for raw in lines:
+        line = raw.strip()
+        heads = []
+        while True:                                       # every leading bracket group
+            m = re.match(r"^\[([^\]]*)\]\s*", line)
+            if not m:
+                break
+            heads += [x for x in m.group(1).split(",")]
+            line = line[m.end():]
+        label = ""
+        lm = re.match(r"^(\+?[A-Za-z][\w ]{0,30}):\s+", line)
+        if lm:
+            label, line = lm.group(1), line[lm.end():]
+            pm = re.match(r"^\+([a-z0-9_]+)(?:\s+([a-z_]+))?$", label.strip(), re.I)
+            if pm:                                       # "+scientist bow: You look..." -> brought in, then speaks
+                heads.append(f"+{pm.group(1).lower()} {pm.group(2) or 'enter'}")
+                label = pm.group(1).replace("_", " ").title()
+        text = line
+        moved = [mm.group(0).strip() for mm in SPOKEN_DIRECTIONS.finditer(text) if mm.group(0).startswith("+")]
+        text2 = SPOKEN_DIRECTIONS.sub(" ", text)
+        text2 = SAY_TAIL.sub("", text2)
+        if text2.count('"') % 2:
+            text2 = text2.replace('"', "")
+        text2 = re.sub(r"\s+([,.!?])", r"\1", re.sub(r"\s{2,}", " ", text2)).strip(" ,;:")
+        text2 = re.sub(r"^[,.;:!?]+\s*", "", text2)
+        kept = [k for k in (_bracket_ok(h, vocab) for h in heads + moved) if k]
+        changed = text2 != text.strip() or len(kept) != len([h for h in heads if h.strip()]) + len(moved)
+        if third.match(text2):
+            bad += 1
+            continue
+        if not re.search(r"[A-Za-z]{2}", text2):          # nothing left to say: its +cast goes to the next line
+            carry += [k for k in kept if k.startswith(("+", "@"))]
+            bad += 1
+            continue
+        kept = carry + kept
+        carry = []
+        seen, uniq = set(), []
+        for k in kept:
+            if k.lower() not in seen:
+                seen.add(k.lower())
+                uniq.append(k)
+        head = f"[{', '.join(uniq)}] " if uniq else ""
+        out.append(head + (f"{label}: " if label else "") + text2)
+        bad += 1 if changed else 0
+    return out, bad
+
+
 def generate_script(url, model, title, character, set_info, lines=6, tone="funny", extra="", temperature=0.85,
-                    others=None, polish=True, scenes="auto", explain=False, brainrot=None, hook_style=None):
+                    others=None, polish=True, scenes="auto", explain=False, brainrot=None, hook_style=None,
+                    _retry=False):
     """others: the other main characters in the video, [{"name", "about"}] - they get some lines too.
     scenes: "stay" (one place), "move" (the story travels: 1-3 [@ place] changes) or "auto" (only when it moves).
     brainrot: the words to use (pick_brainrot_words) - the brain rot style is added to the writer's extra notes.
@@ -834,69 +1050,7 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
     if brainrot:
         extra = (extra + " " + brainrot_rule(brainrot)).strip()
     others = [o for o in (others or []) if isinstance(o, dict) and o.get("name")]
-    cams = ", ".join(catalog.CAMERAS)
-    anims = ", ".join(k for k in catalog.ANIMS if k not in ("sit", "fall", "float", "turn"))   # no floor-sitting
-    exprs = ", ".join(catalog.EXPRESSIONS)
-    marks = ", ".join(set_info.get("marks", []))
-    import sfx as sfxlib
-    sfx_names = ", ".join(k for k, v in sfxlib.all_slots().items() if v["kind"] == "oneshot")
-    system = (
-        "You write scripts for short vertical videos (Instagram Reels) starring ONE animated character who "
-        "talks to the camera. Each line is one shot. Keep every line short and punchy (max 14 words), spoken "
-        "in first person by the character, with a clear setup, escalation and a punchline at the end.\n"
-        "The FIRST line is the hook - it decides whether people keep watching: at most 8 words, a surprising claim, "
-        "a bold question or a 'wait, what?' moment about the title. Never open with a greeting (\"Hi everyone\", "
-        "\"Hello\"), her name or \"Today we...\". " + hook_rule(hook_style) + "\n"
-        + ENDING_RULE + "\n"
-        "Keep it family-friendly: no swearing (no damn, hell, crap...) and correct, natural English.\n"
-        "Output ONLY the script lines, one per line. No numbering, no names, no stage directions in "
-        "parentheses, no title, no commentary.\n"
-        "You MAY start a line with directions in square brackets, using ONLY these words:\n"
-        f"cameras: {cams}\nactions: {anims}\nexpressions: {exprs}\n"
-        "An action that is NOT in that list can be written as do: and one word - [do:salute], [do:yawn], [do:flex] - "
-        "and it will be animated for you; use that only for clear body actions.\n"
-        f"places to walk to (with walk_to/run_to/sneak_to): {marks} - walk at most ONCE in the whole "
-        "script, only when the story needs her somewhere else; for variety change the camera, her action or "
-        "expression, bring something on screen or change the place instead of walking about\n"
-        f"sound effects (optional, at most one per line, only when it fits): {sfx_names}\n"
-        "When another person or a thing actually shows up in the scene, bring it on screen with '+name verb' in "
-        "the brackets (ONE lowercase word or words_joined_by_underscores, e.g. +mail_van, never two separate "
-        "words; reuse the same name later). Anyone you bring in speaks FOR THEMSELVES: give them at least one line "
-        "of their own, starting with their name and a colon (Mom: You forgot your lunch!). The main character never "
-        "tells what someone else says or thinks (no \"Mom says...\", \"she told me...\") and never talks about a "
-        "person who isn't brought in with +name. Things never speak; keep most lines for the main character.\n"
-        "A catchphrase or sound like \"nya\" at most twice in the whole script - not at the end of every line.\n"
-        "Lighting can change at a line with one of: day, sunset, night, dawn in the brackets (it lasts until the "
-        "next change) - only when time really passes in the story.\n"
-        f"verbs for things: {', '.join(catalog.CAST_VERBS)} (crash_in may add from_left / from_right / from_back)\n"
-        "verbs for people: enter, exit, appear, vanish, or any action above (wave, angry, laugh, dance...)\n"
-        "Someone can come on as a pale see-through ghost (a spirit, a memory, another version of her) with ghost after "
-        "the verb - [+past_self appear ghost] - or as a dark faceless silhouette with shadow - [+stranger enter "
-        "shadow]; only when the story is eerie or about memories, never just for decoration.\n"
-        "Floating: [+balloons hold] gives her a bunch of balloons, [float_up] lifts her off the ground (she stays up), "
-        "[land] brings her back down. Always close brackets with ] and never put directions mid-line.\n"
-        + ("Explaining how something works (a toilet, a volcano, a heart, an engine)? Bring a model of it on beside "
-           "her with [show: thing] (one word, or words_joined), [show: thing open] when you talk about its inside, "
-           "[show: thing part] to look closely at one part (e.g. [show: toilet flap]), and [show: off] when you're "
-           "done with it. Name each part and say what it does in plain words (\"the chain lifts the flap\") - the "
-           "model's parts move on those words.\n" if explain else "")
-        +
-        "Changing place: when the story moves somewhere else, start that line with [@ place] - a short "
-        "description of the new place, e.g. [@ on the moon] or [@ a busy train station] - it lasts until the next "
-        "[@ ...]. Never write [@ ...] for the place the video starts in.\n"
-        "Example line: [closeup, angry] Fine. I'll do it myself!\n"
-        "Example line: [wide, surprised, boom] And then the oven exploded!\n"
-        "Example line: [+mom enter, scared] Mom?! You weren't supposed to be home yet!\n"
-        "On-screen game overlays (optional - at most one or two kinds in a video, only when the video really keeps "
-        "track of something): [meter: <name> <0-100>] shows a bar - write it again later with a new number and it "
-        "slides there; [count: <name> <number>] a counter that ticks to each new number; [tag: <WHO: WHAT>] a "
-        "corner tag that stays until a new tag; [label: <NAME>] a name sign when something new appears; "
-        "[bubble: <1-3 words>] a small speech bubble; [sticker: <SOUND>] a comic sound word. Sound effects show "
-        "their word by themselves.\n"
-        "A [cutaway: ...] shows exactly the thing that line names (the volcano, the crumb) - never a comparison "
-        "or a joke picture; a line that compares (as big as a whale) gets no cutaway.\n"
-        "Example line: [+truck crash_in from_left, surprised] WHY IS THERE A TRUCK IN THE KITCHEN?!"
-    )
+    system = writer_system(title, tone, extra, scenes, explain, others, hook_style)
     user = (
         f"Video title: {title}\n"
         f"Character: {character.get('name', 'the character')}. {character.get('about', '')}\n"
@@ -932,6 +1086,17 @@ def generate_script(url, model, title, character, set_info, lines=6, tone="funny
         raise RuntimeError("The model returned no usable lines - try again or pick another model.")
     if polish:
         out = polish_script(url, model, title, out, tone)
+    out, bad = tidy_writer_lines(out, character)
+    if (bad > max(2, len(out) // 3) or len(out) < max(3, int(lines) - 3)) and not _retry:
+        # a mess (many lines fixed or dropped): write it once more, a little calmer, and keep the tidier one
+        print(f"  [writer] {bad} line(s) needed fixing, {len(out)} left - writing it again")
+        try:
+            again = generate_script(url, model, title, character, set_info, lines, tone, extra, max(0.5, temperature - 0.2),
+                                    others, polish, scenes, explain, None, hook_style, _retry=True)
+            if again and len(again) >= len(out):
+                return again
+        except Exception as exc:
+            print(f"  [writer] second try failed ({exc}) - keeping the first")
     return fix_self_names(out, character)
 
 
